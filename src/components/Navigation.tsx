@@ -27,7 +27,7 @@ export const Navigation = () => {
           <div className="flex items-center space-x-8">
             <div className="flex items-center space-x-2">
               <Shield className="w-8 h-8 text-blue-600" />
-              <span className="text-xl font-bold text-gray-900">ProctorPro</span>
+              <span className="text-xl font-bold text-gray-900">Examify</span>
             </div>
 
             <div className="hidden md:flex space-x-1">
