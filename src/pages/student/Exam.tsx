@@ -1,21 +1,68 @@
-import { useState, useEffect } from 'react';
+import { useState, useEffect, useRef } from 'react';
 import { useNavigate } from 'react-router-dom';
 import { useApp } from '../../context/AppContext';
 import { useProctoring } from '../../hooks/useProctoring';
+import { useEyeGazeDetection } from '../../hooks/useEyeGazeDetection';
+import { EyeGazeMonitor } from '../../components/EyeGazeMonitor';
 import { mockQuestions } from '../../data/mockData';
 import {
   Clock, AlertTriangle, CheckCircle,
-  ChevronLeft, ChevronRight, CameraOff, Video
+  ChevronLeft, ChevronRight, CameraOff, Video, Eye
 } from 'lucide-react';
 
 export const Exam = () => {
   const navigate = useNavigate();
   const { currentExam } = useApp();
-  const { status, videoRef, retryCamera } = useProctoring();
+  const { status, videoRef: proctoringVideoRef, retryCamera } = useProctoring();
+  const {
+    gazeData,
+    isDetecting,
+    modelsLoaded: gazeModelsLoaded,
+    loading: gazeLoading,
+    error: gazeError,
+    suspiciousEvents,
+    videoRef: gazeVideoRef,
+    startDetection,
+    stopDetection,
+    clearEvents
+  } = useEyeGazeDetection();
+
+  const combinedVideoRef = useRef<HTMLVideoElement | null>(null);
 
   const [currentQuestion, setCurrentQuestion] = useState(0);
   const [answers, setAnswers] = useState<{ [key: number]: number }>({});
   const [timeRemaining, setTimeRemaining] = useState(5400);
+
+  // Debug logging
+  useEffect(() => {
+    console.log('[Exam] Camera status:', status.camera);
+    console.log('[Exam] Gaze models loaded:', gazeModelsLoaded);
+    console.log('[Exam] Is detecting:', isDetecting);
+  }, [status.camera, gazeModelsLoaded, isDetecting]);
+
+  // Start eye gaze detection when models are loaded and camera is ready
+  useEffect(() => {
+    console.log('[Exam] Effect triggered - models:', gazeModelsLoaded, 'camera:', status.camera, 'detecting:', isDetecting);
+    if (gazeModelsLoaded && status.camera && !isDetecting) {
+      console.log('[Exam] Starting eye gaze detection...');
+      startDetection();
+    }
+  }, [gazeModelsLoaded, status.camera, isDetecting, startDetection]);
+
+  // Stop detection on unmount
+  useEffect(() => {
+    return () => {
+      stopDetection();
+    };
+  }, [stopDetection]);
+
+  // Combined video ref for both proctoring and eye gaze
+  const setCombinedVideoRef = (element: HTMLVideoElement | null) => {
+    console.log('[Exam] Video ref set:', element !== null);
+    combinedVideoRef.current = element;
+    proctoringVideoRef(element);
+    gazeVideoRef(element);
+  };
 
   // Timer
   useEffect(() => {
@@ -166,7 +213,7 @@ export const Exam = () => {
           {/* Video Container */}
           <div className="rounded-lg aspect-video mb-4 bg-black relative overflow-hidden">
             <video
-              ref={videoRef}
+              ref={setCombinedVideoRef}
               autoPlay
               muted
               playsInline
@@ -209,6 +256,15 @@ export const Exam = () => {
               <div className="absolute inset-0 bg-red-500/20 flex items-center justify-center animate-pulse">
                 <div className="bg-red-600 text-white px-4 py-2 rounded font-bold">
                   Multiple Faces!
+                </div>
+              </div>
+            )}
+
+            {gazeData?.isLookingAway && (
+              <div className="absolute inset-0 bg-yellow-500/20 flex items-center justify-center animate-pulse">
+                <div className="bg-yellow-600 text-white px-4 py-2 rounded font-bold flex items-center">
+                  <Eye className="w-5 h-5 mr-2" />
+                  Looking Away!
                 </div>
               </div>
             )}
@@ -292,8 +348,52 @@ export const Exam = () => {
                 <AlertTriangle className="w-4 h-4 text-red-600" />
               )}
             </div>
+
+            <div
+              className={`flex items-center justify-between p-3 rounded-lg ${
+                gazeModelsLoaded
+                  ? isDetecting
+                    ? 'bg-green-50'
+                    : 'bg-blue-50'
+                  : 'bg-gray-50'
+              }`}
+            >
+              <span
+                className={`text-sm font-medium ${
+                  gazeModelsLoaded
+                    ? isDetecting
+                      ? 'text-green-700'
+                      : 'text-blue-700'
+                    : 'text-gray-500'
+                }`}
+              >
+                {gazeModelsLoaded ? 'Eye Gaze Tracking' : 'Loading...'}
+              </span>
+              {gazeModelsLoaded ? (
+                isDetecting ? (
+                  <CheckCircle className="w-4 h-4 text-green-600" />
+                ) : (
+                  <Eye className="w-4 h-4 text-blue-600" />
+                )
+              ) : (
+                <div className="w-4 h-4 border-2 border-gray-400 border-t-transparent rounded-full animate-spin" />
+              )}
+            </div>
           </div>
         </div>
+
+        {/* Eye Gaze Monitor */}
+        <EyeGazeMonitor
+          gazeData={gazeData}
+          isDetecting={isDetecting}
+          modelsLoaded={gazeModelsLoaded}
+          loading={gazeLoading}
+          error={gazeError}
+          suspiciousEvents={suspiciousEvents}
+          onStartDetection={startDetection}
+          onStopDetection={stopDetection}
+          onClearEvents={clearEvents}
+        />
 
         {/* Question Navigator */}
         <div className="p-6 flex-1 overflow-auto">

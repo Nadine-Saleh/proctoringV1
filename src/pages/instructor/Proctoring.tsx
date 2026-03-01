@@ -8,12 +8,14 @@ import {
   Download,
   Calendar,
   User,
-  FileText
+  FileText,
+  Eye
 } from 'lucide-react';
 
 export const ProctoringReport = () => {
   const [severityFilter, setSeverityFilter] = useState('all');
   const [examFilter, setExamFilter] = useState('all');
+  const [eventTypeFilter, setEventTypeFilter] = useState('all');
 
   const getSeverityIcon = (severity: string) => {
     switch (severity) {
@@ -44,8 +46,40 @@ export const ProctoringReport = () => {
   const filteredEvents = mockProctoringEvents.filter((event) => {
     const matchesSeverity = severityFilter === 'all' || event.severity === severityFilter;
     const matchesExam = examFilter === 'all' || event.examId.toString() === examFilter;
-    return matchesSeverity && matchesExam;
+    const matchesEventType =
+      eventTypeFilter === 'all' ||
+      event.type === eventTypeFilter ||
+      (eventTypeFilter === 'eye_gaze' && ['looking_away', 'eye_closure', 'rapid_eye_movement', 'excessive_blinking'].includes(event.type));
+    return matchesSeverity && matchesExam && matchesEventType;
   });
+
+  const getEventTypeLabel = (type: string) => {
+    // Handle eye gaze event types
+    if (['looking_away', 'eye_closure', 'rapid_eye_movement', 'excessive_blinking'].includes(type)) {
+      return type
+        .split('_')
+        .map((word) => word.charAt(0).toUpperCase() + word.slice(1))
+        .join(' ');
+    }
+    return type
+      .split('_')
+      .map((word) => word.charAt(0).toUpperCase() + word.slice(1))
+      .join(' ');
+  };
+
+  const getEventTypeIcon = (type: string) => {
+    if (['looking_away', 'eye_closure', 'rapid_eye_movement', 'excessive_blinking'].includes(type)) {
+      return <Eye className="w-5 h-5" />;
+    }
+    switch (type) {
+      case 'multiple_faces':
+        return <User className="w-5 h-5" />;
+      case 'tab_switch':
+        return <FileText className="w-5 h-5" />;
+      default:
+        return <AlertCircle className="w-5 h-5" />;
+    }
+  };
 
   const formatTimestamp = (timestamp: string) => {
     const date = new Date(timestamp);
@@ -58,16 +92,12 @@ export const ProctoringReport = () => {
     });
   };
 
-  const getEventTypeLabel = (type: string) => {
-    return type
-      .split('_')
-      .map((word) => word.charAt(0).toUpperCase() + word.slice(1))
-      .join(' ');
-  };
-
   const criticalCount = mockProctoringEvents.filter((e) => e.severity === 'critical').length;
   const highCount = mockProctoringEvents.filter((e) => e.severity === 'high').length;
   const mediumCount = mockProctoringEvents.filter((e) => e.severity === 'medium').length;
+  const eyeGazeEventCount = mockProctoringEvents.filter((e) =>
+    ['looking_away', 'eye_closure', 'rapid_eye_movement', 'excessive_blinking'].includes(e.type)
+  ).length;
 
   return (
     <div className="min-h-screen bg-gradient-to-br from-gray-50 to-blue-50">
@@ -77,7 +107,7 @@ export const ProctoringReport = () => {
           <p className="text-lg text-gray-600">Monitor flagged events and suspicious activities</p>
         </div>
 
-        <div className="grid grid-cols-1 md:grid-cols-3 gap-6 mb-8">
+        <div className="grid grid-cols-1 md:grid-cols-4 gap-6 mb-8">
           <div className="bg-white rounded-xl shadow-sm border border-gray-200 p-6">
             <div className="flex items-center justify-between mb-2">
               <span className="text-sm font-medium text-gray-600">Critical Events</span>
@@ -100,6 +130,14 @@ export const ProctoringReport = () => {
               <AlertCircle className="w-5 h-5 text-yellow-600" />
             </div>
             <div className="text-3xl font-bold text-yellow-600">{mediumCount}</div>
+          </div>
+
+          <div className="bg-white rounded-xl shadow-sm border border-gray-200 p-6">
+            <div className="flex items-center justify-between mb-2">
+              <span className="text-sm font-medium text-gray-600">Eye Gaze Events</span>
+              <Eye className="w-5 h-5 text-blue-600" />
+            </div>
+            <div className="text-3xl font-bold text-blue-600">{eyeGazeEventCount}</div>
           </div>
         </div>
 
@@ -144,6 +182,26 @@ export const ProctoringReport = () => {
                   ))}
                 </select>
               </div>
+
+              <div className="relative flex-1">
+                <Eye className="absolute left-3 top-1/2 transform -translate-y-1/2 w-5 h-5 text-gray-400" />
+                <select
+                  value={eventTypeFilter}
+                  onChange={(e) => setEventTypeFilter(e.target.value)}
+                  className="w-full pl-11 pr-4 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-transparent appearance-none bg-white"
+                >
+                  <option value="all">All Event Types</option>
+                  <option value="eye_gaze">Eye Gaze Events</option>
+                  <option value="looking_away">Looking Away</option>
+                  <option value="eye_closure">Eye Closure</option>
+                  <option value="rapid_eye_movement">Rapid Eye Movement</option>
+                  <option value="excessive_blinking">Excessive Blinking</option>
+                  <option value="multiple_faces">Multiple Faces</option>
+                  <option value="face_not_detected">Face Not Detected</option>
+                  <option value="tab_switch">Tab Switch</option>
+                  <option value="phone_detected">Phone Detected</option>
+                </select>
+              </div>
             </div>
           </div>
 
@@ -161,7 +219,10 @@ export const ProctoringReport = () => {
                 >
                   <div className="flex items-start justify-between">
                     <div className="flex items-start space-x-4 flex-1">
-                      <div className="mt-1">{getSeverityIcon(event.severity)}</div>
+                      <div className="flex flex-col items-center space-y-2 mt-1">
+                        {getSeverityIcon(event.severity)}
+                        <div className="text-gray-400">{getEventTypeIcon(event.type)}</div>
+                      </div>
 
                       <div className="flex-1">
                         <div className="flex items-center space-x-3 mb-2">
