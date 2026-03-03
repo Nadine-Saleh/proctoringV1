@@ -231,9 +231,9 @@ export const useLivenessCheck = (): UseLivenessCheckReturn => {
         console.error('[LivenessCheck] Detection error:', err);
       }
 
-      // Schedule next frame
+      // Schedule next frame - 100ms for faster detection response
       if (hasStartedCheckRef.current && !verificationCompleted) {
-        detectionTimerRef.current = window.setTimeout(detectionLoop, 200) as any;
+        detectionTimerRef.current = window.setTimeout(detectionLoop, 100) as any;
       }
     };
 

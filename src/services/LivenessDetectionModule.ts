@@ -312,8 +312,8 @@ export class LivenessDetectionModule {
    * Nod pattern: Y increases (down in screen coords) then decreases (up)
    */
   private detectNod(): boolean {
-    // Need at least 6 frames to detect a nod pattern
-    const minHistoryLength = 6;
+    // Need at least 4 frames to detect a nod pattern (more responsive)
+    const minHistoryLength = 4;
     if (this.noseHistory.length < minHistoryLength) return false;
 
     // Get the Y positions from the nose history
@@ -325,7 +325,7 @@ export class LivenessDetectionModule {
     const range = maxY - minY;
 
     // Use a lenient threshold
-    const threshold = 8; // pixels
+    const threshold = 6; // pixels - reduced for faster detection
 
     console.log('[LivenessModule] Nod - Y values:', yPositions.map(y => y.toFixed(1)).join(', '));
     console.log('[LivenessModule] Nod - range:', range.toFixed(1), 'minY:', minY.toFixed(1), 'maxY:', maxY.toFixed(1), 'baselineY:', this.baselineY?.toFixed(1));
@@ -353,15 +353,12 @@ export class LivenessDetectionModule {
 
     // Check that we went down from baseline and came back up
     if (this.baselineY !== null) {
-      const startFromBaseline = Math.abs(yPositions[0] - this.baselineY);
-      const endFromBaseline = Math.abs(yPositions[yPositions.length - 1] - this.baselineY);
-      
       // The peak should be significantly lower (higher Y) than both start and end
       const peakFromStart = maxY - yPositions[0];
       const peakFromEnd = maxY - yPositions[yPositions.length - 1];
-      
+
       console.log('[LivenessModule] Nod - peakFromStart:', peakFromStart.toFixed(1), 'peakFromEnd:', peakFromEnd.toFixed(1));
-      
+
       // Both should be positive (went down from start, came back up to end)
       if (peakFromStart < threshold * 0.5 || peakFromEnd < threshold * 0.5) {
         console.log('[LivenessModule] Nod: FAILED - did not return to baseline');
@@ -379,9 +376,9 @@ export class LivenessDetectionModule {
    */
   private detectLookUp(face: DetectedFace): boolean {
     if (!face.landmarks) return false;
-    
-    // Need at least 6 frames to detect lookUp pattern
-    const minHistoryLength = 6;
+
+    // Need at least 4 frames to detect lookUp pattern (more responsive)
+    const minHistoryLength = 4;
     if (this.noseHistory.length < minHistoryLength) return false;
 
     // Get the Y positions from the nose history
@@ -393,7 +390,7 @@ export class LivenessDetectionModule {
     const range = maxY - minY;
 
     // Use a lenient threshold - looking up means nose goes UP (smaller Y)
-    const threshold = 8; // pixels
+    const threshold = 6; // pixels - reduced for faster detection
 
     console.log('[LivenessModule] LookUp - Y values:', yPositions.map(y => y.toFixed(1)).join(', '));
     console.log('[LivenessModule] LookUp - range:', range.toFixed(1), 'minY:', minY.toFixed(1), 'maxY:', maxY.toFixed(1), 'baselineY:', this.baselineY?.toFixed(1));
@@ -414,7 +411,7 @@ export class LivenessDetectionModule {
     if (this.baselineY !== null) {
       const upwardMovement = this.baselineY - minY;
       console.log('[LivenessModule] LookUp - upwardMovement:', upwardMovement.toFixed(1));
-      
+
       // Need significant upward movement from baseline
       if (upwardMovement < threshold) {
         console.log('[LivenessModule] LookUp: FAILED - not enough upward movement');
@@ -422,8 +419,8 @@ export class LivenessDetectionModule {
       }
 
       // Check that we sustained the upward position (not just a quick flick)
-      // The minimum should be in the latter half of the history
-      if (minIndex < totalLength * 0.3) {
+      // More lenient: minimum should be in the latter part of history
+      if (minIndex < totalLength * 0.2) {
         console.log('[LivenessModule] LookUp: FAILED - upward position not sustained');
         return false;
       }
