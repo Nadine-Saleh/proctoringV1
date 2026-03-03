@@ -94,6 +94,56 @@ export const mockProctoringEvents = [
     type: 'phone_detected',
     severity: 'high',
     description: 'Mobile device detected in frame'
+  },
+  {
+    id: 5,
+    studentId: 101,
+    studentName: 'Alice Johnson',
+    examId: 2,
+    timestamp: '2026-02-18T14:30:15',
+    type: 'looking_away',
+    severity: 'medium',
+    description: 'Student looking away from screen for 3 seconds'
+  },
+  {
+    id: 6,
+    studentId: 102,
+    studentName: 'Bob Smith',
+    examId: 2,
+    timestamp: '2026-02-18T14:35:42',
+    type: 'eye_closure',
+    severity: 'high',
+    description: 'Eye closure detected for 1.2 seconds'
+  },
+  {
+    id: 7,
+    studentId: 103,
+    studentName: 'Carol Williams',
+    examId: 2,
+    timestamp: '2026-02-18T14:40:18',
+    type: 'rapid_eye_movement',
+    severity: 'medium',
+    description: 'Detected 7 rapid eye movements in 2 seconds'
+  },
+  {
+    id: 8,
+    studentId: 104,
+    studentName: 'David Brown',
+    examId: 2,
+    timestamp: '2026-02-18T14:45:55',
+    type: 'looking_away',
+    severity: 'high',
+    description: 'Student looking away from screen for 6 seconds'
+  },
+  {
+    id: 9,
+    studentId: 101,
+    studentName: 'Alice Johnson',
+    examId: 2,
+    timestamp: '2026-02-18T14:50:30',
+    type: 'excessive_blinking',
+    severity: 'low',
+    description: 'Excessive blinking detected (15 blinks in 30 seconds)'
   }
 ];
 
