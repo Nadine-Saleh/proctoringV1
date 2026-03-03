@@ -1,40 +1,95 @@
-import { useState, useEffect } from 'react';
+import { useState, useEffect, useRef, useCallback } from 'react';
 import { useNavigate } from 'react-router-dom';
 import { useApp } from '../../context/AppContext';
 import { useProctoring } from '../../hooks/useProctoring';
+import { useEyeGazeDetection } from '../../hooks/useEyeGazeDetection';
+import { useLivenessCheck } from '../../hooks/useLivenessCheck';
+import { EyeGazeMonitor } from '../../components/EyeGazeMonitor';
+import { LivenessCheckModal } from '../../components/LivenessCheckModal';
 import { mockQuestions } from '../../data/mockData';
 import {
   Clock, AlertTriangle, CheckCircle,
-  ChevronLeft, ChevronRight, CameraOff, Video
+  ChevronLeft, ChevronRight, CameraOff, Video, Eye
 } from 'lucide-react';
 
 export const Exam = () => {
   const navigate = useNavigate();
   const { currentExam } = useApp();
-  const { status, videoRef, retryCamera } = useProctoring();
 
   const [currentQuestion, setCurrentQuestion] = useState(0);
   const [answers, setAnswers] = useState<{ [key: number]: number }>({});
   const [timeRemaining, setTimeRemaining] = useState(5400);
+  const [showLivenessCheck, setShowLivenessCheck] = useState(true);
+  const [examStarted, setExamStarted] = useState(false);
 
-  // Timer
+  const { status, videoRef: proctoringVideoRef, retryCamera } = useProctoring(examStarted);
+  const {
+    gazeData,
+    isDetecting,
+    modelsLoaded: gazeModelsLoaded,
+    loading: gazeLoading,
+    error: gazeError,
+    suspiciousEvents,
+    videoRef: gazeVideoRef,
+    startDetection,
+    stopDetection,
+    clearEvents
+  } = useEyeGazeDetection(examStarted);
+
+  const {
+    isChecking,
+    isPassed: livenessPassed,
+    isFailed: livenessFailed,
+    progress: livenessProgress,
+    instruction,
+    currentStep,
+    stepIndex,
+    totalSteps,
+    startCheck,
+    resetCheck,
+    videoRef: livenessVideoRef
+  } = useLivenessCheck();
+
+  const combinedVideoRef = useRef<HTMLVideoElement | null>(null);
+
+  // Debug logging
   useEffect(() => {
-    if (!currentExam) {
-      navigate('/');
-      return;
+    console.log('[Exam] Component mounted, currentExam:', currentExam);
+    console.log('[Exam] showLivenessCheck:', showLivenessCheck);
+    console.log('[Exam] liveness state - isChecking:', isChecking, 'isPassed:', livenessPassed, 'isFailed:', livenessFailed);
+    console.log('[Exam] Camera status:', status.camera, 'examStarted:', examStarted);
+    console.log('[Exam] Gaze models loaded:', gazeModelsLoaded);
+    console.log('[Exam] Is detecting:', isDetecting);
+  }, [currentExam, showLivenessCheck, isChecking, livenessPassed, livenessFailed, status.camera, gazeModelsLoaded, isDetecting, examStarted]);
+
+  // Start eye gaze detection when models are loaded and camera is ready AND exam has started
+  useEffect(() => {
+    if (examStarted && gazeModelsLoaded && status.camera && !isDetecting) {
+      console.log('[Exam] Starting eye gaze detection...');
+      startDetection();
     }
-    const timer = setInterval(() => {
-      setTimeRemaining(prev => {
-        if (prev <= 0) {
-          clearInterval(timer);
-          handleSubmit();
-          return 0;
-        }
-        return prev - 1;
-      });
-    }, 1000);
-    return () => clearInterval(timer);
-  }, [currentExam, navigate]);
+  }, [gazeModelsLoaded, status.camera, isDetecting, startDetection, examStarted]);
+
+  // Stop detection on unmount
+  useEffect(() => {
+    return () => {
+      stopDetection();
+    };
+  }, [stopDetection]);
+
+  // Combined video ref for both proctoring and eye gaze
+  const setCombinedVideoRef = useCallback((element: HTMLVideoElement | null) => {
+    console.log('[Exam] Combined video ref set:', element !== null);
+    combinedVideoRef.current = element;
+    proctoringVideoRef(element);
+    gazeVideoRef(element);
+  }, [proctoringVideoRef, gazeVideoRef]);
+
+  // Separate ref just for liveness check modal
+  const setLivenessVideoRef = useCallback((element: HTMLVideoElement | null) => {
+    console.log('[Exam] Liveness video ref set:', element !== null);
+    livenessVideoRef(element);
+  }, [livenessVideoRef]);
 
   const formatTime = (seconds: number) => {
     const mins = Math.floor(seconds / 60);
@@ -46,12 +101,93 @@ export const Exam = () => {
     setAnswers({ ...answers, [questionId]: answerIndex });
   };
 
-  const handleSubmit = () => navigate('/results');
+  const handleSubmit = useCallback(() => {
+    navigate('/results');
+  }, [navigate]);
 
-  if (!currentExam) return null;
+  const handleLivenessComplete = useCallback(() => {
+    // Only allow exam start if liveness check passed
+    if (livenessPassed) {
+      console.log('[Exam] Liveness check passed, starting exam');
+      setShowLivenessCheck(false);
+      setExamStarted(true);
+    } else {
+      console.warn('[Exam] Attempted to start exam without passing liveness check');
+    }
+  }, [livenessPassed]);
+
+  const handleLivenessRetry = useCallback(() => {
+    resetCheck();
+    setTimeout(() => {
+      startCheck();
+    }, 500);
+  }, [resetCheck, startCheck]);
+
+  // Timer
+  useEffect(() => {
+    if (!currentExam) {
+      navigate('/');
+      return;
+    }
+
+    if (!examStarted) return;
+
+    const timer = setInterval(() => {
+      setTimeRemaining(prev => {
+        if (prev <= 0) {
+          clearInterval(timer);
+          handleSubmit();
+          return 0;
+        }
+        return prev - 1;
+      });
+    }, 1000);
+    return () => clearInterval(timer);
+  }, [currentExam, navigate, examStarted, handleSubmit]);
+
+  // Show "no exam" state if navigating directly to /exam
+  if (!currentExam) {
+    console.log('[Exam] No currentExam, showing navigation message');
+    return (
+      <div className="min-h-screen bg-gray-50 flex items-center justify-center">
+        <div className="text-center">
+          <h1 className="text-2xl font-bold mb-4">No exam selected</h1>
+          <p className="text-gray-600 mb-4">Please navigate from the home page and select an exam.</p>
+          <button
+            onClick={() => { navigate('/'); }}
+            className="px-4 py-2 bg-blue-600 text-white rounded hover:bg-blue-700"
+          >
+            Go to Home
+          </button>
+        </div>
+      </div>
+    );
+  }
 
   const question = mockQuestions[currentQuestion];
   const progress = ((currentQuestion + 1) / mockQuestions.length) * 100;
+
+  // Show liveness check modal before exam starts
+  if (showLivenessCheck) {
+    console.log('[Exam] Rendering LivenessCheckModal - isChecking:', isChecking, 'isPassed:', livenessPassed, 'isFailed:', livenessFailed);
+    return (
+      <LivenessCheckModal
+        isOpen={showLivenessCheck}
+        isChecking={isChecking}
+        isPassed={livenessPassed}
+        isFailed={livenessFailed}
+        progress={livenessProgress}
+        instruction={instruction}
+        currentStep={currentStep}
+        stepIndex={stepIndex}
+        totalSteps={totalSteps}
+        videoRef={setLivenessVideoRef}
+        onStartCheck={startCheck}
+        onRetry={handleLivenessRetry}
+        onContinue={handleLivenessComplete}
+      />
+    );
+  }
 
   return (
     <div className="min-h-screen bg-gray-50 flex">
@@ -166,7 +302,7 @@ export const Exam = () => {
           {/* Video Container */}
           <div className="rounded-lg aspect-video mb-4 bg-black relative overflow-hidden">
             <video
-              ref={videoRef}
+              ref={setCombinedVideoRef}
               autoPlay
               muted
               playsInline
@@ -209,6 +345,15 @@ export const Exam = () => {
               <div className="absolute inset-0 bg-red-500/20 flex items-center justify-center animate-pulse">
                 <div className="bg-red-600 text-white px-4 py-2 rounded font-bold">
                   Multiple Faces!
+                </div>
+              </div>
+            )}
+
+            {gazeData?.isLookingAway && (
+              <div className="absolute inset-0 bg-yellow-500/20 flex items-center justify-center animate-pulse">
+                <div className="bg-yellow-600 text-white px-4 py-2 rounded font-bold flex items-center">
+                  <Eye className="w-5 h-5 mr-2" />
+                  Looking Away!
                 </div>
               </div>
             )}
@@ -292,8 +437,52 @@ export const Exam = () => {
                 <AlertTriangle className="w-4 h-4 text-red-600" />
               )}
             </div>
+
+            <div
+              className={`flex items-center justify-between p-3 rounded-lg ${
+                gazeModelsLoaded
+                  ? isDetecting
+                    ? 'bg-green-50'
+                    : 'bg-blue-50'
+                  : 'bg-gray-50'
+              }`}
+            >
+              <span
+                className={`text-sm font-medium ${
+                  gazeModelsLoaded
+                    ? isDetecting
+                      ? 'text-green-700'
+                      : 'text-blue-700'
+                    : 'text-gray-500'
+                }`}
+              >
+                {gazeModelsLoaded ? 'Eye Gaze Tracking' : 'Loading...'}
+              </span>
+              {gazeModelsLoaded ? (
+                isDetecting ? (
+                  <CheckCircle className="w-4 h-4 text-green-600" />
+                ) : (
+                  <Eye className="w-4 h-4 text-blue-600" />
+                )
+              ) : (
+                <div className="w-4 h-4 border-2 border-gray-400 border-t-transparent rounded-full animate-spin" />
+              )}
+            </div>
           </div>
         </div>
+
+        {/* Eye Gaze Monitor */}
+        <EyeGazeMonitor
+          gazeData={gazeData}
+          isDetecting={isDetecting}
+          modelsLoaded={gazeModelsLoaded}
+          loading={gazeLoading}
+          error={gazeError}
+          suspiciousEvents={suspiciousEvents}
+          onStartDetection={startDetection}
+          onStopDetection={stopDetection}
+          onClearEvents={clearEvents}
+        />
 
         {/* Question Navigator */}
         <div className="p-6 flex-1 overflow-auto">

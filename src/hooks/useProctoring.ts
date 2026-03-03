@@ -18,12 +18,12 @@ export interface UseProctoringReturn {
   clearError: () => void;
 }
 
-export const useProctoring = (): UseProctoringReturn => {
+export const useProctoring = (isEnabled: boolean = true): UseProctoringReturn => {
   const videoRef = useRef<HTMLVideoElement | null>(null);
   const streamRef = useRef<MediaStream | null>(null);
   const isInitializedRef = useRef(false);
   const hasRequestedPermissionRef = useRef(false);
-  const detectionIntervalRef = useRef<NodeJS.Timeout | null>(null);
+  const detectionIntervalRef = useRef<any>(null);
 
   const [status, setStatus] = useState<ProctoringStatus>({
     camera: false,
@@ -44,12 +44,6 @@ export const useProctoring = (): UseProctoringReturn => {
     try {
       log('Loading face detection models...');
       const MODEL_URL = '/models';
-
-      const manifestUrl = `${MODEL_URL}/tiny_face_detector_model-weights_manifest.json`;
-      const response = await fetch(manifestUrl);
-      if (!response.ok) {
-        throw new Error(`Models not found at ${MODEL_URL}`);
-      }
 
       await faceapi.nets.tinyFaceDetector.loadFromUri(MODEL_URL);
 
@@ -81,32 +75,60 @@ export const useProctoring = (): UseProctoringReturn => {
         throw new Error('Browser does not support camera access');
       }
 
-      const stream = await navigator.mediaDevices.getUserMedia({
+      // Add a timeout to getUserMedia as it can sometimes hang
+      const streamPromise = navigator.mediaDevices.getUserMedia({
         video: { width: { ideal: 640 }, height: { ideal: 480 }, facingMode: 'user' },
         audio: false
       });
+
+      const timeoutPromise = new Promise<never>((_, reject) => 
+        window.setTimeout(() => reject(new Error('Camera request timed out')), 10000)
+      );
+
+      const stream = await Promise.race([streamPromise, timeoutPromise]);
 
       log('✓ Camera permission granted');
       streamRef.current = stream;
       element.srcObject = stream;
 
       await new Promise((resolve, reject) => {
-        const timeout = setTimeout(() => reject(new Error('Video load timeout')), 5000);
-        element.onloadedmetadata = () => {
-          clearTimeout(timeout);
+        const timeout = window.setTimeout(() => reject(new Error('Video stream initialization timed out')), 15000);
+        
+        const onVideoReady = () => {
+          window.clearTimeout(timeout);
+          element.removeEventListener('loadedmetadata', onVideoReady);
+          element.removeEventListener('error', onVideoError);
           log('✓ Video ready');
           resolve(true);
         };
-        element.onerror = () => {
-          clearTimeout(timeout);
-          reject(new Error('Video error'));
+
+        const onVideoError = (e: any) => {
+          window.clearTimeout(timeout);
+          element.removeEventListener('loadedmetadata', onVideoReady);
+          element.removeEventListener('error', onVideoError);
+          console.error('[Proctoring] Video error event:', e);
+          reject(new Error('Video source error'));
         };
+
+        // Check if already ready
+        if (element.readyState >= 1) {
+          onVideoReady();
+        } else {
+          element.addEventListener('loadedmetadata', onVideoReady);
+          element.addEventListener('error', onVideoError);
+        }
       });
 
       element.muted = true;
       element.playsInline = true;
-      await element.play();
-      log('✓ Video playing');
+      try {
+        await element.play();
+        log('✓ Video playing');
+      } catch (playErr: any) {
+        console.error('[Proctoring] Play error:', playErr);
+        // Sometimes play() fails if the browser thinks it's not user-initiated
+        // but we'll try to continue if metadata is loaded
+      }
 
       setStatus(prev => ({ ...prev, camera: true, loading: false }));
       isInitializedRef.current = true;
@@ -123,12 +145,13 @@ export const useProctoring = (): UseProctoringReturn => {
       else msg += err.message;
 
       setStatus(prev => ({ ...prev, camera: false, loading: false, errorMessage: msg }));
+      hasRequestedPermissionRef.current = false; // Allow retry
     }
   }, []);
 
   // Face detection
   const startFaceDetection = useCallback(() => {
-    if (!status.camera || !status.modelsLoaded || !videoRef.current) {
+    if (!isEnabled || !status.camera || !status.modelsLoaded || !videoRef.current) {
       return;
     }
 
@@ -172,17 +195,18 @@ export const useProctoring = (): UseProctoringReturn => {
     };
 
     // Start detection after small delay
-    const timeout = setTimeout(() => {
-      detectionIntervalRef.current = setInterval(detectFaces, 2000);
+    const timeout = window.setTimeout(() => {
+      detectionIntervalRef.current = window.setInterval(detectFaces, 2000);
     }, 1000);
 
     return () => {
-      clearTimeout(timeout);
+      window.clearTimeout(timeout);
       if (detectionIntervalRef.current) {
-        clearInterval(detectionIntervalRef.current);
+        window.clearInterval(detectionIntervalRef.current);
+        detectionIntervalRef.current = null;
       }
     };
-  }, [status.camera, status.modelsLoaded]);
+  }, [isEnabled, status.camera, status.modelsLoaded]);
 
   // Callback ref for video element
   const setVideoRef = useCallback(
@@ -210,7 +234,7 @@ export const useProctoring = (): UseProctoringReturn => {
       videoRef.current.srcObject = null;
     }
 
-    setTimeout(() => {
+    window.setTimeout(() => {
       if (videoRef.current) {
         startCamera(videoRef.current);
       }
@@ -229,25 +253,27 @@ export const useProctoring = (): UseProctoringReturn => {
 
   // Start face detection when ready
   useEffect(() => {
-    if (status.camera && status.modelsLoaded) {
+    if (isEnabled && status.camera && status.modelsLoaded) {
       return startFaceDetection();
     }
-  }, [status.camera, status.modelsLoaded, startFaceDetection]);
+  }, [isEnabled, status.camera, status.modelsLoaded, startFaceDetection]);
 
   // Tab visibility tracking
   useEffect(() => {
+    if (!isEnabled) return;
+    
     const handleVisibility = () => {
       setStatus(prev => ({ ...prev, tabActive: !document.hidden }));
     };
     document.addEventListener('visibilitychange', handleVisibility);
     return () => document.removeEventListener('visibilitychange', handleVisibility);
-  }, []);
+  }, [isEnabled]);
 
   // Cleanup on unmount
   useEffect(() => {
     return () => {
       if (detectionIntervalRef.current) {
-        clearInterval(detectionIntervalRef.current);
+        window.clearInterval(detectionIntervalRef.current);
       }
       if (streamRef.current) {
         streamRef.current.getTracks().forEach(track => track.stop());
