@@ -111,7 +111,6 @@ export const useFaceDetection = (props: UseFaceDetectionProps = {}): UseFaceDete
     return () => {
       // Cleanup event listeners
       if (livenessModuleRef.current && (livenessModuleRef.current as any)._handlers) {
-        const handlers = (livenessModuleRef.current as any)._handlers;
         // We don't have a way to remove handlers without storing them separately, 
         // so we'll skip removal in this simplified implementation
       }

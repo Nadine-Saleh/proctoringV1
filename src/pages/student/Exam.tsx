@@ -1,9 +1,11 @@
-import { useState, useEffect, useRef } from 'react';
+import { useState, useEffect, useRef, useCallback } from 'react';
 import { useNavigate } from 'react-router-dom';
 import { useApp } from '../../context/AppContext';
 import { useProctoring } from '../../hooks/useProctoring';
 import { useEyeGazeDetection } from '../../hooks/useEyeGazeDetection';
+import { useLivenessCheck } from '../../hooks/useLivenessCheck';
 import { EyeGazeMonitor } from '../../components/EyeGazeMonitor';
+import { LivenessCheckModal } from '../../components/LivenessCheckModal';
 import { mockQuestions } from '../../data/mockData';
 import {
   Clock, AlertTriangle, CheckCircle,
@@ -13,7 +15,14 @@ import {
 export const Exam = () => {
   const navigate = useNavigate();
   const { currentExam } = useApp();
-  const { status, videoRef: proctoringVideoRef, retryCamera } = useProctoring();
+
+  const [currentQuestion, setCurrentQuestion] = useState(0);
+  const [answers, setAnswers] = useState<{ [key: number]: number }>({});
+  const [timeRemaining, setTimeRemaining] = useState(5400);
+  const [showLivenessCheck, setShowLivenessCheck] = useState(true);
+  const [examStarted, setExamStarted] = useState(false);
+
+  const { status, videoRef: proctoringVideoRef, retryCamera } = useProctoring(examStarted);
   const {
     gazeData,
     isDetecting,
@@ -25,29 +34,41 @@ export const Exam = () => {
     startDetection,
     stopDetection,
     clearEvents
-  } = useEyeGazeDetection();
+  } = useEyeGazeDetection(examStarted);
+
+  const {
+    isChecking,
+    isPassed: livenessPassed,
+    isFailed: livenessFailed,
+    progress: livenessProgress,
+    instruction,
+    currentStep,
+    stepIndex,
+    totalSteps,
+    startCheck,
+    resetCheck,
+    videoRef: livenessVideoRef
+  } = useLivenessCheck();
 
   const combinedVideoRef = useRef<HTMLVideoElement | null>(null);
 
-  const [currentQuestion, setCurrentQuestion] = useState(0);
-  const [answers, setAnswers] = useState<{ [key: number]: number }>({});
-  const [timeRemaining, setTimeRemaining] = useState(5400);
-
   // Debug logging
   useEffect(() => {
-    console.log('[Exam] Camera status:', status.camera);
+    console.log('[Exam] Component mounted, currentExam:', currentExam);
+    console.log('[Exam] showLivenessCheck:', showLivenessCheck);
+    console.log('[Exam] liveness state - isChecking:', isChecking, 'isPassed:', livenessPassed, 'isFailed:', livenessFailed);
+    console.log('[Exam] Camera status:', status.camera, 'examStarted:', examStarted);
     console.log('[Exam] Gaze models loaded:', gazeModelsLoaded);
     console.log('[Exam] Is detecting:', isDetecting);
-  }, [status.camera, gazeModelsLoaded, isDetecting]);
+  }, [currentExam, showLivenessCheck, isChecking, livenessPassed, livenessFailed, status.camera, gazeModelsLoaded, isDetecting, examStarted]);
 
-  // Start eye gaze detection when models are loaded and camera is ready
+  // Start eye gaze detection when models are loaded and camera is ready AND exam has started
   useEffect(() => {
-    console.log('[Exam] Effect triggered - models:', gazeModelsLoaded, 'camera:', status.camera, 'detecting:', isDetecting);
-    if (gazeModelsLoaded && status.camera && !isDetecting) {
+    if (examStarted && gazeModelsLoaded && status.camera && !isDetecting) {
       console.log('[Exam] Starting eye gaze detection...');
       startDetection();
     }
-  }, [gazeModelsLoaded, status.camera, isDetecting, startDetection]);
+  }, [gazeModelsLoaded, status.camera, isDetecting, startDetection, examStarted]);
 
   // Stop detection on unmount
   useEffect(() => {
@@ -57,31 +78,18 @@ export const Exam = () => {
   }, [stopDetection]);
 
   // Combined video ref for both proctoring and eye gaze
-  const setCombinedVideoRef = (element: HTMLVideoElement | null) => {
-    console.log('[Exam] Video ref set:', element !== null);
+  const setCombinedVideoRef = useCallback((element: HTMLVideoElement | null) => {
+    console.log('[Exam] Combined video ref set:', element !== null);
     combinedVideoRef.current = element;
     proctoringVideoRef(element);
     gazeVideoRef(element);
-  };
+  }, [proctoringVideoRef, gazeVideoRef]);
 
-  // Timer
-  useEffect(() => {
-    if (!currentExam) {
-      navigate('/');
-      return;
-    }
-    const timer = setInterval(() => {
-      setTimeRemaining(prev => {
-        if (prev <= 0) {
-          clearInterval(timer);
-          handleSubmit();
-          return 0;
-        }
-        return prev - 1;
-      });
-    }, 1000);
-    return () => clearInterval(timer);
-  }, [currentExam, navigate]);
+  // Separate ref just for liveness check modal
+  const setLivenessVideoRef = useCallback((element: HTMLVideoElement | null) => {
+    console.log('[Exam] Liveness video ref set:', element !== null);
+    livenessVideoRef(element);
+  }, [livenessVideoRef]);
 
   const formatTime = (seconds: number) => {
     const mins = Math.floor(seconds / 60);
@@ -93,12 +101,93 @@ export const Exam = () => {
     setAnswers({ ...answers, [questionId]: answerIndex });
   };
 
-  const handleSubmit = () => navigate('/results');
+  const handleSubmit = useCallback(() => {
+    navigate('/results');
+  }, [navigate]);
 
-  if (!currentExam) return null;
+  const handleLivenessComplete = useCallback(() => {
+    // Only allow exam start if liveness check passed
+    if (livenessPassed) {
+      console.log('[Exam] Liveness check passed, starting exam');
+      setShowLivenessCheck(false);
+      setExamStarted(true);
+    } else {
+      console.warn('[Exam] Attempted to start exam without passing liveness check');
+    }
+  }, [livenessPassed]);
+
+  const handleLivenessRetry = useCallback(() => {
+    resetCheck();
+    setTimeout(() => {
+      startCheck();
+    }, 500);
+  }, [resetCheck, startCheck]);
+
+  // Timer
+  useEffect(() => {
+    if (!currentExam) {
+      navigate('/');
+      return;
+    }
+
+    if (!examStarted) return;
+
+    const timer = setInterval(() => {
+      setTimeRemaining(prev => {
+        if (prev <= 0) {
+          clearInterval(timer);
+          handleSubmit();
+          return 0;
+        }
+        return prev - 1;
+      });
+    }, 1000);
+    return () => clearInterval(timer);
+  }, [currentExam, navigate, examStarted, handleSubmit]);
+
+  // Show "no exam" state if navigating directly to /exam
+  if (!currentExam) {
+    console.log('[Exam] No currentExam, showing navigation message');
+    return (
+      <div className="min-h-screen bg-gray-50 flex items-center justify-center">
+        <div className="text-center">
+          <h1 className="text-2xl font-bold mb-4">No exam selected</h1>
+          <p className="text-gray-600 mb-4">Please navigate from the home page and select an exam.</p>
+          <button
+            onClick={() => { navigate('/'); }}
+            className="px-4 py-2 bg-blue-600 text-white rounded hover:bg-blue-700"
+          >
+            Go to Home
+          </button>
+        </div>
+      </div>
+    );
+  }
 
   const question = mockQuestions[currentQuestion];
   const progress = ((currentQuestion + 1) / mockQuestions.length) * 100;
+
+  // Show liveness check modal before exam starts
+  if (showLivenessCheck) {
+    console.log('[Exam] Rendering LivenessCheckModal - isChecking:', isChecking, 'isPassed:', livenessPassed, 'isFailed:', livenessFailed);
+    return (
+      <LivenessCheckModal
+        isOpen={showLivenessCheck}
+        isChecking={isChecking}
+        isPassed={livenessPassed}
+        isFailed={livenessFailed}
+        progress={livenessProgress}
+        instruction={instruction}
+        currentStep={currentStep}
+        stepIndex={stepIndex}
+        totalSteps={totalSteps}
+        videoRef={setLivenessVideoRef}
+        onStartCheck={startCheck}
+        onRetry={handleLivenessRetry}
+        onContinue={handleLivenessComplete}
+      />
+    );
+  }
 
   return (
     <div className="min-h-screen bg-gray-50 flex">

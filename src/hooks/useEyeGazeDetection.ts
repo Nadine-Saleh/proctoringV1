@@ -59,7 +59,7 @@ const RIGHT_EYE_KEY_POINTS = {
   iris: [473, 474, 475, 476] // iris (RIGHT eye iris is 473-476)
 };
 
-export const useEyeGazeDetection = (): UseEyeGazeDetectionReturn => {
+export const useEyeGazeDetection = (isEnabled: boolean = true): UseEyeGazeDetectionReturn => {
   const videoRef = useRef<HTMLVideoElement | null>(null);
   const faceLandmarkerRef = useRef<FaceLandmarker | null>(null);
   const animationFrameRef = useRef<number | null>(null);
@@ -68,7 +68,7 @@ export const useEyeGazeDetection = (): UseEyeGazeDetectionReturn => {
   const lookingAwayStartTimeRef = useRef<number | null>(null);
   const lastGazeDirectionRef = useRef<string>('center');
   const rapidMovementCountRef = useRef<number>(0);
-  const rapidMovementTimerRef = useRef<NodeJS.Timeout | null>(null);
+  const rapidMovementTimerRef = useRef<any>(null);
   const hasStartedDetectionRef = useRef(false);
   const lastPupilPositionsRef = useRef<{ left: { x: number; y: number }; right: { x: number; y: number } } | null>(null);
 
@@ -152,11 +152,6 @@ export const useEyeGazeDetection = (): UseEyeGazeDetectionReturn => {
       const avgX = (leftPupil.x + rightPupil.x) / 2;
       const avgY = (leftPupil.y + rightPupil.y) / 2;
 
-      // Log for debugging - every detection
-      console.log('[EyeGaze] Gaze check - Left:', leftPupil.x.toFixed(4), leftPupil.y.toFixed(4), 
-                  'Right:', rightPupil.x.toFixed(4), rightPupil.y.toFixed(4), 
-                  'Avg:', avgX.toFixed(4), avgY.toFixed(4));
-
       // Check specific directions with thresholds
       const absX = Math.abs(avgX);
       const absY = Math.abs(avgY);
@@ -177,22 +172,16 @@ export const useEyeGazeDetection = (): UseEyeGazeDetectionReturn => {
             // Both X and Y are significant - diagonal movement
             const hDir = avgX < 0 ? 'left' : 'right';
             const vDir = avgY < 0 ? 'up' : 'down';
-            console.log(`[EyeGaze] >>> Diagonal: ${vDir}-${hDir}`);
             // Return the dominant direction but mark as looking away
             return absX > absY ? hDir : vDir;
           }
-          const direction = avgY < 0 ? 'up' : 'down';
-          console.log('[EyeGaze] >>> Vertical:', direction);
-          return direction;
+          return avgY < 0 ? 'up' : 'down';
         } else {
           // Horizontal movement (side glance)
-          const direction = avgX < 0 ? 'left' : 'right';
-          console.log('[EyeGaze] >>> Horizontal:', direction, `(threshold: ${SIDE_GLANCE_THRESHOLD}, actual: ${absX.toFixed(4)})`);
-          return direction;
+          return avgX < 0 ? 'left' : 'right';
         }
       }
 
-      console.log('[EyeGaze] >>> Center (no significant movement)');
       return 'center';
     },
     []
@@ -261,7 +250,7 @@ export const useEyeGazeDetection = (): UseEyeGazeDetectionReturn => {
       
       // Check if video is ready
       if (video.readyState < 2) {
-        animationFrameRef.current = requestAnimationFrame(detectGaze);
+        animationFrameRef.current = window.setTimeout(detectGaze, 100) as any;
         return;
       }
 
@@ -378,10 +367,11 @@ export const useEyeGazeDetection = (): UseEyeGazeDetectionReturn => {
       // Rapid eye movement detection
       checkRapidEyeMovement(gazeDirection);
 
-      animationFrameRef.current = requestAnimationFrame(detectGaze);
+      // Delay next detection to reduce CPU/GPU load (10 fps = 100ms)
+      animationFrameRef.current = window.setTimeout(detectGaze, 100) as any;
     } catch (err: any) {
       console.error('[EyeGaze] Detection error:', err);
-      animationFrameRef.current = requestAnimationFrame(detectGaze);
+      animationFrameRef.current = window.setTimeout(detectGaze, 500) as any;
     }
   }, [calculateEAR, calculatePupilPosition, determineGazeDirection, checkRapidEyeMovement, recordSuspiciousEvent]);
 
@@ -412,24 +402,22 @@ export const useEyeGazeDetection = (): UseEyeGazeDetectionReturn => {
       setModelsLoaded(true);
       setLoading(false);
       log('✓ Face Landmarker loaded successfully');
-      
-      // Auto-start detection if video is ready
-      if (videoRef.current && !hasStartedDetectionRef.current) {
-        hasStartedDetectionRef.current = true;
-        setIsDetecting(true);
-        isDetectingRef.current = true;
-        detectGaze();
-      }
-    } catch (err: any) {
+      } catch (err: any) {
       log('✗ Model loading error: ' + err.message);
       setError('Failed to load eye tracking models: ' + err.message);
       setModelsLoaded(false);
       setLoading(false);
-    }
-  }, [modelsLoaded, detectGaze]);
+      }
+      }, [modelsLoaded]);
+
 
   // Start detection
   const startDetection = useCallback(() => {
+    if (!isEnabled) {
+      log('⚠️ Detection disabled');
+      return;
+    }
+
     if (!videoRef.current) {
       log('⚠️ No video element available');
       return;
@@ -459,7 +447,7 @@ export const useEyeGazeDetection = (): UseEyeGazeDetectionReturn => {
     setIsDetecting(false);
 
     if (animationFrameRef.current) {
-      cancelAnimationFrame(animationFrameRef.current);
+      window.clearTimeout(animationFrameRef.current as any);
       animationFrameRef.current = null;
     }
 
