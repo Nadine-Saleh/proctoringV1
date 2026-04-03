@@ -283,25 +283,38 @@ export const useEyeGazeDetection = (isEnabled: boolean = true): UseEyeGazeDetect
       // Combined distance from center (for diagonal detection)
       const distanceFromCenter = Math.sqrt(absX * absX + absY * absY);
       
-      // More sensitive detection for horizontal (side) glances
+      // Lowered thresholds for better detection
       const isHorizontalGlance = absX > SIDE_GLANCE_THRESHOLD;
       const isVerticalGlance = absY > LOOKING_AWAY_THRESHOLD;
       
+      // Debug logging for upward gaze
+      if (avgY < -0.005) {
+        console.log('[EyeGaze] ⬆️ UPWARD gaze detected! avgY:', avgY.toFixed(4), 'threshold:', LOOKING_AWAY_THRESHOLD);
+      }
+      
+      // Enhanced downward gaze detection (keyboard/phone cheating)
+      if (avgY > 0.005) {
+        console.log('[EyeGaze] ⬇️ DOWNWARD gaze detected! avgY:', avgY.toFixed(4), 'threshold:', LOOKING_AWAY_THRESHOLD);
+      }
+
       // If any significant movement from center (including diagonals)
-      if (distanceFromCenter > LOOKING_AWAY_THRESHOLD || isHorizontalGlance) {
+      if (distanceFromCenter > LOOKING_AWAY_THRESHOLD || isHorizontalGlance || isVerticalGlance) {
         // Determine primary direction based on which axis is stronger
-        if (absY > absX * 0.7 && isVerticalGlance) {
-          // Vertical component is significant
-          if (absX > absY * 0.7 || isHorizontalGlance) {
-            // Both X and Y are significant - diagonal movement
-            const hDir = avgX < 0 ? 'left' : 'right';
-            const vDir = avgY < 0 ? 'up' : 'down';
-            // Return the dominant direction but mark as looking away
-            return absX > absY ? hDir : vDir;
-          }
-          return avgY < 0 ? 'up' : 'down';
-        } else {
+        if (absY > absX * 0.5) {
+          // Vertical movement is dominant - looking up or down
+          const direction = avgY < 0 ? 'up' : 'down';
+          console.log('[EyeGaze] ⬆️⬇️ Vertical direction:', direction, 'avgY:', avgY.toFixed(4), 'avgX:', avgX.toFixed(4));
+          return direction;
+        } else if (isHorizontalGlance) {
           // Horizontal movement (side glance)
+          const direction = avgX < 0 ? 'left' : 'right';
+          console.log('[EyeGaze] ⬅️➡️ Horizontal direction:', direction, 'avgX:', avgX.toFixed(4));
+          return direction;
+        } else {
+          // Small movement - still classify as looking away
+          if (absY > absX) {
+            return avgY < 0 ? 'up' : 'down';
+          }
           return avgX < 0 ? 'left' : 'right';
         }
       }
@@ -487,18 +500,22 @@ export const useEyeGazeDetection = (isEnabled: boolean = true): UseEyeGazeDetect
           console.log('[EyeGaze] Started looking away timer, direction:', gazeDirection);
         } else {
           const lookingAwayDuration = now - lookingAwayStartTimeRef.current;
-          if (lookingAwayDuration > 2000) {
-            console.log('[EyeGaze] 🚨 RECORDING LOOKING_AWAY event after', lookingAwayDuration, 'ms');
+          
+          // Faster detection for looking down (keyboard/phone cheating)
+          const threshold = gazeDirection === 'down' ? 1500 : 2000; // 1.5s for down, 2s for others
+          
+          if (lookingAwayDuration > threshold) {
+            console.log('[EyeGaze] 🚨 RECORDING LOOKING_AWAY event after', lookingAwayDuration, 'ms, direction:', gazeDirection);
             recordSuspiciousEvent(
               'LOOKING_AWAY',
               lookingAwayDuration > 5000 ? 'high' : 'medium',
-              `Looking ${gazeDirection} for ${Math.round(lookingAwayDuration / 1000)}s`,
+              `Looking ${gazeDirection} for ${Math.round(lookingAwayDuration / 1000)}s${gazeDirection === 'down' ? ' (possible keyboard/phone use)' : ''}`,
               lookingAwayDuration
             );
             lookingAwayStartTimeRef.current = null;
           } else if (lookingAwayDuration % 500 < 100) {
             // Log every 500ms while looking away
-            console.log('[EyeGaze] Still looking away:', Math.round(lookingAwayDuration/1000), 's');
+            console.log('[EyeGaze] Still looking', gazeDirection, ':', Math.round(lookingAwayDuration/1000), 's');
           }
         }
       } else {

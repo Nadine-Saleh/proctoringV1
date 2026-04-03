@@ -4,7 +4,6 @@ import { useApp } from '../../context/AppContext';
 import { useProctoring } from '../../hooks/useProctoring';
 import { useEyeGazeDetection } from '../../hooks/useEyeGazeDetection';
 import { useLivenessCheck } from '../../hooks/useLivenessCheck';
-import { EyeGazeMonitor } from '../../components/EyeGazeMonitor';
 import { LivenessCheckModal } from '../../components/LivenessCheckModal';
 import { mockQuestions } from '../../data/mockData';
 import {
@@ -21,22 +20,16 @@ export const Exam = () => {
   const [timeRemaining, setTimeRemaining] = useState(5400);
   const [showLivenessCheck, setShowLivenessCheck] = useState(true);
   const [examStarted, setExamStarted] = useState(false);
+  const [activeWarning, setActiveWarning] = useState<{ message: string; timestamp: number } | null>(null);
 
   const { status, videoRef: proctoringVideoRef, retryCamera } = useProctoring(examStarted);
   const {
     gazeData,
     isDetecting,
     modelsLoaded: gazeModelsLoaded,
-    loading: gazeLoading,
-    error: gazeError,
-    suspiciousEvents,
     videoRef: gazeVideoRef,
     startDetection,
-    stopDetection,
-    clearEvents,
-    violationScore,
-    violationLevel,
-    setSensitivity
+    stopDetection
   } = useEyeGazeDetection(examStarted);
 
   const {
@@ -63,10 +56,10 @@ export const Exam = () => {
     console.log('[Exam] examStarted:', examStarted);
     console.log('[Exam] liveness - isChecking:', isChecking, 'isPassed:', livenessPassed, 'isFailed:', livenessFailed);
     console.log('[Exam] Camera - status.camera:', status.camera, 'loading:', status.loading);
-    console.log('[Exam] Gaze - modelsLoaded:', gazeModelsLoaded, 'isDetecting:', isDetecting, 'loading:', gazeLoading);
+    console.log('[Exam] Gaze - modelsLoaded:', gazeModelsLoaded, 'isDetecting:', isDetecting);
     console.log('[Exam] Gaze - gazeData:', gazeData);
     console.log('[Exam] ====================================');
-  }, [currentExam, showLivenessCheck, isChecking, livenessPassed, livenessFailed, status.camera, gazeModelsLoaded, isDetecting, examStarted, gazeData, gazeLoading]);
+  }, [currentExam, showLivenessCheck, isChecking, livenessPassed, livenessFailed, status.camera, gazeModelsLoaded, isDetecting, examStarted, gazeData]);
 
   // Start eye gaze detection when models are loaded and camera is ready AND exam has started
   useEffect(() => {
@@ -84,6 +77,23 @@ export const Exam = () => {
       console.log('[Exam] ⏸️ Not starting - conditions not met');
     }
   }, [examStarted, gazeModelsLoaded, status.camera, isDetecting, startDetection]);
+
+  // Show persistent warnings for 3 seconds
+  useEffect(() => {
+    if (gazeData?.isLookingAway || gazeData?.isBlinking) {
+      setActiveWarning({ message: 'Please keep your eyes on the exam!', timestamp: Date.now() });
+    }
+  }, [gazeData]);
+
+  // Clear warning after 3 seconds
+  useEffect(() => {
+    if (activeWarning) {
+      const timer = setTimeout(() => {
+        setActiveWarning(null);
+      }, 3000);
+      return () => clearTimeout(timer);
+    }
+  }, [activeWarning]);
 
   // Stop detection on unmount
   useEffect(() => {
@@ -365,11 +375,11 @@ export const Exam = () => {
               </div>
             )}
 
-            {gazeData?.isLookingAway && (
-              <div className="absolute inset-0 bg-yellow-500/20 flex items-center justify-center animate-pulse">
-                <div className="bg-yellow-600 text-white px-4 py-2 rounded font-bold flex items-center">
-                  <Eye className="w-5 h-5 mr-2" />
-                  Looking Away!
+            {activeWarning && (
+              <div className="absolute inset-0 bg-yellow-500/30 flex items-center justify-center animate-pulse">
+                <div className="bg-yellow-600 text-white px-6 py-3 rounded-lg font-bold text-lg flex items-center shadow-lg">
+                  <Eye className="w-6 h-6 mr-3" />
+                  {activeWarning.message}
                 </div>
               </div>
             )}
@@ -453,55 +463,8 @@ export const Exam = () => {
                 <AlertTriangle className="w-4 h-4 text-red-600" />
               )}
             </div>
-
-            <div
-              className={`flex items-center justify-between p-3 rounded-lg ${
-                gazeModelsLoaded
-                  ? isDetecting
-                    ? 'bg-green-50'
-                    : 'bg-blue-50'
-                  : 'bg-gray-50'
-              }`}
-            >
-              <span
-                className={`text-sm font-medium ${
-                  gazeModelsLoaded
-                    ? isDetecting
-                      ? 'text-green-700'
-                      : 'text-blue-700'
-                    : 'text-gray-500'
-                }`}
-              >
-                {gazeModelsLoaded ? 'Eye Gaze Tracking' : 'Loading...'}
-              </span>
-              {gazeModelsLoaded ? (
-                isDetecting ? (
-                  <CheckCircle className="w-4 h-4 text-green-600" />
-                ) : (
-                  <Eye className="w-4 h-4 text-blue-600" />
-                )
-              ) : (
-                <div className="w-4 h-4 border-2 border-gray-400 border-t-transparent rounded-full animate-spin" />
-              )}
-            </div>
           </div>
         </div>
-
-        {/* Eye Gaze Monitor */}
-        <EyeGazeMonitor
-          gazeData={gazeData}
-          isDetecting={isDetecting}
-          modelsLoaded={gazeModelsLoaded}
-          loading={gazeLoading}
-          error={gazeError}
-          suspiciousEvents={suspiciousEvents}
-          onStartDetection={startDetection}
-          onStopDetection={stopDetection}
-          onClearEvents={clearEvents}
-          violationScore={violationScore}
-          violationLevel={violationLevel}
-          setSensitivity={setSensitivity}
-        />
 
         {/* Question Navigator */}
         <div className="p-6 flex-1 overflow-auto">
