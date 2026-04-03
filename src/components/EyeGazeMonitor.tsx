@@ -1,5 +1,6 @@
-import { Eye, AlertTriangle, CheckCircle, EyeOff } from 'lucide-react';
-import type { EyeGazeData, SuspiciousGazeEvent } from '../hooks/useEyeGazeDetection';
+import { useState } from 'react';
+import { Eye, AlertTriangle, CheckCircle, EyeOff, Settings, TrendingUp } from 'lucide-react';
+import type { EyeGazeData, SuspiciousGazeEvent, GazeSensitivity } from '../hooks/useEyeGazeDetection';
 
 interface EyeGazeMonitorProps {
   gazeData: EyeGazeData | null;
@@ -11,6 +12,9 @@ interface EyeGazeMonitorProps {
   onStartDetection: () => void;
   onStopDetection: () => void;
   onClearEvents: () => void;
+  violationScore?: number;
+  violationLevel?: 'low' | 'medium' | 'high' | 'critical';
+  setSensitivity?: (sensitivity: GazeSensitivity) => void;
 }
 
 export const EyeGazeMonitor: React.FC<EyeGazeMonitorProps> = ({
@@ -22,8 +26,13 @@ export const EyeGazeMonitor: React.FC<EyeGazeMonitorProps> = ({
   suspiciousEvents,
   onStartDetection,
   onStopDetection,
-  onClearEvents
+  onClearEvents,
+  violationScore = 0,
+  violationLevel = 'low',
+  setSensitivity
 }) => {
+  const [showSettings, setShowSettings] = useState(false);
+
   const getGazeDirectionIcon = (direction: string) => {
     switch (direction) {
       case 'left':
@@ -66,6 +75,21 @@ export const EyeGazeMonitor: React.FC<EyeGazeMonitorProps> = ({
     }
   };
 
+  const getViolationLevelColor = (level: string) => {
+    switch (level) {
+      case 'critical':
+        return 'text-red-700 bg-red-100 border-red-300';
+      case 'high':
+        return 'text-orange-700 bg-orange-100 border-orange-300';
+      case 'medium':
+        return 'text-yellow-700 bg-yellow-100 border-yellow-300';
+      case 'low':
+        return 'text-green-700 bg-green-100 border-green-300';
+      default:
+        return 'text-gray-700 bg-gray-100 border-gray-300';
+    }
+  };
+
   const formatTimestamp = (timestamp: string) => {
     const date = new Date(timestamp);
     return date.toLocaleTimeString('en-US', {
@@ -91,6 +115,15 @@ export const EyeGazeMonitor: React.FC<EyeGazeMonitorProps> = ({
             Eye Gaze Monitor
           </h3>
           <div className="flex items-center space-x-2">
+            {setSensitivity && (
+              <button
+                onClick={() => setShowSettings(!showSettings)}
+                className="p-2 hover:bg-gray-100 rounded-lg transition-colors"
+                title="Settings"
+              >
+                <Settings className="w-4 h-4 text-gray-600" />
+              </button>
+            )}
             {loading && (
               <span className="text-xs text-gray-500">Loading models...</span>
             )}
@@ -118,6 +151,35 @@ export const EyeGazeMonitor: React.FC<EyeGazeMonitorProps> = ({
       </div>
 
       <div className="p-6">
+        {/* Settings Panel */}
+        {showSettings && setSensitivity && (
+          <div className="mb-6 p-4 bg-blue-50 border border-blue-200 rounded-lg">
+            <h4 className="text-sm font-semibold text-blue-900 mb-3 flex items-center">
+              <Settings className="w-4 h-4 mr-2" />
+              Detection Sensitivity
+            </h4>
+            <div className="grid grid-cols-2 gap-2">
+              {(['low', 'medium', 'high', 'strict'] as const).map((level) => (
+                <button
+                  key={level}
+                  onClick={() => setSensitivity(level)}
+                  className={`px-3 py-2 rounded-lg text-sm font-medium transition-colors ${
+                    level === 'low' ? 'bg-green-100 text-green-700 hover:bg-green-200' :
+                    level === 'medium' ? 'bg-yellow-100 text-yellow-700 hover:bg-yellow-200' :
+                    level === 'high' ? 'bg-orange-100 text-orange-700 hover:bg-orange-200' :
+                    'bg-red-100 text-red-700 hover:bg-red-200'
+                  }`}
+                >
+                  {level.charAt(0).toUpperCase() + level.slice(1)}
+                </button>
+              ))}
+            </div>
+            <p className="text-xs text-blue-700 mt-2">
+              Higher sensitivity detects more suspicious behavior but may have more false positives.
+            </p>
+          </div>
+        )}
+
         {/* Status */}
         <div className="mb-6">
           {loading && (
@@ -137,7 +199,7 @@ export const EyeGazeMonitor: React.FC<EyeGazeMonitorProps> = ({
           )}
 
           {!loading && !error && (
-            <div className="grid grid-cols-2 gap-4">
+            <div className="grid grid-cols-3 gap-4">
               <div
                 className={`p-4 rounded-lg border ${
                   modelsLoaded
@@ -183,6 +245,18 @@ export const EyeGazeMonitor: React.FC<EyeGazeMonitorProps> = ({
                   {isDetecting ? 'Active' : 'Inactive'}
                 </p>
               </div>
+
+              {/* Violation Score */}
+              <div
+                className={`p-4 rounded-lg border ${getViolationLevelColor(violationLevel)}`}
+              >
+                <div className="flex items-center justify-between mb-2">
+                  <span className="text-sm font-medium">Risk Level</span>
+                  <TrendingUp className="w-4 h-4" />
+                </div>
+                <p className="text-2xl font-bold">{violationScore}</p>
+                <p className="text-xs font-medium capitalize">{violationLevel}</p>
+              </div>
             </div>
           )}
         </div>
@@ -209,7 +283,7 @@ export const EyeGazeMonitor: React.FC<EyeGazeMonitorProps> = ({
               {/* Debug: Pupil positions */}
               <div className="mt-3 pt-3 border-t border-gray-200">
                 <p className="text-xs text-gray-500 font-mono">
-                  Left: ({gazeData.leftPupilPosition?.x.toFixed(4)}, {gazeData.leftPupilPosition?.y.toFixed(4)}) | 
+                  Left: ({gazeData.leftPupilPosition?.x.toFixed(4)}, {gazeData.leftPupilPosition?.y.toFixed(4)}) |
                   Right: ({gazeData.rightPupilPosition?.x.toFixed(4)}, {gazeData.rightPupilPosition?.y.toFixed(4)})
                 </p>
               </div>

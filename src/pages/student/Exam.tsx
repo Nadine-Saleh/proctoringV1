@@ -33,7 +33,10 @@ export const Exam = () => {
     videoRef: gazeVideoRef,
     startDetection,
     stopDetection,
-    clearEvents
+    clearEvents,
+    violationScore,
+    violationLevel,
+    setSensitivity
   } = useEyeGazeDetection(examStarted);
 
   const {
@@ -54,21 +57,33 @@ export const Exam = () => {
 
   // Debug logging
   useEffect(() => {
-    console.log('[Exam] Component mounted, currentExam:', currentExam);
+    console.log('[Exam] ========== STATE UPDATE ==========');
+    console.log('[Exam] currentExam:', currentExam);
     console.log('[Exam] showLivenessCheck:', showLivenessCheck);
-    console.log('[Exam] liveness state - isChecking:', isChecking, 'isPassed:', livenessPassed, 'isFailed:', livenessFailed);
-    console.log('[Exam] Camera status:', status.camera, 'examStarted:', examStarted);
-    console.log('[Exam] Gaze models loaded:', gazeModelsLoaded);
-    console.log('[Exam] Is detecting:', isDetecting);
-  }, [currentExam, showLivenessCheck, isChecking, livenessPassed, livenessFailed, status.camera, gazeModelsLoaded, isDetecting, examStarted]);
+    console.log('[Exam] examStarted:', examStarted);
+    console.log('[Exam] liveness - isChecking:', isChecking, 'isPassed:', livenessPassed, 'isFailed:', livenessFailed);
+    console.log('[Exam] Camera - status.camera:', status.camera, 'loading:', status.loading);
+    console.log('[Exam] Gaze - modelsLoaded:', gazeModelsLoaded, 'isDetecting:', isDetecting, 'loading:', gazeLoading);
+    console.log('[Exam] Gaze - gazeData:', gazeData);
+    console.log('[Exam] ====================================');
+  }, [currentExam, showLivenessCheck, isChecking, livenessPassed, livenessFailed, status.camera, gazeModelsLoaded, isDetecting, examStarted, gazeData, gazeLoading]);
 
   // Start eye gaze detection when models are loaded and camera is ready AND exam has started
   useEffect(() => {
+    console.log('[Exam] Checking if should start gaze detection...');
+    console.log('[Exam] Conditions:');
+    console.log('  - examStarted:', examStarted);
+    console.log('  - gazeModelsLoaded:', gazeModelsLoaded);
+    console.log('  - status.camera:', status.camera);
+    console.log('  - isDetecting:', isDetecting);
+    
     if (examStarted && gazeModelsLoaded && status.camera && !isDetecting) {
-      console.log('[Exam] Starting eye gaze detection...');
+      console.log('[Exam] ✅ All conditions met - Starting eye gaze detection...');
       startDetection();
+    } else {
+      console.log('[Exam] ⏸️ Not starting - conditions not met');
     }
-  }, [gazeModelsLoaded, status.camera, isDetecting, startDetection, examStarted]);
+  }, [examStarted, gazeModelsLoaded, status.camera, isDetecting, startDetection]);
 
   // Stop detection on unmount
   useEffect(() => {
@@ -79,10 +94,11 @@ export const Exam = () => {
 
   // Combined video ref for both proctoring and eye gaze
   const setCombinedVideoRef = useCallback((element: HTMLVideoElement | null) => {
-    console.log('[Exam] Combined video ref set:', element !== null);
+    console.log('[Exam] 📹 Video ref callback called with:', element);
     combinedVideoRef.current = element;
     proctoringVideoRef(element);
     gazeVideoRef(element);
+    console.log('[Exam] ✅ Video ref passed to proctoring and gaze hooks');
   }, [proctoringVideoRef, gazeVideoRef]);
 
   // Separate ref just for liveness check modal
@@ -482,6 +498,9 @@ export const Exam = () => {
           onStartDetection={startDetection}
           onStopDetection={stopDetection}
           onClearEvents={clearEvents}
+          violationScore={violationScore}
+          violationLevel={violationLevel}
+          setSensitivity={setSensitivity}
         />
 
         {/* Question Navigator */}

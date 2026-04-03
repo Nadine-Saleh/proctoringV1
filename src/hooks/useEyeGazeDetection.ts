@@ -36,7 +36,83 @@ export interface UseEyeGazeDetectionReturn {
   startDetection: () => void;
   stopDetection: () => void;
   clearEvents: () => void;
+  violationScore: number;
+  violationLevel: 'low' | 'medium' | 'high' | 'critical';
+  violationHistory: ViolationRecord[];
+  setSensitivity: (sensitivity: GazeSensitivity) => void;
 }
+
+export type GazeSensitivity = 'low' | 'medium' | 'high' | 'strict';
+
+export interface ViolationRecord {
+  id: string;
+  timestamp: string;
+  type: SuspiciousGazeEvent['type'];
+  severity: SuspiciousGazeEvent['severity'];
+  score: number;
+  description: string;
+}
+
+export interface GazeDetectionConfig {
+  sensitivity: GazeSensitivity;
+  lookingAwayThreshold: number; // milliseconds
+  blinkThreshold: number; // EAR value
+  sideGlanceThreshold: number;
+  rapidMovementCount: number;
+  timeWindow: number; // milliseconds for rapid movement detection
+}
+
+// Sensitivity presets
+const SENSITIVITY_PRESETS: Record<GazeSensitivity, GazeDetectionConfig> = {
+  low: {
+    sensitivity: 'low',
+    lookingAwayThreshold: 3000,
+    blinkThreshold: 0.20,
+    sideGlanceThreshold: 0.018,
+    rapidMovementCount: 7,
+    timeWindow: 2000
+  },
+  medium: {
+    sensitivity: 'medium',
+    lookingAwayThreshold: 2000,
+    blinkThreshold: 0.25,
+    sideGlanceThreshold: 0.015,
+    rapidMovementCount: 5,
+    timeWindow: 2000
+  },
+  high: {
+    sensitivity: 'high',
+    lookingAwayThreshold: 1500,
+    blinkThreshold: 0.28,
+    sideGlanceThreshold: 0.012,
+    rapidMovementCount: 4,
+    timeWindow: 2500
+  },
+  strict: {
+    sensitivity: 'strict',
+    lookingAwayThreshold: 1000,
+    blinkThreshold: 0.30,
+    sideGlanceThreshold: 0.010,
+    rapidMovementCount: 3,
+    timeWindow: 3000
+  }
+};
+
+// Violation scoring weights
+const VIOLATION_SCORES = {
+  LOOKING_AWAY: { low: 1, medium: 2, high: 3 },
+  EXCESSIVE_BLINKING: { low: 1, medium: 2, high: 3 },
+  EYE_CLOSURE: { low: 2, medium: 3, high: 5 },
+  RAPID_EYE_MOVEMENT: { low: 1, medium: 2, high: 3 }
+};
+
+// Violation level thresholds
+const VIOLATION_LEVELS = {
+  low: 0,
+  medium: 5,
+  high: 10,
+  critical: 20
+};
 
 // Thresholds - calibrated for MediaPipe normalized coordinates (0-1)
 const BLINK_THRESHOLD = 0.25;
@@ -78,8 +154,56 @@ export const useEyeGazeDetection = (isEnabled: boolean = true): UseEyeGazeDetect
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
   const [suspiciousEvents, setSuspiciousEvents] = useState<SuspiciousGazeEvent[]>([]);
+  const [violationScore, setViolationScore] = useState(0);
+  const [violationHistory, setViolationHistory] = useState<ViolationRecord[]>([]);
+  const [currentSensitivity, setCurrentSensitivity] = useState<GazeSensitivity>('medium');
 
   const log = (msg: string) => console.log('[EyeGaze]', msg);
+
+  // Get current sensitivity config
+  const getCurrentConfig = useCallback(() => {
+    return SENSITIVITY_PRESETS[currentSensitivity];
+  }, [currentSensitivity]);
+
+  // Set sensitivity function
+  const setSensitivity = useCallback((sensitivity: GazeSensitivity) => {
+    setCurrentSensitivity(sensitivity);
+    log(`Sensitivity changed to: ${sensitivity}`);
+  }, []);
+
+  // Calculate violation level from score
+  const getViolationLevel = useCallback((score: number): 'low' | 'medium' | 'high' | 'critical' => {
+    if (score >= VIOLATION_LEVELS.critical) return 'critical';
+    if (score >= VIOLATION_LEVELS.high) return 'high';
+    if (score >= VIOLATION_LEVELS.medium) return 'medium';
+    return 'low';
+  }, []);
+
+  // Add violation score
+  const addViolationScore = useCallback((type: SuspiciousGazeEvent['type'], severity: SuspiciousGazeEvent['severity']) => {
+    const score = VIOLATION_SCORES[type][severity] || 1;
+    setViolationScore(prev => {
+      const newScore = prev + score;
+      const newLevel = getViolationLevel(newScore);
+      console.log(`[EyeGaze] 📊 Violation score: ${newScore} (${newLevel})`);
+      return newScore;
+    });
+
+    // Add to history
+    const violation: ViolationRecord = {
+      id: `v${Date.now()}-${Math.random().toString(36).substr(2, 9)}`,
+      timestamp: new Date().toISOString(),
+      type,
+      severity,
+      score,
+      description: `${type.replace(/_/g, ' ')} - ${severity} severity (+${score} pts)`
+    };
+
+    setViolationHistory(prev => {
+      const newHistory = [...prev, violation];
+      return newHistory.slice(-100); // Keep last 100 violations
+    });
+  }, [getViolationLevel]);
 
   // Calculate Eye Aspect Ratio (EAR) for blink detection
   const calculateEAR = useCallback((landmarks: any[], topIndices: number[], bottomIndices: number[], cornerIndices: number[]): number => {
@@ -208,11 +332,14 @@ export const useEyeGazeDetection = (isEnabled: boolean = true): UseEyeGazeDetect
         return newEvents.slice(-50);
       });
 
+      // Add violation score
+      addViolationScore(type, severity);
+
       const timestamp = new Date().toLocaleTimeString();
       const severityIcon = severity === 'high' ? '🚨' : severity === 'medium' ? '⚠️' : 'ℹ️';
       console.log(`[${timestamp}] ${severityIcon} [${type}] ${description}`);
     },
-    []
+    [addViolationScore]
   );
 
   // Detect rapid eye movements
@@ -241,7 +368,18 @@ export const useEyeGazeDetection = (isEnabled: boolean = true): UseEyeGazeDetect
 
   // Main detection loop
   const detectGaze = useCallback(async () => {
-    if (!faceLandmarkerRef.current || !videoRef.current || !isDetectingRef.current) {
+    if (!faceLandmarkerRef.current) {
+      console.warn('[EyeGaze] ⚠️ No face landmarker');
+      return;
+    }
+    
+    if (!videoRef.current) {
+      console.warn('[EyeGaze] ⚠️ No video element');
+      return;
+    }
+    
+    if (!isDetectingRef.current) {
+      console.warn('[EyeGaze] ⚠️ Not detecting (isDetectingRef = false)');
       return;
     }
 
@@ -250,23 +388,29 @@ export const useEyeGazeDetection = (isEnabled: boolean = true): UseEyeGazeDetect
       
       // Check if video is ready
       if (video.readyState < 2) {
-        animationFrameRef.current = window.setTimeout(detectGaze, 100) as any;
+        console.log('[EyeGaze] Video not ready, state:', video.readyState);
+        animationFrameRef.current = window.setTimeout(detectGaze, 500) as any;
         return;
       }
 
+      console.log('[EyeGaze] 🔍 Running detection...');
       const startTime = performance.now();
       const result: FaceLandmarkerResult = faceLandmarkerRef.current.detectForVideo(
         video,
         startTime
       );
 
+      console.log('[EyeGaze] Detection result - faces found:', result.faceLandmarks?.length || 0);
+
       if (!result.faceLandmarks || result.faceLandmarks.length === 0) {
+        console.log('[EyeGaze] ⚠️ No face detected');
         setGazeData(null);
-        animationFrameRef.current = requestAnimationFrame(detectGaze);
+        animationFrameRef.current = window.setTimeout(detectGaze, 100) as any;
         return;
       }
 
       const landmarks = result.faceLandmarks[0];
+      console.log('[EyeGaze] ✅ Face detected with', landmarks.length, 'landmarks');
 
       // Extract eye landmarks
       const leftCornerLandmarks = LEFT_EYE_KEY_POINTS.corner.map(i => landmarks[i]).filter(Boolean);
@@ -377,16 +521,23 @@ export const useEyeGazeDetection = (isEnabled: boolean = true): UseEyeGazeDetect
 
   // Load Face Landmarker model
   const loadModels = useCallback(async () => {
-    if (modelsLoaded) return;
+    if (modelsLoaded) {
+      console.log('[EyeGaze] Models already loaded, skipping');
+      return;
+    }
 
     try {
+      console.log('[EyeGaze] 📦 Loading Face Landmarker model...');
       log('Loading Face Landmarker model...');
       setLoading(true);
 
+      console.log('[EyeGaze] Resolving FilesetResolver...');
       const vision = await FilesetResolver.forVisionTasks(
         'https://cdn.jsdelivr.net/npm/@mediapipe/tasks-vision@0.10.32/wasm'
       );
+      console.log('[EyeGaze] ✅ FilesetResolver resolved');
 
+      console.log('[EyeGaze] Creating FaceLandmarker...');
       const faceLandmarker = await FaceLandmarker.createFromOptions(vision, {
         baseOptions: {
           modelAssetPath:
@@ -401,8 +552,10 @@ export const useEyeGazeDetection = (isEnabled: boolean = true): UseEyeGazeDetect
       faceLandmarkerRef.current = faceLandmarker;
       setModelsLoaded(true);
       setLoading(false);
+      console.log('[EyeGaze] ✅✅✅ Face Landmarker loaded successfully!');
       log('✓ Face Landmarker loaded successfully');
       } catch (err: any) {
+      console.error('[EyeGaze] ❌❌❌ Model loading error:', err);
       log('✗ Model loading error: ' + err.message);
       setError('Failed to load eye tracking models: ' + err.message);
       setModelsLoaded(false);
@@ -413,6 +566,12 @@ export const useEyeGazeDetection = (isEnabled: boolean = true): UseEyeGazeDetect
 
   // Start detection
   const startDetection = useCallback(() => {
+    console.log('[EyeGaze] 🚀 startDetection called');
+    console.log('[EyeGaze] isEnabled:', isEnabled);
+    console.log('[EyeGaze] videoRef.current:', videoRef.current);
+    console.log('[EyeGaze] modelsLoaded:', modelsLoaded);
+    console.log('[EyeGaze] isDetectingRef.current:', isDetectingRef.current);
+    
     if (!isEnabled) {
       log('⚠️ Detection disabled');
       return;
@@ -420,11 +579,13 @@ export const useEyeGazeDetection = (isEnabled: boolean = true): UseEyeGazeDetect
 
     if (!videoRef.current) {
       log('⚠️ No video element available');
+      console.error('[EyeGaze] ❌ Cannot start - no video element');
       return;
     }
 
     if (!modelsLoaded) {
       log('⚠️ Models not loaded yet');
+      console.error('[EyeGaze] ❌ Cannot start - models not loaded');
       return;
     }
 
@@ -433,12 +594,13 @@ export const useEyeGazeDetection = (isEnabled: boolean = true): UseEyeGazeDetect
       return;
     }
 
-    log('Starting eye gaze detection...');
+    log('✅ Starting eye gaze detection...');
     isDetectingRef.current = true;
     hasStartedDetectionRef.current = true;
     setIsDetecting(true);
+    console.log('[EyeGaze] ✅ Detection started, calling detectGaze...');
     detectGaze();
-  }, [modelsLoaded, detectGaze]);
+  }, [modelsLoaded, detectGaze, isEnabled]);
 
   // Stop detection
   const stopDetection = useCallback(() => {
@@ -465,9 +627,16 @@ export const useEyeGazeDetection = (isEnabled: boolean = true): UseEyeGazeDetect
   // Video ref callback
   const setVideoRef = useCallback(
     (element: HTMLVideoElement | null) => {
+      console.log('[EyeGaze] 📹 Video ref callback called:', element ? 'element received' : 'null');
       videoRef.current = element;
       if (element) {
         log('✓ Video element mounted for eye tracking');
+        console.log('[EyeGaze] Video element details:', {
+          readyState: element.readyState,
+          videoWidth: element.videoWidth,
+          videoHeight: element.videoHeight,
+          srcObject: element.srcObject ? 'present' : 'null'
+        });
       }
     },
     []
@@ -499,6 +668,10 @@ export const useEyeGazeDetection = (isEnabled: boolean = true): UseEyeGazeDetect
     videoRef: setVideoRef,
     startDetection,
     stopDetection,
-    clearEvents
+    clearEvents,
+    violationScore,
+    violationLevel: getViolationLevel(violationScore),
+    violationHistory,
+    setSensitivity
   };
 };
