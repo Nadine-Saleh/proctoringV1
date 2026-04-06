@@ -15,6 +15,11 @@ export interface EyeGazeData {
   isLookingAway: boolean;
   isBlinking: boolean;
   confidence: number;
+  // New fields for advanced proctoring
+  gazeDuration: number; // ms continuously looking away
+  headPose?: { yaw: number; pitch: number; roll: number };
+  pupilDistance?: number; // pixels between pupils
+  calibrationOffset?: { x: number; y: number };
 }
 
 export interface SuspiciousGazeEvent {
@@ -39,7 +44,11 @@ export interface UseEyeGazeDetectionReturn {
   violationScore: number;
   violationLevel: 'low' | 'medium' | 'high' | 'critical';
   violationHistory: ViolationRecord[];
-  setSensitivity: (sensitivity: GazeSensitivity) => void;
+  setSensitivity?: (sensitivity: GazeSensitivity) => void;
+  // Calibration support
+  setCalibrationOffsets: (offsets: { x: number; y: number }) => void;
+  faceLandmarker: FaceLandmarker | null;
+  videoElement: HTMLVideoElement | null;
 }
 
 export type GazeSensitivity = 'low' | 'medium' | 'high' | 'strict';
@@ -63,40 +72,40 @@ export interface GazeDetectionConfig {
 }
 
 // Sensitivity presets
-const SENSITIVITY_PRESETS: Record<GazeSensitivity, GazeDetectionConfig> = {
-  low: {
-    sensitivity: 'low',
-    lookingAwayThreshold: 3000,
-    blinkThreshold: 0.20,
-    sideGlanceThreshold: 0.018,
-    rapidMovementCount: 7,
-    timeWindow: 2000
-  },
-  medium: {
-    sensitivity: 'medium',
-    lookingAwayThreshold: 2000,
-    blinkThreshold: 0.25,
-    sideGlanceThreshold: 0.015,
-    rapidMovementCount: 5,
-    timeWindow: 2000
-  },
-  high: {
-    sensitivity: 'high',
-    lookingAwayThreshold: 1500,
-    blinkThreshold: 0.28,
-    sideGlanceThreshold: 0.012,
-    rapidMovementCount: 4,
-    timeWindow: 2500
-  },
-  strict: {
-    sensitivity: 'strict',
-    lookingAwayThreshold: 1000,
-    blinkThreshold: 0.30,
-    sideGlanceThreshold: 0.010,
-    rapidMovementCount: 3,
-    timeWindow: 3000
-  }
-};
+// const SENSITIVITY_PRESETS: Record<GazeSensitivity, GazeDetectionConfig> = {
+//   low: {
+//     sensitivity: 'low',
+//     lookingAwayThreshold: 3000,
+//     blinkThreshold: 0.20,
+//     sideGlanceThreshold: 0.018,
+//     rapidMovementCount: 7,
+//     timeWindow: 2000
+//   },
+//   medium: {
+//     sensitivity: 'medium',
+//     lookingAwayThreshold: 2000,
+//     blinkThreshold: 0.25,
+//     sideGlanceThreshold: 0.015,
+//     rapidMovementCount: 5,
+//     timeWindow: 2000
+//   },
+//   high: {
+//     sensitivity: 'high',
+//     lookingAwayThreshold: 1500,
+//     blinkThreshold: 0.28,
+//     sideGlanceThreshold: 0.012,
+//     rapidMovementCount: 4,
+//     timeWindow: 2500
+//   },
+//   strict: {
+//     sensitivity: 'strict',
+//     lookingAwayThreshold: 1000,
+//     blinkThreshold: 0.30,
+//     sideGlanceThreshold: 0.010,
+//     rapidMovementCount: 3,
+//     timeWindow: 3000
+//   }
+// };
 
 // Violation scoring weights
 const VIOLATION_SCORES = {
@@ -114,10 +123,49 @@ const VIOLATION_LEVELS = {
   critical: 20
 };
 
+/**
+ * Estimates head pose from face landmarks using simplified geometry.
+ * Uses nose tip, eye corners, and face outline to estimate yaw, pitch, roll.
+ */
+function estimateHeadPose(landmarks: Array<{ x: number; y: number; z: number }>): {
+  yaw: number;
+  pitch: number;
+  roll: number;
+} {
+  // Key landmark indices (MediaPipe Face Landmarker)
+  const noseTip = landmarks[1];
+  const leftEyeInner = landmarks[133];
+  const rightEyeInner = landmarks[362];
+  const chin = landmarks[152];
+  const forehead = landmarks[10];
+
+  if (!noseTip || !leftEyeInner || !rightEyeInner || !chin || !forehead) {
+    return { yaw: 0, pitch: 0, roll: 0 };
+  }
+
+  // Yaw: horizontal head rotation (nose position relative to eye center)
+  const eyeCenterX = (leftEyeInner.x + rightEyeInner.x) / 2;
+  const yaw = ((noseTip.x - eyeCenterX) * 100); // Scale to degrees approximation
+
+  // Pitch: vertical head tilt (nose position relative to eye line)
+  const eyeCenterY = (leftEyeInner.y + rightEyeInner.y) / 2;
+  const pitch = ((noseTip.y - eyeCenterY) * 80); // Scale to degrees approximation
+
+  // Roll: head tilt (eye line angle from horizontal)
+  const eyeDeltaY = rightEyeInner.y - leftEyeInner.y;
+  const roll = (eyeDeltaY * 90); // Scale to degrees approximation
+
+  return {
+    yaw: Math.round(yaw * 10) / 10,
+    pitch: Math.round(pitch * 10) / 10,
+    roll: Math.round(roll * 10) / 10
+  };
+}
+
 // Thresholds - calibrated for MediaPipe normalized coordinates (0-1)
 const BLINK_THRESHOLD = 0.25;
-const LOOKING_AWAY_THRESHOLD = 0.015; // Balanced - detect looking away
-const SIDE_GLANCE_THRESHOLD = 0.012; // Balanced for left/right
+const LOOKING_AWAY_THRESHOLD = 0.008; // Lowered for better detection
+const SIDE_GLANCE_THRESHOLD = 0.006; // Lowered for side glance detection
 
 // Landmark indices for eyes (MediaPipe Face Landmarker - 478 landmarks)
 // Iris landmarks are at indices 468-477 in the full face mesh
@@ -147,6 +195,7 @@ export const useEyeGazeDetection = (isEnabled: boolean = true): UseEyeGazeDetect
   const rapidMovementTimerRef = useRef<any>(null);
   const hasStartedDetectionRef = useRef(false);
   const lastPupilPositionsRef = useRef<{ left: { x: number; y: number }; right: { x: number; y: number } } | null>(null);
+  const calibrationOffsetRef = useRef<{ x: number; y: number } | null>(null);
 
   const [gazeData, setGazeData] = useState<EyeGazeData | null>(null);
   const [isDetecting, setIsDetecting] = useState(false);
@@ -156,20 +205,22 @@ export const useEyeGazeDetection = (isEnabled: boolean = true): UseEyeGazeDetect
   const [suspiciousEvents, setSuspiciousEvents] = useState<SuspiciousGazeEvent[]>([]);
   const [violationScore, setViolationScore] = useState(0);
   const [violationHistory, setViolationHistory] = useState<ViolationRecord[]>([]);
-  const [currentSensitivity, setCurrentSensitivity] = useState<GazeSensitivity>('medium');
+  const [faceLandmarkerState, setFaceLandmarkerState] = useState<FaceLandmarker | null>(null);
+  const [videoElementState, setVideoElementState] = useState<HTMLVideoElement | null>(null);
+  // const [currentSensitivity, setCurrentSensitivity] = useState<GazeSensitivity>('medium');
 
   const log = (msg: string) => console.log('[EyeGaze]', msg);
 
   // Get current sensitivity config
-  const getCurrentConfig = useCallback(() => {
-    return SENSITIVITY_PRESETS[currentSensitivity];
-  }, [currentSensitivity]);
+  // const getCurrentConfig = useCallback(() => {
+  //   return SENSITIVITY_PRESETS[currentSensitivity];
+  // }, [currentSensitivity]);
 
   // Set sensitivity function
-  const setSensitivity = useCallback((sensitivity: GazeSensitivity) => {
-    setCurrentSensitivity(sensitivity);
-    log(`Sensitivity changed to: ${sensitivity}`);
-  }, []);
+  // const setSensitivity = useCallback((sensitivity: GazeSensitivity) => {
+  //   setCurrentSensitivity(sensitivity);
+  //   log(`Sensitivity changed to: ${sensitivity}`);
+  // }, []);
 
   // Calculate violation level from score
   const getViolationLevel = useCallback((score: number): 'low' | 'medium' | 'high' | 'critical' => {
@@ -452,27 +503,63 @@ export const useEyeGazeDetection = (isEnabled: boolean = true): UseEyeGazeDetect
 
       // Determine gaze direction
       const gazeDirection = determineGazeDirection(leftPupil, rightPupil);
-      
+
       const isBlinking = leftEAR < BLINK_THRESHOLD && rightEAR < BLINK_THRESHOLD;
       const isLookingAway = gazeDirection !== 'center';
+
+      // Get current time for duration calculations
+      const now = Date.now();
+
+      // Calculate gaze duration (ms continuously looking away)
+      let gazeDuration = 0;
+      if (isLookingAway && lookingAwayStartTimeRef.current) {
+        gazeDuration = now - lookingAwayStartTimeRef.current;
+      }
+
+      // Calculate pupil distance (distance between iris centers)
+      let pupilDistance: number | undefined;
+      if (leftPupil && rightPupil) {
+        const leftIrisCenter = {
+          x: leftIrisLandmarks.reduce((sum, l) => sum + l.x, 0) / leftIrisLandmarks.length,
+          y: leftIrisLandmarks.reduce((sum, l) => sum + l.y, 0) / leftIrisLandmarks.length
+        };
+        const rightIrisCenter = {
+          x: rightIrisLandmarks.reduce((sum, l) => sum + l.x, 0) / rightIrisLandmarks.length,
+          y: rightIrisLandmarks.reduce((sum, l) => sum + l.y, 0) / rightIrisLandmarks.length
+        };
+        pupilDistance = Math.hypot(leftIrisCenter.x - rightIrisCenter.x, leftIrisCenter.y - rightIrisCenter.y);
+      }
+
+      // Estimate head pose from face landmarks (simplified using eye/face geometry)
+      const headPose = estimateHeadPose(landmarks);
+
+      // Apply calibration offset if available
+      const calibratedLeftPupil = leftPupil && calibrationOffsetRef.current
+        ? { x: leftPupil.x - calibrationOffsetRef.current.x, y: leftPupil.y - calibrationOffsetRef.current.y }
+        : leftPupil;
+      const calibratedRightPupil = rightPupil && calibrationOffsetRef.current
+        ? { x: rightPupil.x - calibrationOffsetRef.current.x, y: rightPupil.y - calibrationOffsetRef.current.y }
+        : rightPupil;
 
       const newGazeData: EyeGazeData = {
         leftEyeOpen: leftEAR,
         rightEyeOpen: rightEAR,
-        leftPupilPosition: leftPupil,
-        rightPupilPosition: rightPupil,
+        leftPupilPosition: calibratedLeftPupil,
+        rightPupilPosition: calibratedRightPupil,
         gazeDirection,
         eyeAspectRatio: { left: leftEAR, right: rightEAR },
         isLookingAway,
         isBlinking,
-        confidence: result.faceLandmarks.length > 0 ? 1 : 0
+        confidence: result.faceLandmarks.length > 0 ? 1 : 0,
+        gazeDuration,
+        headPose,
+        pupilDistance,
+        calibrationOffset: calibrationOffsetRef.current || undefined
       };
 
       setGazeData(newGazeData);
 
       // Check for suspicious behavior
-      const now = Date.now();
-
       // Blinking detection
       if (isBlinking) {
         if (!blinkStartTimeRef.current) {
@@ -567,6 +654,7 @@ export const useEyeGazeDetection = (isEnabled: boolean = true): UseEyeGazeDetect
       });
 
       faceLandmarkerRef.current = faceLandmarker;
+      setFaceLandmarkerState(faceLandmarker);
       setModelsLoaded(true);
       setLoading(false);
       console.log('[EyeGaze] ✅✅✅ Face Landmarker loaded successfully!');
@@ -641,11 +729,18 @@ export const useEyeGazeDetection = (isEnabled: boolean = true): UseEyeGazeDetect
     setSuspiciousEvents([]);
   }, []);
 
+  // Set calibration offsets
+  const setCalibrationOffsets = useCallback((offsets: { x: number; y: number }) => {
+    calibrationOffsetRef.current = offsets;
+    log(`Calibration offsets applied: x=${offsets.x.toFixed(3)}, y=${offsets.y.toFixed(3)}`);
+  }, []);
+
   // Video ref callback
   const setVideoRef = useCallback(
     (element: HTMLVideoElement | null) => {
       console.log('[EyeGaze] 📹 Video ref callback called:', element ? 'element received' : 'null');
       videoRef.current = element;
+      setVideoElementState(element);
       if (element) {
         log('✓ Video element mounted for eye tracking');
         console.log('[EyeGaze] Video element details:', {
@@ -689,6 +784,38 @@ export const useEyeGazeDetection = (isEnabled: boolean = true): UseEyeGazeDetect
     violationScore,
     violationLevel: getViolationLevel(violationScore),
     violationHistory,
-    setSensitivity
+    setCalibrationOffsets,
+    faceLandmarker: faceLandmarkerState,
+    videoElement: videoElementState
+    // setSensitivity - disabled pending sensitivity refactor
   };
+};
+
+/**
+ * Calibrates the gaze zone by displaying dots at 3 screen positions.
+ * Records gaze predictions and returns average offset for correction.
+ * @param videoRef - Reference to the video element
+ * @returns Promise with calibration offsets {x, y}
+ */
+export const calibrateGazeZone = async (
+  __videoRef: React.RefObject<HTMLVideoElement>
+): Promise<{ x: number; y: number }> => {
+  // Calibration requires face landmarker to be available
+  // This function should be called when the hook is active and models are loaded
+  // For now, we return a zero offset - actual calibration would require
+  // collecting gaze data points during a calibration UI flow
+  // A full implementation would:
+  // 1. Show dots sequentially
+  // 2. Record predicted gaze positions
+  // 3. Calculate average offset from expected positions
+  
+  // Placeholder: return zero offset (no calibration needed)
+  // In production, this would integrate with the detection loop to collect samples
+  console.log('[EyeGaze] Calibration requested - using default zero offset');
+  console.log('[EyeGaze] Full calibration requires:');
+  console.log('[EyeGaze]   1. Displaying calibration dots');
+  console.log('[EyeGaze]   2. Recording gaze predictions');
+  console.log('[EyeGaze]   3. Computing average offset');
+  
+  return { x: 0, y: 0 };
 };

@@ -5,10 +5,14 @@ import { useProctoring } from '../../hooks/useProctoring';
 import { useEyeGazeDetection } from '../../hooks/useEyeGazeDetection';
 import { useLivenessCheck } from '../../hooks/useLivenessCheck';
 import { LivenessCheckModal } from '../../components/LivenessCheckModal';
+import { CalibrationModal } from '../../components/CalibrationModal';
+import { ViolationExplanation } from '../../components/ViolationExplanation';
 import { mockQuestions } from '../../data/mockData';
+import { calculateViolationScore, getRiskLevel, ViolationEvent } from '../../utils/violationScorer';
+import { sendCriticalAlert } from '../../services/instructorAlertService';
 import {
   Clock, AlertTriangle, CheckCircle,
-  ChevronLeft, ChevronRight, CameraOff, Video, Eye
+  ChevronLeft, ChevronRight, CameraOff, Video, Settings
 } from 'lucide-react';
 
 export const Exam = () => {
@@ -21,6 +25,15 @@ export const Exam = () => {
   const [showLivenessCheck, setShowLivenessCheck] = useState(true);
   const [examStarted, setExamStarted] = useState(false);
   const [activeWarning, setActiveWarning] = useState<{ message: string; timestamp: number } | null>(null);
+  const [gazeStatus, setGazeStatus] = useState<'monitoring' | 'looking-away' | 'center'>('center');
+  const [showCalibration, setShowCalibration] = useState(false);
+  const [isCalibrated, setIsCalibrated] = useState(false);
+
+  // Violation tracking state
+  const [violationEvents, setViolationEvents] = useState<ViolationEvent[]>([]);
+  const [violationScore, setViolationScore] = useState(0);
+  const [riskLevel, setRiskLevel] = useState<'low' | 'medium' | 'high' | 'critical'>('low');
+  const [lastAlertTime, setLastAlertTime] = useState(0);
 
   const { status, videoRef: proctoringVideoRef, retryCamera } = useProctoring(examStarted);
   const {
@@ -29,7 +42,10 @@ export const Exam = () => {
     modelsLoaded: gazeModelsLoaded,
     videoRef: gazeVideoRef,
     startDetection,
-    stopDetection
+    stopDetection,
+    faceLandmarker,
+    videoElement: videoElementState,
+    setCalibrationOffsets
   } = useEyeGazeDetection(examStarted);
 
   const {
@@ -48,42 +64,97 @@ export const Exam = () => {
 
   const combinedVideoRef = useRef<HTMLVideoElement | null>(null);
 
-  // Debug logging
+  // Start eye gaze detection when exam starts and models are loaded
   useEffect(() => {
-    console.log('[Exam] ========== STATE UPDATE ==========');
-    console.log('[Exam] currentExam:', currentExam);
-    console.log('[Exam] showLivenessCheck:', showLivenessCheck);
-    console.log('[Exam] examStarted:', examStarted);
-    console.log('[Exam] liveness - isChecking:', isChecking, 'isPassed:', livenessPassed, 'isFailed:', livenessFailed);
-    console.log('[Exam] Camera - status.camera:', status.camera, 'loading:', status.loading);
-    console.log('[Exam] Gaze - modelsLoaded:', gazeModelsLoaded, 'isDetecting:', isDetecting);
-    console.log('[Exam] Gaze - gazeData:', gazeData);
-    console.log('[Exam] ====================================');
-  }, [currentExam, showLivenessCheck, isChecking, livenessPassed, livenessFailed, status.camera, gazeModelsLoaded, isDetecting, examStarted, gazeData]);
-
-  // Start eye gaze detection when models are loaded and camera is ready AND exam has started
-  useEffect(() => {
-    console.log('[Exam] Checking if should start gaze detection...');
-    console.log('[Exam] Conditions:');
-    console.log('  - examStarted:', examStarted);
-    console.log('  - gazeModelsLoaded:', gazeModelsLoaded);
-    console.log('  - status.camera:', status.camera);
-    console.log('  - isDetecting:', isDetecting);
-    
     if (examStarted && gazeModelsLoaded && status.camera && !isDetecting) {
-      console.log('[Exam] ✅ All conditions met - Starting eye gaze detection...');
       startDetection();
-    } else {
-      console.log('[Exam] ⏸️ Not starting - conditions not met');
     }
   }, [examStarted, gazeModelsLoaded, status.camera, isDetecting, startDetection]);
 
-  // Show persistent warnings for 3 seconds
+  // Show persistent warnings when looking away or blinking
   useEffect(() => {
-    if (gazeData?.isLookingAway || gazeData?.isBlinking) {
-      setActiveWarning({ message: 'Please keep your eyes on the exam!', timestamp: Date.now() });
+    if (gazeData?.isLookingAway) {
+      setGazeStatus('looking-away');
+      setActiveWarning({
+        message: 'Please keep your eyes on the exam!',
+        timestamp: Date.now()
+      });
+    } else {
+      setGazeStatus('center');
+      if (gazeData?.isBlinking) {
+        setActiveWarning({
+          message: 'Please keep your eyes on the exam!',
+          timestamp: Date.now()
+        });
+      }
     }
-  }, [gazeData]);
+  }, [gazeData?.isLookingAway, gazeData?.isBlinking]);
+
+  // Violation Detection Effect - monitor gaze data for violations
+  const lastViolationEventTimeRef = useRef<{ gaze_sustained: number; head_pose: number; gaze_brief: number }>({
+    gaze_sustained: 0,
+    head_pose: 0,
+    gaze_brief: 0
+  });
+
+  useEffect(() => {
+    if (!gazeData || !examStarted) return;
+
+    const newEvents: ViolationEvent[] = [];
+    const now = Date.now();
+
+    // Debounce: only record events every 5 seconds for sustained, 3 seconds for others
+    const SUSTAINED_DEBOUNCE = 5000;
+    const BRIEF_DEBOUNCE = 3000;
+
+    // Detect Sustained Look-Away (>3 seconds)
+    if (gazeData.isLookingAway && gazeData.gazeDuration > 3000 &&
+        now - lastViolationEventTimeRef.current.gaze_sustained > SUSTAINED_DEBOUNCE) {
+      newEvents.push({
+        id: `gaze_${Date.now()}`,
+        type: 'gaze_sustained_away',
+        severity: 'high',
+        timestamp: new Date().toISOString(),
+        duration: gazeData.gazeDuration,
+        description: `Looked away for ${Math.round(gazeData.gazeDuration / 1000)}s`,
+        metadata: { direction: gazeData.gazeDirection }
+      });
+      lastViolationEventTimeRef.current.gaze_sustained = now;
+    }
+
+    // Detect Extreme Head Pose (yaw > 45 degrees)
+    if (gazeData.headPose && Math.abs(gazeData.headPose.yaw) > 45 &&
+        now - lastViolationEventTimeRef.current.head_pose > SUSTAINED_DEBOUNCE) {
+      newEvents.push({
+        id: `head_${Date.now()}`,
+        type: 'head_pose_extreme',
+        severity: 'medium',
+        timestamp: new Date().toISOString(),
+        description: `Head turned ${Math.round(gazeData.headPose.yaw)}°`,
+        metadata: { pose: gazeData.headPose }
+      });
+      lastViolationEventTimeRef.current.head_pose = now;
+    }
+
+    // Detect brief look-away events (1-3 seconds)
+    if (gazeData.isLookingAway && gazeData.gazeDuration > 1000 && gazeData.gazeDuration <= 3000 &&
+        now - lastViolationEventTimeRef.current.gaze_brief > BRIEF_DEBOUNCE) {
+      newEvents.push({
+        id: `gaze_brief_${Date.now()}`,
+        type: 'gaze_looking_away',
+        severity: 'low',
+        timestamp: new Date().toISOString(),
+        duration: gazeData.gazeDuration,
+        description: `Brief look away for ${Math.round(gazeData.gazeDuration / 1000)}s`,
+        metadata: { direction: gazeData.gazeDirection }
+      });
+      lastViolationEventTimeRef.current.gaze_brief = now;
+    }
+
+    if (newEvents.length > 0) {
+      setViolationEvents(prev => [...prev, ...newEvents].slice(-50)); // Keep last 50 events
+    }
+  }, [gazeData, examStarted]);
 
   // Clear warning after 3 seconds
   useEffect(() => {
@@ -95,6 +166,37 @@ export const Exam = () => {
     }
   }, [activeWarning]);
 
+  // Scoring & Alerting Effect
+  useEffect(() => {
+    if (violationEvents.length === 0 && !examStarted) return;
+
+    const { score, level } = calculateViolationScore(violationEvents);
+    setViolationScore(score);
+    setRiskLevel(level);
+
+    const risk = getRiskLevel(score);
+    if (risk.shouldAlert && Date.now() - lastAlertTime > 60000) {
+      // TODO: Replace with actual user ID from auth context
+      const studentId = `student_${currentExam?.id || 'unknown'}`;
+      
+      sendCriticalAlert({
+        examId: currentExam?.id || '',
+        studentId,
+        violationScore: score,
+        events: violationEvents.slice(-10),
+      }).then((result) => {
+        if (result.success) {
+          setLastAlertTime(Date.now());
+          console.log('[Exam] Critical alert sent successfully:', result.alertId);
+        } else {
+          console.warn('[Exam] Alert not sent:', result.alertId);
+        }
+      }).catch((error) => {
+        console.error('[Exam] Failed to send critical alert:', error);
+      });
+    }
+  }, [violationEvents, currentExam, lastAlertTime, examStarted]);
+
   // Stop detection on unmount
   useEffect(() => {
     return () => {
@@ -104,16 +206,13 @@ export const Exam = () => {
 
   // Combined video ref for both proctoring and eye gaze
   const setCombinedVideoRef = useCallback((element: HTMLVideoElement | null) => {
-    console.log('[Exam] 📹 Video ref callback called with:', element);
     combinedVideoRef.current = element;
     proctoringVideoRef(element);
     gazeVideoRef(element);
-    console.log('[Exam] ✅ Video ref passed to proctoring and gaze hooks');
   }, [proctoringVideoRef, gazeVideoRef]);
 
   // Separate ref just for liveness check modal
   const setLivenessVideoRef = useCallback((element: HTMLVideoElement | null) => {
-    console.log('[Exam] Liveness video ref set:', element !== null);
     livenessVideoRef(element);
   }, [livenessVideoRef]);
 
@@ -134,11 +233,8 @@ export const Exam = () => {
   const handleLivenessComplete = useCallback(() => {
     // Only allow exam start if liveness check passed
     if (livenessPassed) {
-      console.log('[Exam] Liveness check passed, starting exam');
       setShowLivenessCheck(false);
       setExamStarted(true);
-    } else {
-      console.warn('[Exam] Attempted to start exam without passing liveness check');
     }
   }, [livenessPassed]);
 
@@ -148,6 +244,17 @@ export const Exam = () => {
       startCheck();
     }, 500);
   }, [resetCheck, startCheck]);
+
+  const handleCalibrationComplete = useCallback((offsets: { x: number; y: number }) => {
+    setCalibrationOffsets(offsets);
+    setIsCalibrated(true);
+    setShowCalibration(false);
+    console.log('[Exam] Calibration offsets applied:', offsets);
+  }, [setCalibrationOffsets]);
+
+  const handleStartCalibration = useCallback(() => {
+    setShowCalibration(true);
+  }, []);
 
   // Timer
   useEffect(() => {
@@ -173,7 +280,6 @@ export const Exam = () => {
 
   // Show "no exam" state if navigating directly to /exam
   if (!currentExam) {
-    console.log('[Exam] No currentExam, showing navigation message');
     return (
       <div className="min-h-screen bg-gray-50 flex items-center justify-center">
         <div className="text-center">
@@ -195,7 +301,6 @@ export const Exam = () => {
 
   // Show liveness check modal before exam starts
   if (showLivenessCheck) {
-    console.log('[Exam] Rendering LivenessCheckModal - isChecking:', isChecking, 'isPassed:', livenessPassed, 'isFailed:', livenessFailed);
     return (
       <LivenessCheckModal
         isOpen={showLivenessCheck}
@@ -212,6 +317,28 @@ export const Exam = () => {
         onRetry={handleLivenessRetry}
         onContinue={handleLivenessComplete}
       />
+    );
+  }
+
+  // Calibration modal
+  if (showCalibration && gazeModelsLoaded) {
+    const videoElement = videoElementState;
+    return (
+      <>
+        <div className="min-h-screen bg-gray-50 flex items-center justify-center">
+          <div className="text-center">
+            <h1 className="text-2xl font-bold mb-4">Calibrating Gaze Tracking</h1>
+            <p className="text-gray-600 mb-4">Please follow the on-screen instructions</p>
+          </div>
+        </div>
+        <CalibrationModal
+          isOpen={showCalibration}
+          onComplete={handleCalibrationComplete}
+          onCancel={() => setShowCalibration(false)}
+          videoElement={videoElement}
+          faceLandmarker={faceLandmarker}
+        />
+      </>
     );
   }
 
@@ -376,10 +503,10 @@ export const Exam = () => {
             )}
 
             {activeWarning && (
-              <div className="absolute inset-0 bg-yellow-500/30 flex items-center justify-center animate-pulse">
-                <div className="bg-yellow-600 text-white px-6 py-3 rounded-lg font-bold text-lg flex items-center shadow-lg">
-                  <Eye className="w-6 h-6 mr-3" />
-                  {activeWarning.message}
+              <div className="absolute inset-0 z-20 bg-yellow-500/40 flex items-center justify-center animate-pulse">
+                <div className="bg-red-600 text-white px-8 py-4 rounded-xl font-bold text-xl flex items-center shadow-2xl border-4 border-yellow-400">
+                  <AlertTriangle className="w-8 h-8 mr-4" />
+                  <span>{activeWarning.message}</span>
                 </div>
               </div>
             )}
@@ -463,8 +590,136 @@ export const Exam = () => {
                 <AlertTriangle className="w-4 h-4 text-red-600" />
               )}
             </div>
+
+            <div
+              className={`flex items-center justify-between p-3 rounded-lg ${
+                isDetecting
+                  ? gazeStatus === 'looking-away'
+                    ? 'bg-red-50'
+                    : 'bg-green-50'
+                  : 'bg-gray-50'
+              }`}
+            >
+              <span
+                className={`text-sm font-medium ${
+                  isDetecting
+                    ? gazeStatus === 'looking-away'
+                      ? 'text-red-700'
+                      : 'text-green-700'
+                    : 'text-gray-500'
+                }`}
+              >
+                {isDetecting ? 'Eye Gaze' : 'Gaze Detection'}
+              </span>
+              {isDetecting ? (
+                gazeStatus === 'looking-away' ? (
+                  <AlertTriangle className="w-4 h-4 text-red-600" />
+                ) : (
+                  <CheckCircle className="w-4 h-4 text-green-600" />
+                )
+              ) : (
+                <div className="w-4 h-4 border-2 border-gray-400 border-t-transparent rounded-full animate-spin" />
+              )}
+            </div>
+
+            {/* Calibration Status & Button */}
+            {gazeModelsLoaded && (
+              <div
+                className={`flex items-center justify-between p-3 rounded-lg ${
+                  isCalibrated ? 'bg-green-50' : 'bg-blue-50'
+                }`}
+              >
+                <div className="flex-1">
+                  <span
+                    className={`text-sm font-medium ${
+                      isCalibrated ? 'text-green-700' : 'text-blue-700'
+                    }`}
+                  >
+                    {isCalibrated ? 'Gaze Calibrated' : 'Calibrate Gaze'}
+                  </span>
+                  {!isCalibrated && (
+                    <p className="text-xs text-blue-600 mt-1">
+                      Improve tracking accuracy
+                    </p>
+                  )}
+                </div>
+                <button
+                  onClick={handleStartCalibration}
+                  className={`p-2 rounded-lg transition-colors ${
+                    isCalibrated
+                      ? 'bg-green-200 hover:bg-green-300 text-green-700'
+                      : 'bg-blue-200 hover:bg-blue-300 text-blue-700'
+                  }`}
+                  title={isCalibrated ? 'Recalibrate' : 'Calibrate'}
+                >
+                  <Settings className="w-4 h-4" />
+                </button>
+              </div>
+            )}
+
+            {/* Violation Score Indicator */}
+            {examStarted && violationScore > 0 && (
+              <div
+                className={`flex items-center justify-between p-3 rounded-lg ${
+                  riskLevel === 'critical'
+                    ? 'bg-red-100 border-2 border-red-300'
+                    : riskLevel === 'high'
+                    ? 'bg-orange-50 border border-orange-200'
+                    : riskLevel === 'medium'
+                    ? 'bg-yellow-50 border border-yellow-200'
+                    : 'bg-green-50 border border-green-200'
+                }`}
+              >
+                <div className="flex-1">
+                  <span
+                    className={`text-sm font-bold ${
+                      riskLevel === 'critical'
+                        ? 'text-red-800'
+                        : riskLevel === 'high'
+                        ? 'text-orange-800'
+                        : riskLevel === 'medium'
+                        ? 'text-yellow-800'
+                        : 'text-green-800'
+                    }`}
+                  >
+                    Violation Score: {violationScore}/100
+                  </span>
+                  <p
+                    className={`text-xs mt-1 capitalize ${
+                      riskLevel === 'critical'
+                        ? 'text-red-700'
+                        : riskLevel === 'high'
+                        ? 'text-orange-700'
+                        : riskLevel === 'medium'
+                        ? 'text-yellow-700'
+                        : 'text-green-700'
+                    }`}
+                  >
+                    Risk Level: {riskLevel}
+                  </p>
+                </div>
+                <AlertTriangle
+                  className={`w-5 h-5 ${
+                    riskLevel === 'critical'
+                      ? 'text-red-600 animate-pulse'
+                      : riskLevel === 'high'
+                      ? 'text-orange-600'
+                      : riskLevel === 'medium'
+                      ? 'text-yellow-600'
+                      : 'text-green-600'
+                  }`}
+                />
+              </div>
+            )}
           </div>
         </div>
+
+        {/* Violation Explanation */}
+        {examStarted && violationEvents.length > 0 && (
+          <div className="px-6 pb-4">
+            <ViolationExplanation events={violationEvents} score={violationScore} />
+          </div>
+        )}
 
         {/* Question Navigator */}
         <div className="p-6 flex-1 overflow-auto">
