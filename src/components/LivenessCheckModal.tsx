@@ -35,7 +35,7 @@ export const LivenessCheckModal = ({
   const localVideoRef = useRef<HTMLVideoElement | null>(null);
   const [cameraReady, setCameraReady] = useState(false);
   const [cameraError, setCameraError] = useState<string | null>(null);
-  const [debugInfo, setDebugInfo] = useState<string>('Initializing...');
+  // const [debugInfo, setDebugInfo] = useState<string>('Initializing...');
   const streamRef = useRef<MediaStream | null>(null);
 
   //  const logDebug = (msg: string) => {
@@ -56,19 +56,15 @@ export const LivenessCheckModal = ({
     if (!isOpen) return;
 
     let isMounted = true;
-    setDebugInfo('Modal open, waiting for video...');
 
     const setupCamera = async () => {
       try {
-        setDebugInfo('Setting up camera...');
         setCameraError(null);
 
         // Check if getUserMedia is available
         if (!navigator.mediaDevices?.getUserMedia) {
           throw new Error('Browser does not support getUserMedia');
         }
-
-        setDebugInfo('Requesting camera permission...');
 
         // Add a timeout to getUserMedia as it can sometimes hang
         const streamPromise = navigator.mediaDevices.getUserMedia({
@@ -82,24 +78,20 @@ export const LivenessCheckModal = ({
 
         const stream = await Promise.race([streamPromise, timeoutPromise]);
         streamRef.current = stream;
-        setDebugInfo('Camera stream obtained');
 
         // Wait for video element
         if (!localVideoRef.current) {
           throw new Error('Video element not ready');
         }
 
-        setDebugInfo('Attaching stream to video element');
         localVideoRef.current.srcObject = stream;
         localVideoRef.current.muted = true;
         localVideoRef.current.playsInline = true;
 
         localVideoRef.current.onloadeddata = () => {
-          setDebugInfo('Video loaded');
           if (localVideoRef.current && isMounted) {
             localVideoRef.current.play().then(() => {
               setCameraReady(true);
-              setDebugInfo('Camera ready and playing');
             }).catch(err => {
               console.error('[LivenessCheckModal] Play error:', err);
               if (err.name !== 'AbortError') {
@@ -109,22 +101,19 @@ export const LivenessCheckModal = ({
           }
         };
 
-        localVideoRef.current.onerror = (e) => {
-          setDebugInfo('Video error occurred');
+        localVideoRef.current.onerror = (_e) => {
           setCameraError('Video playback error occurred');
         };
 
         // Pass ref to parent for face detection
         if (videoRef) {
           videoRef(localVideoRef.current);
-          setDebugInfo('Video ref passed to parent');
         }
-      } catch (err: any) {
-        setDebugInfo('Error: ' + err.message);
+      } catch (err: unknown) {
         console.error('[LivenessCheckModal] Camera setup error:', err);
-        let errorMsg = err.message || 'Failed to access camera';
-        if (err.name === 'NotAllowedError') errorMsg = 'Camera permission denied';
-        if (err.name === 'NotFoundError') errorMsg = 'No camera found';
+        let errorMsg = err instanceof Error ? err.message : 'Failed to access camera';
+        if (err instanceof Error && err.name === 'NotAllowedError') errorMsg = 'Camera permission denied';
+        if (err instanceof Error && err.name === 'NotFoundError') errorMsg = 'No camera found';
         setCameraError(errorMsg);
       }
     };
@@ -132,7 +121,6 @@ export const LivenessCheckModal = ({
     setupCamera();
 
     return () => {
-      setDebugInfo('Cleaning up...');
       isMounted = false;
       if (streamRef.current) {
         streamRef.current.getTracks().forEach(track => track.stop());
