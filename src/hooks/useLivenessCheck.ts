@@ -23,6 +23,7 @@ export interface UseLivenessCheckReturn {
   startCheck: () => void;
   resetCheck: () => void;
   videoRef: React.RefCallback<HTMLVideoElement>;
+  faceDistanceCm: number | null; // Estimated face distance in cm
 }
 
 const CHECK_DURATION = 30000; // 30 seconds total check time for multiple steps
@@ -49,8 +50,82 @@ export const useLivenessCheck = (): UseLivenessCheckReturn => {
   const [totalSteps, setTotalSteps] = useState(0);
   const [result, setResult] = useState<LivenessCheckResult | null>(null);
   const [modelsLoaded, setModelsLoaded] = useState(false);
+  const [faceDistanceCm, setFaceDistanceCm] = useState<number | null>(null);
+  const distanceDetectionRef = useRef<any>(null);
 
   const log = useCallback((msg: string) => console.log('[LivenessCheck]', msg), []);
+
+  // Estimate face distance from detection box size
+  const estimateFaceDistance = useCallback((detection: any): number => {
+    if (!detection || !detection.detection || !detection.detection.box) return 50;
+    
+    const box = detection.detection.box;
+    const boxWidth = box.width || 0;
+    const boxHeight = box.height || 0;
+    
+    // Use the larger dimension for more stable estimation
+    const boxSize = Math.max(boxWidth, boxHeight);
+    
+    // Average face width ~14cm, height ~18cm
+    // At 50cm: box takes up ~25-35% of 640x480 frame
+    // At 30cm: box takes up ~40-50%
+    // At 70cm: box takes up ~15-20%
+    
+    // Normalize box size (assuming 640x480 video)
+    const videoWidth = 640;
+    const normalizedSize = boxSize / videoWidth;
+    
+    // Convert to estimated cm (inverse relationship)
+    // calibrated: normalizedSize 0.25 ≈ 50cm
+    const estimatedCm = normalizedSize > 0.05 ? Math.round(15 / normalizedSize) : 80;
+    
+    return Math.max(20, Math.min(100, estimatedCm));
+  }, []);
+
+  // Start real-time face distance detection (runs independently of liveness check)
+  useEffect(() => {
+    if (!videoRef.current || !modelsLoaded || isPassed || isFailed) return;
+
+    const element = videoRef.current;
+    let isRunning = true;
+
+    const detectDistance = async () => {
+      if (!isRunning || !videoRef.current || isPassed || isFailed) return;
+
+      try {
+        if (!faceapi.nets.tinyFaceDetector.isLoaded) return;
+
+        const detections = await faceapi.detectAllFaces(
+          element,
+          new faceapi.TinyFaceDetectorOptions()
+        ).withFaceLandmarks();
+
+        if (detections.length === 1 && isRunning) {
+          const distance = estimateFaceDistance(detections[0]);
+          setFaceDistanceCm(distance);
+          console.log('[LivenessCheck] 📏 Face distance:', distance, 'cm | box:', detections[0].detection.box);
+        }
+      } catch (err) {
+        // Silent fail - detection loop continues
+      }
+
+      // Run at 5fps for smooth updates
+      if (isRunning) {
+        distanceDetectionRef.current = setTimeout(detectDistance, 200);
+      }
+    };
+
+    // Start detection
+    detectDistance();
+
+    // Cleanup
+    return () => {
+      isRunning = false;
+      if (distanceDetectionRef.current) {
+        clearTimeout(distanceDetectionRef.current);
+      }
+    };
+  }, [videoRef, modelsLoaded, isPassed, isFailed, estimateFaceDistance]);
 
   // Initialize Liveness Module
   useEffect(() => {
@@ -209,6 +284,12 @@ export const useLivenessCheck = (): UseLivenessCheckReturn => {
           if (facePresentTimeRef.current === 0) {
             facePresentTimeRef.current = Date.now();
           }
+
+          // Estimate and update face distance
+          const detection = detections[0];
+          const distance = estimateFaceDistance(detection);
+          setFaceDistanceCm(distance);
+          console.log('[LivenessCheck] 📏 Face distance (during check):', distance, 'cm');
 
           // Process with liveness module
           if (livenessModuleRef.current) {
@@ -389,6 +470,7 @@ export const useLivenessCheck = (): UseLivenessCheckReturn => {
     result,
     startCheck,
     resetCheck,
-    videoRef: setVideoRef
+    videoRef: setVideoRef,
+    faceDistanceCm
   };
 };
