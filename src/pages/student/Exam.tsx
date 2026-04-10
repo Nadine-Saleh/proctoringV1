@@ -6,7 +6,6 @@ import { useEyeGazeDetection } from '../../hooks/useEyeGazeDetection';
 import { useLivenessCheck } from '../../hooks/useLivenessCheck';
 import { LivenessCheckModal } from '../../components/LivenessCheckModal';
 import { DistanceSetupModal } from '../../components/DistanceSetupModal';
-import { ViolationExplanation } from '../../components/ViolationExplanation';
 import { mockQuestions } from '../../data/mockData';
 import { calculateViolationScore, getRiskLevel, ViolationEvent } from '../../utils/violationScorer';
 import { sendCriticalAlert } from '../../services/instructorAlertService';
@@ -25,16 +24,18 @@ export const Exam = () => {
   const [showLivenessCheck, setShowLivenessCheck] = useState(false);
   const [showDistanceSetup, setShowDistanceSetup] = useState(true);
   const [examStarted, setExamStarted] = useState(false);
-  const [activeWarning, setActiveWarning] = useState<{ message: string; timestamp: number } | null>(null);
-  const [gazeStatus, setGazeStatus] = useState<'monitoring' | 'looking-away' | 'center'>('center');
+  const [gazeStatus, setGazeStatus] = useState<'center' | 'looking-away'>('center');
+  const [criticalWarning, setCriticalWarning] = useState<{ message: string; severity: 'high' | 'critical' } | null>(null);
 
   // Distance standardization
   const [optimalDistanceCm, setOptimalDistanceCm] = useState<number | null>(null);
 
-  // Violation tracking state
+  // Violation tracking state (hidden from student - only sent to instructor)
   const [violationEvents, setViolationEvents] = useState<ViolationEvent[]>([]);
-  const [violationScore, setViolationScore] = useState(0);
-  const [riskLevel, setRiskLevel] = useState<'low' | 'medium' | 'high' | 'critical'>('low');
+  // eslint-disable-next-line @typescript-eslint/no-unused-vars
+  const [_violationScore, setViolationScore] = useState(0);
+  // eslint-disable-next-line @typescript-eslint/no-unused-vars
+  const [_riskLevel, setRiskLevel] = useState<'low' | 'medium' | 'high' | 'critical'>('low');
   const [lastAlertTime, setLastAlertTime] = useState(0);
 
   const { status, videoRef: proctoringVideoRef, retryCamera } = useProctoring(examStarted);
@@ -74,22 +75,12 @@ export const Exam = () => {
     }
   }, [examStarted, gazeModelsLoaded, status.camera, isDetecting, startDetection]);
 
-  // Show persistent warnings when looking away or blinking
+  // Show subtle status change when looking away (no distracting overlays)
   useEffect(() => {
     if (gazeData?.isLookingAway) {
       setGazeStatus('looking-away');
-      setActiveWarning({
-        message: 'Please keep your eyes on the exam!',
-        timestamp: Date.now()
-      });
     } else {
       setGazeStatus('center');
-      if (gazeData?.isBlinking) {
-        setActiveWarning({
-          message: 'Please keep your eyes on the exam!',
-          timestamp: Date.now()
-        });
-      }
     }
   }, [gazeData?.isLookingAway, gazeData?.isBlinking]);
 
@@ -159,15 +150,59 @@ export const Exam = () => {
     }
   }, [gazeData, examStarted]);
 
-  // Clear warning after 3 seconds
+  // Show critical warning alert for high/critical violations
   useEffect(() => {
-    if (activeWarning) {
-      const timer = setTimeout(() => {
-        setActiveWarning(null);
+    if (violationEvents.length === 0 || criticalWarning) return;
+
+    const latestEvent = violationEvents[violationEvents.length - 1];
+    const isHighOrCritical = latestEvent.severity === 'high' || latestEvent.severity === 'medium';
+
+    if (isHighOrCritical) {
+      setCriticalWarning({
+        message: latestEvent.description,
+        severity: latestEvent.severity as 'high' | 'critical'
+      });
+
+      // Auto-dismiss after 3 seconds
+      setTimeout(() => {
+        setCriticalWarning(prev => {
+          // Only clear if it's still the same warning
+          if (prev && prev.message === latestEvent.description) {
+            return null;
+          }
+          return prev;
+        });
       }, 3000);
-      return () => clearTimeout(timer);
     }
-  }, [activeWarning]);
+  }, [violationEvents.length]);
+
+  // Show warning after 5 violations
+  useEffect(() => {
+    if (violationEvents.length === 5 && !criticalWarning) {
+      setCriticalWarning({
+        message: 'Multiple violations detected. Please keep your eyes on the exam.',
+        severity: 'high'
+      });
+
+      setTimeout(() => {
+        setCriticalWarning(null);
+      }, 5000);
+    }
+  }, [violationEvents.length, criticalWarning]);
+
+  // Show stronger warning after 10 violations
+  useEffect(() => {
+    if (violationEvents.length === 10 && !criticalWarning) {
+      setCriticalWarning({
+        message: '⚠️ Exam will be flagged if violations continue.',
+        severity: 'critical'
+      });
+
+      setTimeout(() => {
+        setCriticalWarning(null);
+      }, 5000);
+    }
+  }, [violationEvents.length, criticalWarning]);
 
   // Scoring & Alerting Effect
   useEffect(() => {
@@ -484,11 +519,20 @@ export const Exam = () => {
               </div>
             )}
 
-            {activeWarning && (
-              <div className="absolute inset-0 z-20 bg-yellow-500/40 flex items-center justify-center animate-pulse">
-                <div className="bg-red-600 text-white px-8 py-4 rounded-xl font-bold text-xl flex items-center shadow-2xl border-4 border-yellow-400">
-                  <AlertTriangle className="w-8 h-8 mr-4" />
-                  <span>{activeWarning.message}</span>
+            {/* Critical Violation Alert */}
+            {criticalWarning && (
+              <div className="absolute top-2 left-2 right-2 z-20">
+                <div className={`px-3 py-2 rounded-lg shadow-lg backdrop-blur-sm ${
+                  criticalWarning.severity === 'critical'
+                    ? 'bg-red-600/90'
+                    : 'bg-orange-600/90'
+                }`}>
+                  <div className="flex items-center space-x-2">
+                    <AlertTriangle className="w-4 h-4 text-white flex-shrink-0" />
+                    <p className="text-white text-xs font-medium flex-1">
+                      {criticalWarning.message}
+                    </p>
+                  </div>
                 </div>
               </div>
             )}
@@ -630,70 +674,8 @@ export const Exam = () => {
                 </div>
               </div>
             )}
-
-            {/* Violation Score Indicator */}
-            {examStarted && violationScore > 0 && (
-              <div
-                className={`flex items-center justify-between p-3 rounded-lg ${
-                  riskLevel === 'critical'
-                    ? 'bg-red-100 border-2 border-red-300'
-                    : riskLevel === 'high'
-                    ? 'bg-orange-50 border border-orange-200'
-                    : riskLevel === 'medium'
-                    ? 'bg-yellow-50 border border-yellow-200'
-                    : 'bg-green-50 border border-green-200'
-                }`}
-              >
-                <div className="flex-1">
-                  <span
-                    className={`text-sm font-bold ${
-                      riskLevel === 'critical'
-                        ? 'text-red-800'
-                        : riskLevel === 'high'
-                        ? 'text-orange-800'
-                        : riskLevel === 'medium'
-                        ? 'text-yellow-800'
-                        : 'text-green-800'
-                    }`}
-                  >
-                    Violation Score: {violationScore}/100
-                  </span>
-                  <p
-                    className={`text-xs mt-1 capitalize ${
-                      riskLevel === 'critical'
-                        ? 'text-red-700'
-                        : riskLevel === 'high'
-                        ? 'text-orange-700'
-                        : riskLevel === 'medium'
-                        ? 'text-yellow-700'
-                        : 'text-green-700'
-                    }`}
-                  >
-                    Risk Level: {riskLevel}
-                  </p>
-                </div>
-                <AlertTriangle
-                  className={`w-5 h-5 ${
-                    riskLevel === 'critical'
-                      ? 'text-red-600 animate-pulse'
-                      : riskLevel === 'high'
-                      ? 'text-orange-600'
-                      : riskLevel === 'medium'
-                      ? 'text-yellow-600'
-                      : 'text-green-600'
-                  }`}
-                />
-              </div>
-            )}
           </div>
         </div>
-
-        {/* Violation Explanation */}
-        {examStarted && violationEvents.length > 0 && (
-          <div className="px-6 pb-4">
-            <ViolationExplanation events={violationEvents} score={violationScore} />
-          </div>
-        )}
 
         {/* Question Navigator */}
         <div className="p-6 flex-1 overflow-auto">

@@ -208,8 +208,8 @@ function estimateFaceDistance(landmarks: Array<{ x: number; y: number; z: number
 // Thresholds - calibrated for MediaPipe normalized coordinates (0-1)
 // Relaxed for realistic proctoring - normal head movements shouldn't trigger violations
 const BLINK_THRESHOLD = 0.22;
-const LOOKING_AWAY_THRESHOLD = 0.015; // Relaxed: was 0.008 (too sensitive)
-const SIDE_GLANCE_THRESHOLD = 0.012; // Relaxed: was 0.006 (too sensitive)
+const LOOKING_AWAY_THRESHOLD = 0.012; // Relaxed: was 0.008 (too sensitive)
+const SIDE_GLANCE_THRESHOLD = 0.010; // Relaxed: was 0.006 (too sensitive)
 const UPWARD_GAZE_THRESHOLD = 0.008; // More sensitive for detecting looking up (cheating behavior)
 
 // Landmark indices for eyes (MediaPipe Face Landmarker - 478 landmarks)
@@ -386,6 +386,9 @@ export const useEyeGazeDetection = (isEnabled: boolean = true): UseEyeGazeDetect
       const isVerticalGlance = isUpwardGaze || isDownwardGaze;
 
       // Debug logging
+      if (isHorizontalGlance) {
+        console.log('[EyeGaze] ⬅️➡️ Horizontal glance! avgX:', avgX.toFixed(4), 'threshold:', SIDE_GLANCE_THRESHOLD);
+      }
       if (isUpwardGaze) {
         console.log('[EyeGaze] ⬆️ UPWARD gaze detected! avgY:', avgY.toFixed(4), 'threshold:', -UPWARD_GAZE_THRESHOLD);
       }
@@ -395,8 +398,14 @@ export const useEyeGazeDetection = (isEnabled: boolean = true): UseEyeGazeDetect
 
       // Check if looking away from center (any direction)
       if (distanceFromCenter > LOOKING_AWAY_THRESHOLD || isHorizontalGlance || isVerticalGlance) {
-        // Determine primary direction based on which axis is stronger
-        // Prioritize upward detection (common cheating behavior)
+        // Determine primary direction - prioritize horizontal for side glances
+        if (isHorizontalGlance && absX > absY * 0.5) {
+          const direction = avgX < 0 ? 'left' : 'right';
+          console.log('[EyeGaze] ⬅️➡️ Direction:', direction.toUpperCase(), 'avgX:', avgX.toFixed(4));
+          return direction;
+        }
+        
+        // Vertical detection
         if (isUpwardGaze && absY > absX * 0.3) {
           console.log('[EyeGaze] ⬆️ Direction: UP, avgY:', avgY.toFixed(4), 'avgX:', avgX.toFixed(4));
           return 'up';
@@ -407,17 +416,11 @@ export const useEyeGazeDetection = (isEnabled: boolean = true): UseEyeGazeDetect
           return 'down';
         }
         
-        if (isHorizontalGlance) {
-          const direction = avgX < 0 ? 'left' : 'right';
-          console.log('[EyeGaze] ⬅️➡️ Direction:', direction.toUpperCase(), 'avgX:', avgX.toFixed(4));
-          return direction;
-        }
-        
         // Fallback: small movement - classify based on dominant axis
-        if (absY > absX) {
-          return avgY < 0 ? 'up' : 'down';
+        if (absX > absY) {
+          return avgX < 0 ? 'left' : 'right';
         }
-        return avgX < 0 ? 'left' : 'right';
+        return avgY < 0 ? 'up' : 'down';
       }
 
       return 'center';

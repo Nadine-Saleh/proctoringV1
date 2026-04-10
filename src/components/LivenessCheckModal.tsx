@@ -1,4 +1,4 @@
-import { Camera, CheckCircle, XCircle, RefreshCw, UserCheck, ArrowLeftRight, AlertTriangle } from 'lucide-react';
+import { Camera, CheckCircle, XCircle, RefreshCw, UserCheck } from 'lucide-react';
 import { useEffect, useRef, useState, useCallback } from 'react';
 
 interface LivenessCheckModalProps {
@@ -15,10 +15,6 @@ interface LivenessCheckModalProps {
   onStartCheck: () => void;
   onRetry: () => void;
   onContinue?: () => void;
-  faceDistance?: number; // 0-1 normalized
-  faceDistanceCm?: number; // estimated cm
-  optimalDistanceCm?: number; // user's chosen optimal distance
-  onSetOptimalDistance?: (distance: number) => void; // callback to set optimal distance
 }
 
 export const LivenessCheckModal = ({
@@ -34,27 +30,11 @@ export const LivenessCheckModal = ({
   videoRef,
   onStartCheck,
   onRetry,
-  onContinue,
-  faceDistanceCm,
-  optimalDistanceCm = 50,
-  onSetOptimalDistance
+  onContinue
 }: LivenessCheckModalProps) => {
   const localVideoRef = useRef<HTMLVideoElement | null>(null);
   const [cameraReady, setCameraReady] = useState(false);
   const [cameraError, setCameraError] = useState<string | null>(null);
-
-  // Debug logging
-  useEffect(() => {
-    console.log('[LivenessModal] Props:', { 
-      isOpen, 
-      isChecking, 
-      isPassed, 
-      isFailed, 
-      faceDistanceCm, 
-      optimalDistanceCm,
-      cameraReady 
-    });
-  }, [isOpen, isChecking, isPassed, isFailed, faceDistanceCm, optimalDistanceCm, cameraReady]);
   // const [debugInfo, setDebugInfo] = useState<string>('Initializing...');
   const streamRef = useRef<MediaStream | null>(null);
 
@@ -216,10 +196,7 @@ export const LivenessCheckModal = ({
               <div className="absolute inset-0 bg-black/40 flex items-center justify-center pointer-events-none">
                 <div className="text-center text-white p-4">
                   <Camera className="w-12 h-12 mx-auto mb-2 text-gray-300" />
-                  <p className="text-base font-semibold mb-1">Camera Preview</p>
-                  <p className="text-xs text-gray-300">
-                    Position your face in the frame
-                  </p>
+                  <p className="text-base font-semibold">Camera Preview</p>
                 </div>
               </div>
             )}
@@ -291,101 +268,6 @@ export const LivenessCheckModal = ({
               </div>
             )}
           </div>
-
-          {/* Distance Guide */}
-          {isOpen && !isPassed && !isFailed && (
-            <div className="mb-4 p-4 bg-gradient-to-r from-blue-50 to-indigo-50 border-2 border-blue-300 rounded-lg" style={{ backgroundColor: '#eff6ff' }}>
-              <div className="flex items-start space-x-3">
-                <ArrowLeftRight className="w-5 h-5 text-blue-600 flex-shrink-0 mt-0.5" />
-                <div className="flex-1">
-                  <h3 className="font-semibold text-blue-900 text-sm mb-2">📏 Set Your Optimal Distance</h3>
-                  
-                  {/* Debug info */}
-                  <div className="mb-2 text-xs text-blue-600 font-mono bg-blue-100 p-2 rounded">
-                    faceDistanceCm: {faceDistanceCm ?? 'null'} | optimalDistanceCm: {optimalDistanceCm}
-                  </div>
-                  
-                  {faceDistanceCm ? (
-                    <>
-                      <div className="flex items-center justify-between mb-2">
-                        <span className="text-xs text-blue-700">Current distance:</span>
-                        <span className="text-lg font-bold text-blue-900">~{faceDistanceCm} cm</span>
-                      </div>
-                      
-                      {/* Distance indicator bar */}
-                      <div className="relative h-3 bg-gray-200 rounded-full overflow-hidden mb-2">
-                        <div 
-                          className={`h-full rounded-full transition-all duration-300 ${
-                            Math.abs(faceDistanceCm - optimalDistanceCm) <= 10
-                              ? 'bg-green-500'
-                              : faceDistanceCm < optimalDistanceCm - 10
-                                ? 'bg-yellow-500'
-                                : 'bg-orange-500'
-                          }`}
-                          style={{ 
-                            width: `${Math.max(10, Math.min(90, (faceDistanceCm / 100) * 100))}%` 
-                          }}
-                        />
-                        {/* Optimal distance marker */}
-                        <div 
-                          className="absolute top-0 h-full w-0.5 bg-red-500"
-                          style={{ left: `${(optimalDistanceCm / 100) * 100}%` }}
-                        />
-                      </div>
-                      
-                      <div className="flex justify-between text-xs text-blue-600 mb-2">
-                        <span>20cm</span>
-                        <span className="text-red-600 font-medium">Optimal: {optimalDistanceCm}cm</span>
-                        <span>100cm</span>
-                      </div>
-                      
-                      {/* Distance feedback */}
-                      {isChecking ? (
-                        <div className="text-xs text-blue-600">
-                          Keep your face in the frame during verification
-                        </div>
-                      ) : (
-                        <>
-                          {Math.abs(faceDistanceCm - optimalDistanceCm) <= 10 && (
-                            <div className="flex items-center space-x-2 text-green-700 text-xs font-medium">
-                              <CheckCircle className="w-3 h-3" />
-                              <span>Perfect distance! Click "Set Distance" to lock it.</span>
-                            </div>
-                          )}
-                          {faceDistanceCm < optimalDistanceCm - 10 && (
-                            <div className="flex items-center space-x-2 text-yellow-700 text-xs font-medium">
-                              <AlertTriangle className="w-3 h-3" />
-                              <span>Too close! Move back slightly.</span>
-                            </div>
-                          )}
-                          {faceDistanceCm > optimalDistanceCm + 10 && (
-                            <div className="flex items-center space-x-2 text-orange-700 text-xs font-medium">
-                              <AlertTriangle className="w-3 h-3" />
-                              <span>Too far! Move closer to the camera.</span>
-                            </div>
-                          )}
-                          
-                          <button
-                            onClick={() => onSetOptimalDistance?.(faceDistanceCm)}
-                            disabled={Math.abs(faceDistanceCm - optimalDistanceCm) > 10}
-                            className="mt-3 w-full px-4 py-2 bg-blue-600 text-white rounded-lg hover:bg-blue-700 disabled:opacity-50 disabled:cursor-not-allowed font-medium text-sm transition-colors"
-                          >
-                            Set Current Distance as Optimal
-                          </button>
-                        </>
-                      )}
-                    </>
-                  ) : (
-                    <p className="text-xs text-blue-700">
-                      {isChecking 
-                        ? 'Detecting distance during verification...' 
-                        : 'Position your face clearly in front of the camera, then click "Start Verification"'}
-                    </p>
-                  )}
-                </div>
-              </div>
-            </div>
-          )}
 
           {/* Instructions */}
           <div className={`p-3 rounded-lg mb-4 ${isFailed
