@@ -196,10 +196,7 @@ export const LivenessCheckModal = ({
               <div className="absolute inset-0 bg-black/40 flex items-center justify-center pointer-events-none">
                 <div className="text-center text-white p-4">
                   <Camera className="w-12 h-12 mx-auto mb-2 text-gray-300" />
-                  <p className="text-base font-semibold mb-1">Camera Preview</p>
-                  <p className="text-xs text-gray-300">
-                    Position your face in the frame
-                  </p>
+                  <p className="text-base font-semibold">Camera Preview</p>
                 </div>
               </div>
             )}

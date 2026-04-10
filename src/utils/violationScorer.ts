@@ -5,7 +5,9 @@ export type ViolationType =
   | 'tab_switch'
   | 'excessive_blinking'
   | 'phone_detection'
-  | 'head_pose_extreme';
+  | 'head_pose_extreme'
+  | 'face_too_close'
+  | 'face_too_far';
 
 export type ViolationSeverity = 'low' | 'medium' | 'high';
 
@@ -26,7 +28,9 @@ export const WEIGHTS: Record<ViolationType, number> = {
   tab_switch: 3,
   excessive_blinking: 1,
   phone_detection: 8,
-  head_pose_extreme: 4
+  head_pose_extreme: 4,
+  face_too_close: 3,
+  face_too_far: 3
 };
 
 export interface ViolationScoreResult {

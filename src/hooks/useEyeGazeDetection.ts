@@ -20,6 +20,8 @@ export interface EyeGazeData {
   headPose?: { yaw: number; pitch: number; roll: number };
   pupilDistance?: number; // pixels between pupils
   calibrationOffset?: { x: number; y: number };
+  faceDistance: number; // 0-1, normalized face distance (higher = closer)
+  faceDistanceCm: number; // estimated distance in cm
 }
 
 export interface SuspiciousGazeEvent {
@@ -162,10 +164,53 @@ function estimateHeadPose(landmarks: Array<{ x: number; y: number; z: number }>)
   };
 }
 
+/**
+ * Estimates face distance from camera using face height in frame.
+ * Returns normalized distance (0-1) and estimated cm.
+ * Calibration: average human face width ~14cm, height ~18cm.
+ * At ~50cm distance, face height in normalized coords is ~0.3-0.4.
+ */
+function estimateFaceDistance(landmarks: Array<{ x: number; y: number; z: number }>): { normalized: number; cm: number } {
+  const forehead = landmarks[10];
+  const chin = landmarks[152];
+  const leftEar = landmarks[234];
+  const rightEar = landmarks[454];
+
+  if (!forehead || !chin) {
+    return { normalized: 0.5, cm: 50 };
+  }
+
+  // Calculate face height (forehead to chin)
+  const faceHeight = Math.abs(forehead.y - chin.y);
+
+  // Calculate face width (ear to ear) for better estimation
+  const faceWidth = leftEar && rightEar ? Math.abs(leftEar.x - rightEar.x) : 0.5;
+
+  // Use the larger of height/width for more stable estimation
+  const faceSize = Math.max(faceHeight, faceWidth);
+
+  // Normalize to 0-1 range (faceSize typically 0.15-0.6 in normalized coords)
+  // At 50cm: faceSize ~0.25-0.35
+  // At 30cm: faceSize ~0.4-0.5
+  // At 70cm: faceSize ~0.15-0.2
+  const normalized = Math.max(0, Math.min(1, (faceSize - 0.1) / 0.45));
+
+  // Convert to estimated cm (inverse relationship)
+  // Calibrated: normalized 0.3 ≈ 50cm, 0.5 ≈ 30cm, 0.15 ≈ 70cm
+  const estimatedCm = normalized > 0.05 ? Math.round(25 / normalized) : 100;
+
+  return {
+    normalized: Math.round(normalized * 100) / 100,
+    cm: Math.max(20, Math.min(100, estimatedCm)) // Clamp to realistic range
+  };
+}
+
 // Thresholds - calibrated for MediaPipe normalized coordinates (0-1)
-const BLINK_THRESHOLD = 0.25;
-const LOOKING_AWAY_THRESHOLD = 0.008; // Lowered for better detection
-const SIDE_GLANCE_THRESHOLD = 0.006; // Lowered for side glance detection
+// Relaxed for realistic proctoring - normal head movements shouldn't trigger violations
+const BLINK_THRESHOLD = 0.22;
+const LOOKING_AWAY_THRESHOLD = 0.012; // Relaxed: was 0.008 (too sensitive)
+const SIDE_GLANCE_THRESHOLD = 0.010; // Relaxed: was 0.006 (too sensitive)
+const UPWARD_GAZE_THRESHOLD = 0.008; // More sensitive for detecting looking up (cheating behavior)
 
 // Landmark indices for eyes (MediaPipe Face Landmarker - 478 landmarks)
 // Iris landmarks are at indices 468-477 in the full face mesh
@@ -330,44 +375,52 @@ export const useEyeGazeDetection = (isEnabled: boolean = true): UseEyeGazeDetect
       // Check specific directions with thresholds
       const absX = Math.abs(avgX);
       const absY = Math.abs(avgY);
-      
+
       // Combined distance from center (for diagonal detection)
       const distanceFromCenter = Math.sqrt(absX * absX + absY * absY);
-      
-      // Lowered thresholds for better detection
+
+      // Direction-specific thresholds
       const isHorizontalGlance = absX > SIDE_GLANCE_THRESHOLD;
-      const isVerticalGlance = absY > LOOKING_AWAY_THRESHOLD;
-      
-      // Debug logging for upward gaze
-      if (avgY < -0.005) {
-        console.log('[EyeGaze] ⬆️ UPWARD gaze detected! avgY:', avgY.toFixed(4), 'threshold:', LOOKING_AWAY_THRESHOLD);
+      const isUpwardGaze = avgY < -UPWARD_GAZE_THRESHOLD; // Looking up (negative Y)
+      const isDownwardGaze = avgY > LOOKING_AWAY_THRESHOLD; // Looking down (positive Y)
+      const isVerticalGlance = isUpwardGaze || isDownwardGaze;
+
+      // Debug logging
+      if (isHorizontalGlance) {
+        console.log('[EyeGaze] ⬅️➡️ Horizontal glance! avgX:', avgX.toFixed(4), 'threshold:', SIDE_GLANCE_THRESHOLD);
       }
-      
-      // Enhanced downward gaze detection (keyboard/phone cheating)
-      if (avgY > 0.005) {
+      if (isUpwardGaze) {
+        console.log('[EyeGaze] ⬆️ UPWARD gaze detected! avgY:', avgY.toFixed(4), 'threshold:', -UPWARD_GAZE_THRESHOLD);
+      }
+      if (isDownwardGaze) {
         console.log('[EyeGaze] ⬇️ DOWNWARD gaze detected! avgY:', avgY.toFixed(4), 'threshold:', LOOKING_AWAY_THRESHOLD);
       }
 
-      // If any significant movement from center (including diagonals)
+      // Check if looking away from center (any direction)
       if (distanceFromCenter > LOOKING_AWAY_THRESHOLD || isHorizontalGlance || isVerticalGlance) {
-        // Determine primary direction based on which axis is stronger
-        if (absY > absX * 0.5) {
-          // Vertical movement is dominant - looking up or down
-          const direction = avgY < 0 ? 'up' : 'down';
-          console.log('[EyeGaze] ⬆️⬇️ Vertical direction:', direction, 'avgY:', avgY.toFixed(4), 'avgX:', avgX.toFixed(4));
-          return direction;
-        } else if (isHorizontalGlance) {
-          // Horizontal movement (side glance)
+        // Determine primary direction - prioritize horizontal for side glances
+        if (isHorizontalGlance && absX > absY * 0.5) {
           const direction = avgX < 0 ? 'left' : 'right';
-          console.log('[EyeGaze] ⬅️➡️ Horizontal direction:', direction, 'avgX:', avgX.toFixed(4));
+          console.log('[EyeGaze] ⬅️➡️ Direction:', direction.toUpperCase(), 'avgX:', avgX.toFixed(4));
           return direction;
-        } else {
-          // Small movement - still classify as looking away
-          if (absY > absX) {
-            return avgY < 0 ? 'up' : 'down';
-          }
+        }
+        
+        // Vertical detection
+        if (isUpwardGaze && absY > absX * 0.3) {
+          console.log('[EyeGaze] ⬆️ Direction: UP, avgY:', avgY.toFixed(4), 'avgX:', avgX.toFixed(4));
+          return 'up';
+        }
+        
+        if (isDownwardGaze && absY > absX * 0.3) {
+          console.log('[EyeGaze] ⬇️ Direction: DOWN, avgY:', avgY.toFixed(4), 'avgX:', avgX.toFixed(4));
+          return 'down';
+        }
+        
+        // Fallback: small movement - classify based on dominant axis
+        if (absX > absY) {
           return avgX < 0 ? 'left' : 'right';
         }
+        return avgY < 0 ? 'up' : 'down';
       }
 
       return 'center';
@@ -533,6 +586,9 @@ export const useEyeGazeDetection = (isEnabled: boolean = true): UseEyeGazeDetect
       // Estimate head pose from face landmarks (simplified using eye/face geometry)
       const headPose = estimateHeadPose(landmarks);
 
+      // Estimate face distance
+      const faceDistance = estimateFaceDistance(landmarks);
+
       // Apply calibration offset if available
       const calibratedLeftPupil = leftPupil && calibrationOffsetRef.current
         ? { x: leftPupil.x - calibrationOffsetRef.current.x, y: leftPupil.y - calibrationOffsetRef.current.y }
@@ -554,7 +610,9 @@ export const useEyeGazeDetection = (isEnabled: boolean = true): UseEyeGazeDetect
         gazeDuration,
         headPose,
         pupilDistance,
-        calibrationOffset: calibrationOffsetRef.current || undefined
+        calibrationOffset: calibrationOffsetRef.current || undefined,
+        faceDistance: faceDistance.normalized,
+        faceDistanceCm: faceDistance.cm
       };
 
       setGazeData(newGazeData);
