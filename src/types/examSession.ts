@@ -4,6 +4,81 @@
 // Shared type definitions for exam session management
 
 // ============================================
+// Violation Events
+// ============================================
+
+export type ViolationSeverity = 'low' | 'medium' | 'high' | 'critical';
+
+export type ViolationType =
+  | 'gaze_looking_away'
+  | 'gaze_sustained_away'
+  | 'gaze_prolonged_away'
+  | 'eye_closure'
+  | 'excessive_blinking'
+  | 'rapid_eye_movement'
+  | 'face_not_detected'
+  | 'multiple_faces'
+  | 'face_too_close'
+  | 'face_too_far'
+  | 'tab_switch'
+  | 'tab_switch_prolonged'
+  | 'window_minimize'
+  | 'head_pose_extreme'
+  | 'head_pose_moderate'
+  | 'phone_detected'
+  | 'headphones_detected'
+  | 'answer_pattern_suspicious'
+  | 'ip_address_change';
+
+export interface ViolationEvent {
+  id: string;
+  session_id: string;
+  exam_id: string;
+  student_id: string;
+  violation_type: ViolationType;
+  severity: ViolationSeverity;
+  weight: number;
+  occurred_at: string;
+  duration_ms: number | null;
+  description: string | null;
+  metadata: Record<string, unknown>;
+  is_reviewed: boolean;
+  reviewed_by: string | null;
+  reviewed_at: string | null;
+  review_notes: string | null;
+  created_at: string;
+}
+
+export interface CreateViolationEventInput {
+  session_id: string;
+  exam_id: string;
+  student_id: string;
+  violation_type: ViolationType;
+  severity?: ViolationSeverity;
+  weight?: number;
+  occurred_at: string;
+  duration_ms?: number | null;
+  description?: string | null;
+  metadata?: Record<string, unknown>;
+}
+
+export interface UpdateViolationEventInput {
+  is_reviewed?: boolean;
+  reviewed_by?: string | null;
+  reviewed_at?: string | null;
+  review_notes?: string | null;
+}
+
+// Violation summary for instructor view
+export interface ViolationSummary {
+  violation_type: ViolationType;
+  count: number;
+  severity: ViolationSeverity;
+  first_occurrence: string;
+  last_occurrence: string;
+}
+
+// ============================================
 // Exam Session
 // ============================================
 

@@ -6,11 +6,13 @@ import { useEyeGazeDetection } from '../../hooks/useEyeGazeDetection';
 import { useLivenessCheck } from '../../hooks/useLivenessCheck';
 import { useExamSession } from '../../hooks/useExamSession';
 import { useExamAnswers } from '../../hooks/useExamAnswers';
+import { useViolationTracker } from '../../hooks/useViolationTracker';
 import { LivenessCheckModal } from '../../components/LivenessCheckModal';
 import { DistanceSetupModal } from '../../components/DistanceSetupModal';
 import { ExamSubmissionModal } from '../../components/ExamSubmissionModal';
 import { mockQuestions } from '../../data/mockData';
-import { calculateViolationScore, getRiskLevel, ViolationEvent } from '../../utils/violationScorer';
+import { getRiskLevel, calculateViolationScore, ViolationEvent as LocalViolationEvent } from '../../utils/violationScorer';
+import { ViolationType, ViolationSeverity } from '../../types/examSession';
 import {
   Clock, AlertTriangle, CheckCircle,
   ChevronLeft, ChevronRight, CameraOff, Video, ArrowLeftRight
@@ -42,6 +44,17 @@ export const Exam = () => {
     syncToServer,
   } = useExamAnswers(totalQuestions);
 
+  // ── Phase 3: Violation Tracking ──
+  const {
+    violations: trackedViolations,
+    violationCount,
+    recordViolation,
+  } = useViolationTracker(
+    session?.id,
+    currentExam?.id ? String(currentExam.id) : undefined,
+    user?.id
+  );
+
   // ── Submission Modal State ──
   const [showSubmissionModal, setShowSubmissionModal] = useState(false);
   const [isSubmitting, setIsSubmitting] = useState(false);
@@ -59,8 +72,7 @@ export const Exam = () => {
   // Distance standardization
   const [optimalDistanceCm, setOptimalDistanceCm] = useState<number | null>(null);
 
-  // Violation tracking state (hidden from student - only sent to instructor)
-  const [violationEvents, setViolationEvents] = useState<ViolationEvent[]>([]);
+  // Violation scoring (local, for display warnings only)
   // eslint-disable-next-line @typescript-eslint/no-unused-vars
   const [_violationScore, setViolationScore] = useState(0);
   // eslint-disable-next-line @typescript-eslint/no-unused-vars
@@ -113,7 +125,7 @@ export const Exam = () => {
     }
   }, [gazeData?.isLookingAway, gazeData?.isBlinking]);
 
-  // ── Violation Detection Effect ──
+  // ── Violation Detection Effect - monitor gaze data for violations ──
   const lastViolationEventTimeRef = useRef<{ gaze_sustained: number; head_pose: number; gaze_brief: number }>({
     gaze_sustained: 0,
     head_pose: 0,
@@ -123,88 +135,98 @@ export const Exam = () => {
   useEffect(() => {
     if (!gazeData || !examStarted) return;
 
-    const newEvents: ViolationEvent[] = [];
     const now = Date.now();
     const SUSTAINED_DEBOUNCE = 5000;
     const BRIEF_DEBOUNCE = 3000;
 
+    // Detect Sustained Look-Away (>3 seconds)
     if (gazeData.isLookingAway && gazeData.gazeDuration > 3000 &&
         now - lastViolationEventTimeRef.current.gaze_sustained > SUSTAINED_DEBOUNCE) {
-      newEvents.push({
-        id: `gaze_${Date.now()}`,
-        type: 'gaze_sustained_away',
-        severity: 'high',
-        timestamp: new Date().toISOString(),
-        duration: gazeData.gazeDuration,
+      recordViolation({
+        violation_type: 'gaze_sustained_away' as ViolationType,
+        severity: 'high' as ViolationSeverity,
+        occurred_at: new Date().toISOString(),
+        duration_ms: gazeData.gazeDuration,
         description: `Looked away for ${Math.round(gazeData.gazeDuration / 1000)}s`,
-        metadata: { direction: gazeData.gazeDirection }
+        metadata: { direction: gazeData.gazeDirection },
       });
       lastViolationEventTimeRef.current.gaze_sustained = now;
     }
 
+    // Detect Extreme Head Pose (yaw > 45 degrees)
     if (gazeData.headPose && Math.abs(gazeData.headPose.yaw) > 45 &&
         now - lastViolationEventTimeRef.current.head_pose > SUSTAINED_DEBOUNCE) {
-      newEvents.push({
-        id: `head_${Date.now()}`,
-        type: 'head_pose_extreme',
-        severity: 'medium',
-        timestamp: new Date().toISOString(),
+      recordViolation({
+        violation_type: 'head_pose_extreme' as ViolationType,
+        severity: 'medium' as ViolationSeverity,
+        occurred_at: new Date().toISOString(),
         description: `Head turned ${Math.round(gazeData.headPose.yaw)}°`,
-        metadata: { pose: gazeData.headPose }
+        metadata: { pose: gazeData.headPose },
       });
       lastViolationEventTimeRef.current.head_pose = now;
     }
 
+    // Detect brief look-away events (1-3 seconds)
     if (gazeData.isLookingAway && gazeData.gazeDuration > 1000 && gazeData.gazeDuration <= 3000 &&
         now - lastViolationEventTimeRef.current.gaze_brief > BRIEF_DEBOUNCE) {
-      newEvents.push({
-        id: `gaze_brief_${Date.now()}`,
-        type: 'gaze_looking_away',
-        severity: 'low',
-        timestamp: new Date().toISOString(),
-        duration: gazeData.gazeDuration,
+      recordViolation({
+        violation_type: 'gaze_looking_away' as ViolationType,
+        severity: 'low' as ViolationSeverity,
+        occurred_at: new Date().toISOString(),
+        duration_ms: gazeData.gazeDuration,
         description: `Brief look away for ${Math.round(gazeData.gazeDuration / 1000)}s`,
-        metadata: { direction: gazeData.gazeDirection }
+        metadata: { direction: gazeData.gazeDirection },
       });
       lastViolationEventTimeRef.current.gaze_brief = now;
     }
-
-    if (newEvents.length > 0) {
-      setViolationEvents(prev => [...prev, ...newEvents].slice(-50));
-    }
-  }, [gazeData, examStarted]);
+  }, [gazeData, examStarted, recordViolation]);
 
   // ── Warning overlays ──
   useEffect(() => {
-    if (violationEvents.length === 0 || criticalWarning) return;
-    const latestEvent = violationEvents[violationEvents.length - 1];
-    const isHighOrCritical = latestEvent.severity === 'high' || latestEvent.severity === 'medium';
-    if (isHighOrCritical) {
-      setCriticalWarning({ message: latestEvent.description, severity: latestEvent.severity as 'high' | 'critical' });
+    if (violationCount === 0 || criticalWarning) return;
+
+    const latestViolation = trackedViolations[trackedViolations.length - 1];
+    if (latestViolation && (latestViolation.severity === 'high' || latestViolation.severity === 'critical')) {
+      setCriticalWarning({
+        message: latestViolation.description || 'Violation detected',
+        severity: latestViolation.severity as 'high' | 'critical'
+      });
       setTimeout(() => {
-        setCriticalWarning(prev => (prev && prev.message === latestEvent.description ? null : prev));
+        setCriticalWarning(prev => (prev && prev.message === latestViolation.description ? null : prev));
       }, 3000);
     }
-  }, [violationEvents.length]);
+  }, [violationCount, criticalWarning, trackedViolations]);
 
   useEffect(() => {
-    if (violationEvents.length === 5 && !criticalWarning) {
+    if (violationCount === 5 && !criticalWarning) {
       setCriticalWarning({ message: 'Multiple violations detected. Please keep your eyes on the exam.', severity: 'high' });
       setTimeout(() => setCriticalWarning(null), 5000);
     }
-  }, [violationEvents.length, criticalWarning]);
+  }, [violationCount, criticalWarning]);
 
   useEffect(() => {
-    if (violationEvents.length === 10 && !criticalWarning) {
+    if (violationCount === 10 && !criticalWarning) {
       setCriticalWarning({ message: '⚠️ Exam will be flagged if violations continue.', severity: 'critical' });
       setTimeout(() => setCriticalWarning(null), 5000);
     }
-  }, [violationEvents.length, criticalWarning]);
+  }, [violationCount, criticalWarning]);
 
   // ── Violation scoring (local only for now) ──
   useEffect(() => {
-    if (violationEvents.length === 0 || !examStarted) return;
-    const { score, level } = calculateViolationScore(violationEvents);
+    if (violationCount === 0 || !examStarted) return;
+
+    // Convert tracked violations to local format for scoring
+    const localViolations: LocalViolationEvent[] = trackedViolations.map(v => ({
+      id: v.id,
+      type: v.violation_type as any,
+      severity: v.severity as any,
+      timestamp: v.occurred_at,
+      duration: v.duration_ms ?? undefined,
+      description: v.description || '',
+      metadata: v.metadata,
+    }));
+
+    const { score, level } = calculateViolationScore(localViolations);
     setViolationScore(score);
     setRiskLevel(level);
     const risk = getRiskLevel(score);
@@ -212,7 +234,7 @@ export const Exam = () => {
       console.warn('[Exam] Critical violation detected - alerts disabled until backend is configured');
       setLastAlertTime(Date.now());
     }
-  }, [violationEvents, lastAlertTime, examStarted]);
+  }, [trackedViolations, violationCount, lastAlertTime, examStarted]);
 
   // ── Stop detection on unmount ──
   useEffect(() => {
