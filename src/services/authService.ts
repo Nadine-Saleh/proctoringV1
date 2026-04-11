@@ -135,26 +135,70 @@ export async function logout() {
 
 /**
  * Get the current user's profile
+ * If profile doesn't exist, attempt to create it
  */
 export async function getUserProfile(): Promise<UserProfile | null> {
   const { data: { user } } = await supabase.auth.getUser();
-  
+
   if (!user) {
     return null;
   }
 
+  // Try to fetch profile
   const { data, error } = await supabase
     .from('users')
     .select('*')
     .eq('id', user.id)
-    .single();
+    .maybeSingle(); // Use maybeSingle() instead of single() to avoid error on no rows
 
   if (error) {
     console.error('[Auth] Error fetching user profile:', error);
-    return null;
+    // Attempt to create missing profile
+    return await createMissingProfile(user);
+  }
+
+  if (!data) {
+    // Profile doesn't exist, create it
+    console.log('[Auth] No profile found, creating one...');
+    return await createMissingProfile(user);
   }
 
   return data as UserProfile;
+}
+
+/**
+ * Create a profile for an existing auth user
+ */
+async function createMissingProfile(user: any): Promise<UserProfile | null> {
+  try {
+    const userMetadata = user.user_metadata || {};
+    const fullName = userMetadata.full_name || user.email?.split('@')[0] || 'User';
+    const role = userMetadata.role || 'student';
+
+    console.log('[Auth] Creating profile for:', user.id, fullName, role);
+
+    const { data, error } = await supabase
+      .from('users')
+      .insert({
+        id: user.id,
+        email: user.email,
+        full_name: fullName,
+        role: role,
+      } as any)
+      .select()
+      .single();
+
+    if (error) {
+      console.error('[Auth] Failed to create profile:', error);
+      return null;
+    }
+
+    console.log('[Auth] Profile created successfully');
+    return data as UserProfile;
+  } catch (error) {
+    console.error('[Auth] Error creating profile:', error);
+    return null;
+  }
 }
 
 /**

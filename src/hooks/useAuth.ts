@@ -21,7 +21,12 @@ export function useAuth(): UseAuthReturn {
   const fetchUserProfile = useCallback(async () => {
     try {
       const profile = await getUserProfile();
-      setUser(profile);
+      if (profile) {
+        setUser(profile);
+      } else {
+        console.warn('[useAuth] Profile fetch/creation failed, user may need manual setup');
+        setUser(null);
+      }
     } catch (error) {
       console.error('[useAuth] Error fetching user profile:', error);
       setUser(null);
