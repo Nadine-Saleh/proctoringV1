@@ -8,7 +8,6 @@ import { LivenessCheckModal } from '../../components/LivenessCheckModal';
 import { DistanceSetupModal } from '../../components/DistanceSetupModal';
 import { mockQuestions } from '../../data/mockData';
 import { calculateViolationScore, getRiskLevel, ViolationEvent } from '../../utils/violationScorer';
-import { sendCriticalAlert } from '../../services/instructorAlertService';
 import {
   Clock, AlertTriangle, CheckCircle,
   ChevronLeft, ChevronRight, CameraOff, Video, ArrowLeftRight
@@ -206,32 +205,17 @@ export const Exam = () => {
 
   // Scoring & Alerting Effect
   useEffect(() => {
-    if (violationEvents.length === 0 && !examStarted) return;
+    if (violationEvents.length === 0 || !examStarted) return;
 
     const { score, level } = calculateViolationScore(violationEvents);
     setViolationScore(score);
     setRiskLevel(level);
 
     const risk = getRiskLevel(score);
+    // Only attempt alerts in production with real backend
     if (risk.shouldAlert && Date.now() - lastAlertTime > 60000) {
-      // TODO: Replace with actual user ID from auth context
-      const studentId = `student_${currentExam?.id || 'unknown'}`;
-      
-      sendCriticalAlert({
-        examId: currentExam?.id || '',
-        studentId,
-        violationScore: score,
-        events: violationEvents.slice(-10),
-      }).then((result) => {
-        if (result.success) {
-          setLastAlertTime(Date.now());
-          console.log('[Exam] Critical alert sent successfully:', result.alertId);
-        } else {
-          console.warn('[Exam] Alert not sent:', result.alertId);
-        }
-      }).catch((error) => {
-        console.error('[Exam] Failed to send critical alert:', error);
-      });
+      console.warn('[Exam] Critical violation detected - alerts disabled until backend is configured');
+      setLastAlertTime(Date.now());
     }
   }, [violationEvents, currentExam, lastAlertTime, examStarted]);
 
