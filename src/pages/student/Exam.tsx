@@ -4,12 +4,14 @@ import { useApp } from '../../context/AppContext';
 import { useProctoring } from '../../hooks/useProctoring';
 import { useEyeGazeDetection } from '../../hooks/useEyeGazeDetection';
 import { useLivenessCheck } from '../../hooks/useLivenessCheck';
-import { EyeGazeMonitor } from '../../components/EyeGazeMonitor';
 import { LivenessCheckModal } from '../../components/LivenessCheckModal';
+import { DistanceSetupModal } from '../../components/DistanceSetupModal';
 import { mockQuestions } from '../../data/mockData';
+import { calculateViolationScore, getRiskLevel, ViolationEvent } from '../../utils/violationScorer';
+import { sendCriticalAlert } from '../../services/instructorAlertService';
 import {
   Clock, AlertTriangle, CheckCircle,
-  ChevronLeft, ChevronRight, CameraOff, Video, Eye
+  ChevronLeft, ChevronRight, CameraOff, Video, ArrowLeftRight
 } from 'lucide-react';
 
 export const Exam = () => {
@@ -19,21 +21,31 @@ export const Exam = () => {
   const [currentQuestion, setCurrentQuestion] = useState(0);
   const [answers, setAnswers] = useState<{ [key: number]: number }>({});
   const [timeRemaining, setTimeRemaining] = useState(5400);
-  const [showLivenessCheck, setShowLivenessCheck] = useState(true);
+  const [showLivenessCheck, setShowLivenessCheck] = useState(false);
+  const [showDistanceSetup, setShowDistanceSetup] = useState(true);
   const [examStarted, setExamStarted] = useState(false);
+  const [gazeStatus, setGazeStatus] = useState<'center' | 'looking-away'>('center');
+  const [criticalWarning, setCriticalWarning] = useState<{ message: string; severity: 'high' | 'critical' } | null>(null);
+
+  // Distance standardization
+  const [optimalDistanceCm, setOptimalDistanceCm] = useState<number | null>(null);
+
+  // Violation tracking state (hidden from student - only sent to instructor)
+  const [violationEvents, setViolationEvents] = useState<ViolationEvent[]>([]);
+  // eslint-disable-next-line @typescript-eslint/no-unused-vars
+  const [_violationScore, setViolationScore] = useState(0);
+  // eslint-disable-next-line @typescript-eslint/no-unused-vars
+  const [_riskLevel, setRiskLevel] = useState<'low' | 'medium' | 'high' | 'critical'>('low');
+  const [lastAlertTime, setLastAlertTime] = useState(0);
 
   const { status, videoRef: proctoringVideoRef, retryCamera } = useProctoring(examStarted);
   const {
     gazeData,
     isDetecting,
     modelsLoaded: gazeModelsLoaded,
-    loading: gazeLoading,
-    error: gazeError,
-    suspiciousEvents,
     videoRef: gazeVideoRef,
     startDetection,
-    stopDetection,
-    clearEvents
+    stopDetection
   } = useEyeGazeDetection(examStarted);
 
   const {
@@ -47,28 +59,181 @@ export const Exam = () => {
     totalSteps,
     startCheck,
     resetCheck,
-    videoRef: livenessVideoRef
+    videoRef: livenessVideoRef,
+    faceDistanceCm: livenessFaceDistanceCm
   } = useLivenessCheck();
 
   const combinedVideoRef = useRef<HTMLVideoElement | null>(null);
 
-  // Debug logging
-  useEffect(() => {
-    console.log('[Exam] Component mounted, currentExam:', currentExam);
-    console.log('[Exam] showLivenessCheck:', showLivenessCheck);
-    console.log('[Exam] liveness state - isChecking:', isChecking, 'isPassed:', livenessPassed, 'isFailed:', livenessFailed);
-    console.log('[Exam] Camera status:', status.camera, 'examStarted:', examStarted);
-    console.log('[Exam] Gaze models loaded:', gazeModelsLoaded);
-    console.log('[Exam] Is detecting:', isDetecting);
-  }, [currentExam, showLivenessCheck, isChecking, livenessPassed, livenessFailed, status.camera, gazeModelsLoaded, isDetecting, examStarted]);
+  // Use liveness face distance before exam starts, then gaze distance after
+  const faceDistanceCm = examStarted ? gazeData?.faceDistanceCm : livenessFaceDistanceCm;
 
-  // Start eye gaze detection when models are loaded and camera is ready AND exam has started
+  // Start eye gaze detection when exam starts and models are loaded
   useEffect(() => {
     if (examStarted && gazeModelsLoaded && status.camera && !isDetecting) {
-      console.log('[Exam] Starting eye gaze detection...');
       startDetection();
     }
-  }, [gazeModelsLoaded, status.camera, isDetecting, startDetection, examStarted]);
+  }, [examStarted, gazeModelsLoaded, status.camera, isDetecting, startDetection]);
+
+  // Show subtle status change when looking away (no distracting overlays)
+  useEffect(() => {
+    if (gazeData?.isLookingAway) {
+      setGazeStatus('looking-away');
+    } else {
+      setGazeStatus('center');
+    }
+  }, [gazeData?.isLookingAway, gazeData?.isBlinking]);
+
+  // Violation Detection Effect - monitor gaze data for violations
+  const lastViolationEventTimeRef = useRef<{ gaze_sustained: number; head_pose: number; gaze_brief: number }>({
+    gaze_sustained: 0,
+    head_pose: 0,
+    gaze_brief: 0
+  });
+
+  useEffect(() => {
+    if (!gazeData || !examStarted) return;
+
+    const newEvents: ViolationEvent[] = [];
+    const now = Date.now();
+
+    // Debounce: only record events every 5 seconds for sustained, 3 seconds for others
+    const SUSTAINED_DEBOUNCE = 5000;
+    const BRIEF_DEBOUNCE = 3000;
+
+    // Detect Sustained Look-Away (>3 seconds)
+    if (gazeData.isLookingAway && gazeData.gazeDuration > 3000 &&
+        now - lastViolationEventTimeRef.current.gaze_sustained > SUSTAINED_DEBOUNCE) {
+      newEvents.push({
+        id: `gaze_${Date.now()}`,
+        type: 'gaze_sustained_away',
+        severity: 'high',
+        timestamp: new Date().toISOString(),
+        duration: gazeData.gazeDuration,
+        description: `Looked away for ${Math.round(gazeData.gazeDuration / 1000)}s`,
+        metadata: { direction: gazeData.gazeDirection }
+      });
+      lastViolationEventTimeRef.current.gaze_sustained = now;
+    }
+
+    // Detect Extreme Head Pose (yaw > 45 degrees)
+    if (gazeData.headPose && Math.abs(gazeData.headPose.yaw) > 45 &&
+        now - lastViolationEventTimeRef.current.head_pose > SUSTAINED_DEBOUNCE) {
+      newEvents.push({
+        id: `head_${Date.now()}`,
+        type: 'head_pose_extreme',
+        severity: 'medium',
+        timestamp: new Date().toISOString(),
+        description: `Head turned ${Math.round(gazeData.headPose.yaw)}°`,
+        metadata: { pose: gazeData.headPose }
+      });
+      lastViolationEventTimeRef.current.head_pose = now;
+    }
+
+    // Detect brief look-away events (1-3 seconds)
+    if (gazeData.isLookingAway && gazeData.gazeDuration > 1000 && gazeData.gazeDuration <= 3000 &&
+        now - lastViolationEventTimeRef.current.gaze_brief > BRIEF_DEBOUNCE) {
+      newEvents.push({
+        id: `gaze_brief_${Date.now()}`,
+        type: 'gaze_looking_away',
+        severity: 'low',
+        timestamp: new Date().toISOString(),
+        duration: gazeData.gazeDuration,
+        description: `Brief look away for ${Math.round(gazeData.gazeDuration / 1000)}s`,
+        metadata: { direction: gazeData.gazeDirection }
+      });
+      lastViolationEventTimeRef.current.gaze_brief = now;
+    }
+
+    if (newEvents.length > 0) {
+      setViolationEvents(prev => [...prev, ...newEvents].slice(-50)); // Keep last 50 events
+    }
+  }, [gazeData, examStarted]);
+
+  // Show critical warning alert for high/critical violations
+  useEffect(() => {
+    if (violationEvents.length === 0 || criticalWarning) return;
+
+    const latestEvent = violationEvents[violationEvents.length - 1];
+    const isHighOrCritical = latestEvent.severity === 'high' || latestEvent.severity === 'medium';
+
+    if (isHighOrCritical) {
+      setCriticalWarning({
+        message: latestEvent.description,
+        severity: latestEvent.severity as 'high' | 'critical'
+      });
+
+      // Auto-dismiss after 3 seconds
+      setTimeout(() => {
+        setCriticalWarning(prev => {
+          // Only clear if it's still the same warning
+          if (prev && prev.message === latestEvent.description) {
+            return null;
+          }
+          return prev;
+        });
+      }, 3000);
+    }
+  }, [violationEvents.length]);
+
+  // Show warning after 5 violations
+  useEffect(() => {
+    if (violationEvents.length === 5 && !criticalWarning) {
+      setCriticalWarning({
+        message: 'Multiple violations detected. Please keep your eyes on the exam.',
+        severity: 'high'
+      });
+
+      setTimeout(() => {
+        setCriticalWarning(null);
+      }, 5000);
+    }
+  }, [violationEvents.length, criticalWarning]);
+
+  // Show stronger warning after 10 violations
+  useEffect(() => {
+    if (violationEvents.length === 10 && !criticalWarning) {
+      setCriticalWarning({
+        message: '⚠️ Exam will be flagged if violations continue.',
+        severity: 'critical'
+      });
+
+      setTimeout(() => {
+        setCriticalWarning(null);
+      }, 5000);
+    }
+  }, [violationEvents.length, criticalWarning]);
+
+  // Scoring & Alerting Effect
+  useEffect(() => {
+    if (violationEvents.length === 0 && !examStarted) return;
+
+    const { score, level } = calculateViolationScore(violationEvents);
+    setViolationScore(score);
+    setRiskLevel(level);
+
+    const risk = getRiskLevel(score);
+    if (risk.shouldAlert && Date.now() - lastAlertTime > 60000) {
+      // TODO: Replace with actual user ID from auth context
+      const studentId = `student_${currentExam?.id || 'unknown'}`;
+      
+      sendCriticalAlert({
+        examId: currentExam?.id || '',
+        studentId,
+        violationScore: score,
+        events: violationEvents.slice(-10),
+      }).then((result) => {
+        if (result.success) {
+          setLastAlertTime(Date.now());
+          console.log('[Exam] Critical alert sent successfully:', result.alertId);
+        } else {
+          console.warn('[Exam] Alert not sent:', result.alertId);
+        }
+      }).catch((error) => {
+        console.error('[Exam] Failed to send critical alert:', error);
+      });
+    }
+  }, [violationEvents, currentExam, lastAlertTime, examStarted]);
 
   // Stop detection on unmount
   useEffect(() => {
@@ -79,7 +244,6 @@ export const Exam = () => {
 
   // Combined video ref for both proctoring and eye gaze
   const setCombinedVideoRef = useCallback((element: HTMLVideoElement | null) => {
-    console.log('[Exam] Combined video ref set:', element !== null);
     combinedVideoRef.current = element;
     proctoringVideoRef(element);
     gazeVideoRef(element);
@@ -87,7 +251,6 @@ export const Exam = () => {
 
   // Separate ref just for liveness check modal
   const setLivenessVideoRef = useCallback((element: HTMLVideoElement | null) => {
-    console.log('[Exam] Liveness video ref set:', element !== null);
     livenessVideoRef(element);
   }, [livenessVideoRef]);
 
@@ -105,14 +268,18 @@ export const Exam = () => {
     navigate('/results');
   }, [navigate]);
 
+  const handleSetOptimalDistance = useCallback((distance: number) => {
+    setOptimalDistanceCm(distance);
+    setShowDistanceSetup(false);
+    setShowLivenessCheck(true);
+    console.log(`[Exam] ✓ Distance set to: ${distance}cm, moving to liveness check`);
+  }, []);
+
   const handleLivenessComplete = useCallback(() => {
     // Only allow exam start if liveness check passed
     if (livenessPassed) {
-      console.log('[Exam] Liveness check passed, starting exam');
       setShowLivenessCheck(false);
       setExamStarted(true);
-    } else {
-      console.warn('[Exam] Attempted to start exam without passing liveness check');
     }
   }, [livenessPassed]);
 
@@ -147,7 +314,6 @@ export const Exam = () => {
 
   // Show "no exam" state if navigating directly to /exam
   if (!currentExam) {
-    console.log('[Exam] No currentExam, showing navigation message');
     return (
       <div className="min-h-screen bg-gray-50 flex items-center justify-center">
         <div className="text-center">
@@ -167,9 +333,13 @@ export const Exam = () => {
   const question = mockQuestions[currentQuestion];
   const progress = ((currentQuestion + 1) / mockQuestions.length) * 100;
 
-  // Show liveness check modal before exam starts
+  // Distance setup modal (first step)
+  if (showDistanceSetup) {
+    return <DistanceSetupModal onComplete={handleSetOptimalDistance} />;
+  }
+
+  // Show liveness check modal (second step)
   if (showLivenessCheck) {
-    console.log('[Exam] Rendering LivenessCheckModal - isChecking:', isChecking, 'isPassed:', livenessPassed, 'isFailed:', livenessFailed);
     return (
       <LivenessCheckModal
         isOpen={showLivenessCheck}
@@ -349,11 +519,20 @@ export const Exam = () => {
               </div>
             )}
 
-            {gazeData?.isLookingAway && (
-              <div className="absolute inset-0 bg-yellow-500/20 flex items-center justify-center animate-pulse">
-                <div className="bg-yellow-600 text-white px-4 py-2 rounded font-bold flex items-center">
-                  <Eye className="w-5 h-5 mr-2" />
-                  Looking Away!
+            {/* Critical Violation Alert */}
+            {criticalWarning && (
+              <div className="absolute top-2 left-2 right-2 z-20">
+                <div className={`px-3 py-2 rounded-lg shadow-lg backdrop-blur-sm ${
+                  criticalWarning.severity === 'critical'
+                    ? 'bg-red-600/90'
+                    : 'bg-orange-600/90'
+                }`}>
+                  <div className="flex items-center space-x-2">
+                    <AlertTriangle className="w-4 h-4 text-white flex-shrink-0" />
+                    <p className="text-white text-xs font-medium flex-1">
+                      {criticalWarning.message}
+                    </p>
+                  </div>
                 </div>
               </div>
             )}
@@ -440,49 +619,63 @@ export const Exam = () => {
 
             <div
               className={`flex items-center justify-between p-3 rounded-lg ${
-                gazeModelsLoaded
-                  ? isDetecting
-                    ? 'bg-green-50'
-                    : 'bg-blue-50'
+                isDetecting
+                  ? gazeStatus === 'looking-away'
+                    ? 'bg-red-50'
+                    : 'bg-green-50'
                   : 'bg-gray-50'
               }`}
             >
               <span
                 className={`text-sm font-medium ${
-                  gazeModelsLoaded
-                    ? isDetecting
-                      ? 'text-green-700'
-                      : 'text-blue-700'
+                  isDetecting
+                    ? gazeStatus === 'looking-away'
+                      ? 'text-red-700'
+                      : 'text-green-700'
                     : 'text-gray-500'
                 }`}
               >
-                {gazeModelsLoaded ? 'Eye Gaze Tracking' : 'Loading...'}
+                {isDetecting ? 'Eye Gaze' : 'Gaze Detection'}
               </span>
-              {gazeModelsLoaded ? (
-                isDetecting ? (
-                  <CheckCircle className="w-4 h-4 text-green-600" />
+              {isDetecting ? (
+                gazeStatus === 'looking-away' ? (
+                  <AlertTriangle className="w-4 h-4 text-red-600" />
                 ) : (
-                  <Eye className="w-4 h-4 text-blue-600" />
+                  <CheckCircle className="w-4 h-4 text-green-600" />
                 )
               ) : (
                 <div className="w-4 h-4 border-2 border-gray-400 border-t-transparent rounded-full animate-spin" />
               )}
             </div>
+
+            {/* Subtle Distance Indicator (during exam) */}
+            {examStarted && faceDistanceCm && optimalDistanceCm && (
+              <div className="p-2 rounded bg-gray-50 border border-gray-200">
+                <div className="flex items-center justify-between">
+                  <div className="flex items-center space-x-1">
+                    <ArrowLeftRight className="w-3 h-3 text-gray-500" />
+                    <span className="text-xs text-gray-600">Distance</span>
+                  </div>
+                  <div className="flex items-center space-x-2">
+                    <span className="text-xs font-semibold text-gray-900">~{faceDistanceCm}cm</span>
+                    {Math.abs(faceDistanceCm - optimalDistanceCm) > 15 && (
+                      <AlertTriangle className="w-3 h-3 text-orange-500 animate-pulse" />
+                    )}
+                  </div>
+                </div>
+                {/* Subtle progress bar */}
+                <div className="mt-1 relative h-1 bg-gray-200 rounded-full overflow-hidden">
+                  <div 
+                    className={`h-full rounded-full transition-all ${
+                      Math.abs(faceDistanceCm - optimalDistanceCm) > 15 ? 'bg-orange-400' : 'bg-green-400'
+                    }`}
+                    style={{ width: `${Math.max(10, Math.min(90, (faceDistanceCm / 100) * 100))}%` }}
+                  />
+                </div>
+              </div>
+            )}
           </div>
         </div>
-
-        {/* Eye Gaze Monitor */}
-        <EyeGazeMonitor
-          gazeData={gazeData}
-          isDetecting={isDetecting}
-          modelsLoaded={gazeModelsLoaded}
-          loading={gazeLoading}
-          error={gazeError}
-          suspiciousEvents={suspiciousEvents}
-          onStartDetection={startDetection}
-          onStopDetection={stopDetection}
-          onClearEvents={clearEvents}
-        />
 
         {/* Question Navigator */}
         <div className="p-6 flex-1 overflow-auto">
