@@ -143,29 +143,20 @@ export class LivenessDetectionModule {
     const jawRight = landmarks.getJawOutline()[16];
     const faceCenter = (jawLeft.x + jawRight.x) / 2;
     const faceWidth = Math.abs(jawRight.x - jawLeft.x);
-    
+
     // Record nose position for movement detection
     this.pushNosePosition(nose.x, nose.y);
 
     const currentStep = this.getCurrentStep();
     if (!currentStep) return false;
 
-    // Debug logging for pose detection
-    if (currentStep.type === 'pose') {
-      const noseOffset = nose.x - faceCenter;
-      console.log('[LivenessModule] Pose -', currentStep.name, '- noseOffset:', noseOffset.toFixed(1), 'faceWidth:', faceWidth.toFixed(1), 'threshold:', (faceWidth * 0.15).toFixed(1));
-    }
-
     switch (currentStep.type) {
       case 'pose':
         if (currentStep.name === "Look Left") {
-          // When turning head left, nose moves right in camera view (larger x values)
-          // Use percentage of face width for better scaling
-          const threshold = faceWidth * 0.15; // 15% of face width
+          const threshold = faceWidth * 0.15;
           return nose.x > faceCenter + threshold;
         } else if (currentStep.name === "Look Right") {
-          // When turning head right, nose moves left in camera view (smaller x values)
-          const threshold = faceWidth * 0.15; // 15% of face width
+          const threshold = faceWidth * 0.15;
           return nose.x < faceCenter - threshold;
         }
         break;
@@ -178,9 +169,7 @@ export class LivenessDetectionModule {
 
       case 'expression':
         if (expressions && expressions.happy) {
-          const passed = expressions.happy > this.config.smileThreshold;
-          console.log('[LivenessModule] Smile - happy:', expressions.happy.toFixed(2), 'threshold:', this.config.smileThreshold, passed ? 'PASSED ✓' : 'FAILED ✗');
-          return passed;
+          return expressions.happy > this.config.smileThreshold;
         }
         break;
     }
@@ -283,23 +272,13 @@ export class LivenessDetectionModule {
     if (currentStep && (currentStep.type === 'nod' || currentStep.type === 'lookUp')) {
       if (this.baselineY === null) {
         this.baselineY = y;
-        console.log('[LivenessModule] Baseline captured:', { x: x.toFixed(1), y: y.toFixed(1) });
       }
     }
 
-    this.noseHistory.push({
-      x,
-      y,
-      timestamp: Date.now()
-    });
+    this.noseHistory.push({ x, y, timestamp: Date.now() });
 
     if (this.noseHistory.length > this.config.noseHistoryLength) {
       this.noseHistory.shift();
-    }
-    
-    // Debug logging for current step
-    if (currentStep && (currentStep.type === 'nod' || currentStep.type === 'lookUp')) {
-      console.log('[LivenessModule] Recording position:', { x: x.toFixed(1), y: y.toFixed(1), historyLength: this.noseHistory.length, baselineY: this.baselineY?.toFixed(1) });
     }
   }
 
@@ -308,61 +287,32 @@ export class LivenessDetectionModule {
    * Nod pattern: Y increases (down in screen coords) then decreases (up)
    */
   private detectNod(): boolean {
-    // Need at least 4 frames to detect a nod pattern (more responsive)
     const minHistoryLength = 4;
     if (this.noseHistory.length < minHistoryLength) return false;
 
-    // Get the Y positions from the nose history
     const yPositions = this.noseHistory.map(pos => pos.y);
-
-    // Find min and max Y values
     const minY = Math.min(...yPositions);
     const maxY = Math.max(...yPositions);
     const range = maxY - minY;
+    const threshold = 6;
 
-    // Use a lenient threshold
-    const threshold = 6; // pixels - reduced for faster detection
+    if (range < threshold) return false;
 
-    console.log('[LivenessModule] Nod - Y values:', yPositions.map(y => y.toFixed(1)).join(', '));
-    console.log('[LivenessModule] Nod - range:', range.toFixed(1), 'minY:', minY.toFixed(1), 'maxY:', maxY.toFixed(1), 'baselineY:', this.baselineY?.toFixed(1));
-
-    // Need significant movement
-    if (range < threshold) {
-      console.log('[LivenessModule] Nod: FAILED - range', range.toFixed(1), '< threshold', threshold);
-      return false;
-    }
-
-    // Find the peak (maximum Y = lowest point on screen = head tilted down)
     const maxIndex = yPositions.indexOf(maxY);
     const totalLength = yPositions.length;
-
-    // For a nod, peak should be somewhere in the middle (not at the very start or end)
-    // More lenient: allow peak to be anywhere except the very edges
     const isNodPattern = maxIndex >= 1 && maxIndex <= totalLength - 2;
 
-    console.log('[LivenessModule] Nod - maxIndex:', maxIndex, 'totalLength:', totalLength, 'isNodPattern:', isNodPattern);
+    if (!isNodPattern) return false;
 
-    if (!isNodPattern) {
-      console.log('[LivenessModule] Nod: FAILED - peak not in middle');
-      return false;
-    }
-
-    // Check that we went down from baseline and came back up
     if (this.baselineY !== null) {
-      // The peak should be significantly lower (higher Y) than both start and end
       const peakFromStart = maxY - yPositions[0];
       const peakFromEnd = maxY - yPositions[yPositions.length - 1];
 
-      console.log('[LivenessModule] Nod - peakFromStart:', peakFromStart.toFixed(1), 'peakFromEnd:', peakFromEnd.toFixed(1));
-
-      // Both should be positive (went down from start, came back up to end)
       if (peakFromStart < threshold * 0.5 || peakFromEnd < threshold * 0.5) {
-        console.log('[LivenessModule] Nod: FAILED - did not return to baseline');
         return false;
       }
     }
 
-    console.log('[LivenessModule] Nod: PASSED ✓');
     return true;
   }
 
@@ -373,59 +323,30 @@ export class LivenessDetectionModule {
   private detectLookUp(face: DetectedFace): boolean {
     if (!face.landmarks) return false;
 
-    // Need at least 4 frames to detect lookUp pattern (more responsive)
     const minHistoryLength = 4;
     if (this.noseHistory.length < minHistoryLength) return false;
 
-    // Get the Y positions from the nose history
     const yPositions = this.noseHistory.map(pos => pos.y);
-
-    // Find min and max Y values
     const minY = Math.min(...yPositions);
     const maxY = Math.max(...yPositions);
     const range = maxY - minY;
+    const threshold = 6;
 
-    // Use a lenient threshold - looking up means nose goes UP (smaller Y)
-    const threshold = 6; // pixels - reduced for faster detection
+    if (range < threshold) return false;
 
-    console.log('[LivenessModule] LookUp - Y values:', yPositions.map(y => y.toFixed(1)).join(', '));
-    console.log('[LivenessModule] LookUp - range:', range.toFixed(1), 'minY:', minY.toFixed(1), 'maxY:', maxY.toFixed(1), 'baselineY:', this.baselineY?.toFixed(1));
-
-    // Need significant movement
-    if (range < threshold) {
-      console.log('[LivenessModule] LookUp: FAILED - range', range.toFixed(1), '< threshold', threshold);
-      return false;
-    }
-
-    // Find the minimum (highest point on screen = head tilted up)
     const minIndex = yPositions.indexOf(minY);
     const totalLength = yPositions.length;
 
-    console.log('[LivenessModule] LookUp - minIndex:', minIndex, 'totalLength:', totalLength);
-
-    // Check for upward movement from baseline
     if (this.baselineY !== null) {
       const upwardMovement = this.baselineY - minY;
-      console.log('[LivenessModule] LookUp - upwardMovement:', upwardMovement.toFixed(1));
 
-      // Need significant upward movement from baseline
-      if (upwardMovement < threshold) {
-        console.log('[LivenessModule] LookUp: FAILED - not enough upward movement');
-        return false;
-      }
+      if (upwardMovement < threshold) return false;
 
-      // Check that we sustained the upward position (not just a quick flick)
-      // More lenient: minimum should be in the latter part of history
-      if (minIndex < totalLength * 0.2) {
-        console.log('[LivenessModule] LookUp: FAILED - upward position not sustained');
-        return false;
-      }
+      if (minIndex < totalLength * 0.2) return false;
 
-      console.log('[LivenessModule] LookUp: PASSED ✓');
       return true;
     }
 
-    console.log('[LivenessModule] LookUp: FAILED - no baseline');
     return false;
   }
 

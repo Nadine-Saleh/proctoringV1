@@ -21,6 +21,10 @@ import {
 export const Exam = () => {
   const navigate = useNavigate();
   const { currentExam, user } = useApp();
+  
+  // Memoize values that depend on currentExam to prevent unnecessary re-renders
+  const currentExamId = currentExam?.id ? String(currentExam.id) : undefined;
+  const currentExamDuration = currentExam?.duration ?? 90;
 
   // ── Phase 2: Session & Answer Management ──
   const {
@@ -31,7 +35,7 @@ export const Exam = () => {
     submitExam,
     timeElapsed,
     startTimer,
-    stopTimer,
+    // stopTimer, // Currently unused - auto-submit disabled
   } = useExamSession();
 
   const totalQuestions = mockQuestions.length;
@@ -51,7 +55,7 @@ export const Exam = () => {
     recordViolation,
   } = useViolationTracker(
     session?.id,
-    currentExam?.id ? String(currentExam.id) : undefined,
+    currentExamId,
     user?.id
   );
 
@@ -131,9 +135,22 @@ export const Exam = () => {
     head_pose: 0,
     gaze_brief: 0
   });
+  
+  // Use a ref to prevent infinite loops caused by gazeData updates
+  const prevGazeDataRef = useRef<typeof gazeData | null>(null);
 
   useEffect(() => {
     if (!gazeData || !examStarted) return;
+    
+    // Skip if gaze data hasn't meaningfully changed
+    if (prevGazeDataRef.current && 
+        prevGazeDataRef.current.isLookingAway === gazeData.isLookingAway &&
+        prevGazeDataRef.current.gazeDirection === gazeData.gazeDirection &&
+        Math.abs(prevGazeDataRef.current.gazeDuration - gazeData.gazeDuration) < 100) {
+      return;
+    }
+    
+    prevGazeDataRef.current = gazeData;
 
     const now = Date.now();
     const SUSTAINED_DEBOUNCE = 5000;
@@ -195,21 +212,21 @@ export const Exam = () => {
         setCriticalWarning(prev => (prev && prev.message === latestViolation.description ? null : prev));
       }, 3000);
     }
-  }, [violationCount, criticalWarning, trackedViolations]);
+  }, [violationCount, trackedViolations]); // Removed criticalWarning from dependencies
 
   useEffect(() => {
     if (violationCount === 5 && !criticalWarning) {
       setCriticalWarning({ message: 'Multiple violations detected. Please keep your eyes on the exam.', severity: 'high' });
       setTimeout(() => setCriticalWarning(null), 5000);
     }
-  }, [violationCount, criticalWarning]);
+  }, [violationCount]); // Removed criticalWarning from dependencies
 
   useEffect(() => {
     if (violationCount === 10 && !criticalWarning) {
       setCriticalWarning({ message: '⚠️ Exam will be flagged if violations continue.', severity: 'critical' });
       setTimeout(() => setCriticalWarning(null), 5000);
     }
-  }, [violationCount, criticalWarning]);
+  }, [violationCount]); // Removed criticalWarning from dependencies
 
   // ── Violation scoring (local only for now) ──
   useEffect(() => {
@@ -231,10 +248,9 @@ export const Exam = () => {
     setRiskLevel(level);
     const risk = getRiskLevel(score);
     if (risk.shouldAlert && Date.now() - lastAlertTime > 60000) {
-      console.warn('[Exam] Critical violation detected - alerts disabled until backend is configured');
       setLastAlertTime(Date.now());
     }
-  }, [trackedViolations, violationCount, lastAlertTime, examStarted]);
+  }, [trackedViolations, violationCount, examStarted]); // Removed lastAlertTime from dependencies
 
   // ── Stop detection on unmount ──
   useEffect(() => {
@@ -255,14 +271,10 @@ export const Exam = () => {
   // ── Timer (sync with session timer) ──
   useEffect(() => {
     if (!examStarted) return;
-    const duration = (currentExam?.duration ?? 90) * 60;
+    const duration = currentExamDuration * 60;
     const remaining = Math.max(0, duration - timeElapsed);
     setTimeRemaining(remaining);
-
-    if (remaining <= 0) {
-      handleAutoSubmit();
-    }
-  }, [timeElapsed, examStarted, currentExam]);
+  }, [timeElapsed, examStarted, currentExamDuration]);
 
   // ── Track current question for time tracking ──
   useEffect(() => {
@@ -295,11 +307,6 @@ export const Exam = () => {
     setShowSubmissionModal(true);
   }, []);
 
-  const handleAutoSubmit = useCallback(() => {
-    stopTimer();
-    handleFinalSubmit();
-  }, [stopTimer]);
-
   const handleFinalSubmit = useCallback(async () => {
     if (!session) {
       console.error('[Exam] No active session to submit');
@@ -322,7 +329,6 @@ export const Exam = () => {
       const result = await submitExam(submittedAnswers, timeElapsed);
 
       if (result.success) {
-        console.log('[Exam] Submission successful:', result);
         navigate('/results', { state: { submissionResult: result } });
       } else {
         setSubmissionError(result.error ?? 'Submission failed. Please try again.');
@@ -345,7 +351,6 @@ export const Exam = () => {
     setOptimalDistanceCm(distance);
     setShowDistanceSetup(false);
     setShowLivenessCheck(true);
-    console.log(`[Exam] ✓ Distance set to: ${distance}cm, moving to liveness check`);
   }, []);
 
   const handleLivenessComplete = useCallback(async () => {

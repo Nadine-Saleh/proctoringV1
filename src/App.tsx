@@ -15,7 +15,6 @@ import { ProctoringReport } from './pages/instructor/Proctoring';
 function AppContent() {
   const { role, isAuthenticated, signOut, user, isLoading } = useApp();
 
-  // Show loading spinner while checking auth
   if (isLoading) {
     return (
       <div className="min-h-screen bg-gray-50 flex items-center justify-center">
@@ -27,7 +26,6 @@ function AppContent() {
     );
   }
 
-  // If not authenticated, show auth routes
   if (!isAuthenticated) {
     return (
       <div className="min-h-screen bg-gray-50">
@@ -40,12 +38,10 @@ function AppContent() {
     );
   }
 
-  // Authenticated routes
   return (
     <div className="min-h-screen bg-gray-50">
       <Navigation onSignOut={signOut} userName={user?.full_name} />
       <Routes>
-        {/* Student Routes */}
         <Route
           path="/"
           element={
@@ -70,7 +66,6 @@ function AppContent() {
             </ProtectedRoute>
           }
         />
-        {/* Instructor Routes */}
         <Route
           path="/instructor"
           element={
@@ -103,7 +98,6 @@ function AppContent() {
             </ProtectedRoute>
           }
         />
-        {/* Redirect unknown routes */}
         <Route
           path="*"
           element={

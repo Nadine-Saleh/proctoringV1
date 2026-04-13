@@ -35,23 +35,16 @@ export const useProctoring = (isEnabled: boolean = true): UseProctoringReturn =>
     errorMessage: null
   });
 
-  const log = (msg: string) => console.log('[Proctoring]', msg);
-
   // Load face-api models
   const loadModels = useCallback(async () => {
     if (status.modelsLoaded) return true;
 
     try {
-      log('Loading face detection models...');
       const MODEL_URL = '/models';
-
       await faceapi.nets.tinyFaceDetector.loadFromUri(MODEL_URL);
-
-      log('✓ Face detection models loaded');
       setStatus(prev => ({ ...prev, modelsLoaded: true }));
       return true;
     } catch (err: any) {
-      log('✗ Model loading error: ' + err.message);
       setStatus(prev => ({
         ...prev,
         modelsLoaded: false,
@@ -69,48 +62,31 @@ export const useProctoring = (isEnabled: boolean = true): UseProctoringReturn =>
     hasRequestedPermissionRef.current = true;
 
     try {
-      log('Starting camera...');
-
       if (!navigator.mediaDevices?.getUserMedia) {
         throw new Error('Browser does not support camera access');
       }
 
-      // Add a timeout to getUserMedia as it can sometimes hang
-      const streamPromise = navigator.mediaDevices.getUserMedia({
+      const stream = await navigator.mediaDevices.getUserMedia({
         video: { width: { ideal: 640 }, height: { ideal: 480 }, facingMode: 'user' },
         audio: false
       });
 
-      const timeoutPromise = new Promise<never>((_, reject) => 
-        window.setTimeout(() => reject(new Error('Camera request timed out')), 10000)
-      );
-
-      const stream = await Promise.race([streamPromise, timeoutPromise]);
-
-      log('✓ Camera permission granted');
       streamRef.current = stream;
       element.srcObject = stream;
 
       await new Promise((resolve, reject) => {
-        const timeout = window.setTimeout(() => reject(new Error('Video stream initialization timed out')), 15000);
-        
         const onVideoReady = () => {
-          window.clearTimeout(timeout);
           element.removeEventListener('loadedmetadata', onVideoReady);
           element.removeEventListener('error', onVideoError);
-          log('✓ Video ready');
           resolve(true);
         };
 
-        const onVideoError = (e: any) => {
-          window.clearTimeout(timeout);
+        const onVideoError = () => {
           element.removeEventListener('loadedmetadata', onVideoReady);
           element.removeEventListener('error', onVideoError);
-          console.error('[Proctoring] Video error event:', e);
           reject(new Error('Video source error'));
         };
 
-        // Check if already ready
         if (element.readyState >= 1) {
           onVideoReady();
         } else {
@@ -121,20 +97,11 @@ export const useProctoring = (isEnabled: boolean = true): UseProctoringReturn =>
 
       element.muted = true;
       element.playsInline = true;
-      try {
-        await element.play();
-        log('✓ Video playing');
-      } catch (playErr: any) {
-        console.error('[Proctoring] Play error:', playErr);
-        // Sometimes play() fails if the browser thinks it's not user-initiated
-        // but we'll try to continue if metadata is loaded
-      }
+      await element.play().catch(() => {});
 
       setStatus(prev => ({ ...prev, camera: true, loading: false }));
       isInitializedRef.current = true;
     } catch (err: any) {
-      log('✗ Camera error: ' + err.message);
-
       let msg = 'Unable to access camera. ';
       if (err.name === 'NotAllowedError')
         msg = 'Camera permission denied. Allow access in your browser and refresh.';
@@ -145,7 +112,7 @@ export const useProctoring = (isEnabled: boolean = true): UseProctoringReturn =>
       else msg += err.message;
 
       setStatus(prev => ({ ...prev, camera: false, loading: false, errorMessage: msg }));
-      hasRequestedPermissionRef.current = false; // Allow retry
+      hasRequestedPermissionRef.current = false;
     }
   }, []);
 
@@ -154,8 +121,6 @@ export const useProctoring = (isEnabled: boolean = true): UseProctoringReturn =>
     if (!isEnabled || !status.camera || !status.modelsLoaded || !videoRef.current) {
       return;
     }
-
-    log('Starting face detection...');
 
     const detectFaces = async () => {
       try {
@@ -169,32 +134,17 @@ export const useProctoring = (isEnabled: boolean = true): UseProctoringReturn =>
         );
 
         const faceCount = detections.length;
-        const timestamp = new Date().toLocaleTimeString();
-
-        // Console logging
-        if (faceCount === 0) {
-          console.warn(`[${timestamp}] ⚠️ NO FACE DETECTED`);
-          console.log(`[Face Detection] Faces found: ${faceCount}`);
-        } else if (faceCount === 1) {
-          console.log(`[${timestamp}] ✅ Single face detected (OK)`);
-          console.log(`[Face Detection] Faces found: ${faceCount}`);
-        } else {
-          console.warn(`[${timestamp}] 🚨 MULTIPLE FACES DETECTED: ${faceCount} faces`);
-          console.warn(`[${timestamp}] ⚠️ VIOLATION: More than one person in frame`);
-          console.log(`[Face Detection] Faces found: ${faceCount}`);
-        }
 
         setStatus(prev => ({
           ...prev,
           faceDetected: faceCount >= 1,
           multipleFaces: faceCount > 1
         }));
-      } catch (err: any) {
-        console.error(`[${new Date().toLocaleTimeString()}] Detection error:`, err);
+      } catch {
+        // Silently ignore detection errors during normal operation
       }
     };
 
-    // Start detection after small delay
     const timeout = window.setTimeout(() => {
       detectionIntervalRef.current = window.setInterval(detectFaces, 2000);
     }, 1000);
@@ -212,7 +162,6 @@ export const useProctoring = (isEnabled: boolean = true): UseProctoringReturn =>
   const setVideoRef = useCallback(
     (element: HTMLVideoElement | null) => {
       if (element) {
-        log('✓ Video element mounted');
         videoRef.current = element;
         startCamera(element);
       }
@@ -222,7 +171,6 @@ export const useProctoring = (isEnabled: boolean = true): UseProctoringReturn =>
 
   // Retry camera
   const retryCamera = useCallback(() => {
-    log('Retrying camera...');
     setStatus(prev => ({ ...prev, errorMessage: null, loading: true, camera: false }));
     isInitializedRef.current = false;
     hasRequestedPermissionRef.current = false;
@@ -277,7 +225,6 @@ export const useProctoring = (isEnabled: boolean = true): UseProctoringReturn =>
       }
       if (streamRef.current) {
         streamRef.current.getTracks().forEach(track => track.stop());
-        log('Camera stream stopped');
       }
       isInitializedRef.current = false;
       hasRequestedPermissionRef.current = false;
