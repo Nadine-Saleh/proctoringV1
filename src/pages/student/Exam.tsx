@@ -2,7 +2,8 @@ import { useState, useEffect, useRef, useCallback } from 'react';
 import { useNavigate } from 'react-router-dom';
 import { useApp } from '../../context/AppContext';
 import { useProctoring } from '../../hooks/useProctoring';
-import { useEyeGazeDetection } from '../../hooks/useEyeGazeDetection';
+import { useGazeTracking } from '../../hooks/useGazeTracking';
+import { GazeViolation } from '../../lib/gaze/GazeTrackingEngine';
 import { useLivenessCheck } from '../../hooks/useLivenessCheck';
 import { useExamSession } from '../../hooks/useExamSession';
 import { useExamAnswers } from '../../hooks/useExamAnswers';
@@ -12,6 +13,7 @@ import { DistanceSetupModal } from '../../components/DistanceSetupModal';
 import { ExamSubmissionModal } from '../../components/ExamSubmissionModal';
 import { mockQuestions } from '../../data/mockData';
 import { getRiskLevel, calculateViolationScore, ViolationEvent as LocalViolationEvent } from '../../utils/violationScorer';
+import { sendCriticalAlert } from '../../services/instructorAlertService';
 import { ViolationType, ViolationSeverity } from '../../types/examSession';
 import {
   Clock, AlertTriangle, CheckCircle,
@@ -83,15 +85,20 @@ export const Exam = () => {
   const [_riskLevel, setRiskLevel] = useState<'low' | 'medium' | 'high' | 'critical'>('low');
   const [lastAlertTime, setLastAlertTime] = useState(0);
 
-  const { status, videoRef: proctoringVideoRef, retryCamera } = useProctoring(examStarted);
+  const { status, videoRef: proctoringVideoRef, retryCamera, setViolationCallback } = useProctoring(examStarted);
   const {
-    gazeData,
-    isDetecting,
+    isRunning: gazeRunning,
     modelsLoaded: gazeModelsLoaded,
-    videoRef: gazeVideoRef,
-    startDetection,
-    stopDetection
-  } = useEyeGazeDetection(examStarted);
+    currentSample: gazeSample,
+    currentZone: gazeZone,
+    violations: gazeViolations,
+    start: startGazeTracking,
+    videoRef: gazeVideoRef
+  } = useGazeTracking({
+    sensitivity: 'medium',
+    enableCalibration: false,
+    enableWarnings: true
+  });
 
   const {
     isChecking,
@@ -111,92 +118,87 @@ export const Exam = () => {
   const combinedVideoRef = useRef<HTMLVideoElement | null>(null);
 
   // Use liveness face distance before exam starts, then gaze distance after
-  const faceDistanceCm = examStarted ? gazeData?.faceDistanceCm : livenessFaceDistanceCm;
+  const faceDistanceCm = examStarted ? (gazeSample?.faceDistance ?? 0) * 100 : livenessFaceDistanceCm; // Convert 0-1 to cm approximation
 
-  // ── Start eye gaze detection when exam starts ──
+  // ── Start gaze tracking when exam starts ──
   useEffect(() => {
-    if (examStarted && gazeModelsLoaded && status.camera && !isDetecting) {
-      startDetection();
+    if (examStarted && gazeModelsLoaded && status.camera && !gazeRunning) {
+      startGazeTracking();
     }
-  }, [examStarted, gazeModelsLoaded, status.camera, isDetecting, startDetection]);
+  }, [examStarted, gazeModelsLoaded, status.camera, gazeRunning, startGazeTracking]);
 
   // ── Gaze status tracking ──
   useEffect(() => {
-    if (gazeData?.isLookingAway) {
+    if (gazeZone === 'left' || gazeZone === 'right' || gazeZone === 'up' || gazeZone === 'down' || gazeZone === 'away') {
       setGazeStatus('looking-away');
     } else {
       setGazeStatus('center');
     }
-  }, [gazeData?.isLookingAway, gazeData?.isBlinking]);
+  }, [gazeZone]);
 
   // ── Violation Detection Effect - monitor gaze data for violations ──
-  const lastViolationEventTimeRef = useRef<{ gaze_sustained: number; head_pose: number; gaze_brief: number }>({
-    gaze_sustained: 0,
-    head_pose: 0,
-    gaze_brief: 0
-  });
-  
-  // Use a ref to prevent infinite loops caused by gazeData updates
-  const prevGazeDataRef = useRef<typeof gazeData | null>(null);
+  // Note: The new GazeTrackingEngine has its own violation detection.
+  // We sync those violations to the violation tracker here.
+  const prevGazeViolationsRef = useRef<GazeViolation[]>([]);
 
   useEffect(() => {
-    if (!gazeData || !examStarted) return;
+    if (!examStarted || !gazeViolations || gazeViolations.length === 0) return;
+
+    // Process new violations
+    const newViolations = gazeViolations.filter(v => !prevGazeViolationsRef.current.find(pv => pv.id === v.id));
     
-    // Skip if gaze data hasn't meaningfully changed
-    if (prevGazeDataRef.current && 
-        prevGazeDataRef.current.isLookingAway === gazeData.isLookingAway &&
-        prevGazeDataRef.current.gazeDirection === gazeData.gazeDirection &&
-        Math.abs(prevGazeDataRef.current.gazeDuration - gazeData.gazeDuration) < 100) {
-      return;
-    }
-    
-    prevGazeDataRef.current = gazeData;
+    newViolations.forEach(violation => {
+      // Map GazeViolation to ViolationEvent format
+      let violationType: ViolationType;
+      let severity: ViolationSeverity;
+      let description: string;
 
-    const now = Date.now();
-    const SUSTAINED_DEBOUNCE = 5000;
-    const BRIEF_DEBOUNCE = 3000;
+      switch (violation.type) {
+        case 'OFF_SCREEN':
+          violationType = 'gaze_looking_away';
+          severity = violation.severity === 'critical' ? 'high' : 'low';
+          description = `Looked ${gazeZone} for ${Math.round(violation.duration / 1000)}s`;
+          break;
+        case 'PROLONGED_AWAY':
+          violationType = 'gaze_sustained_away';
+          severity = 'high';
+          description = `Looked away for extended period (${Math.round(violation.duration / 1000)}s)`;
+          break;
+        case 'EXCESSIVE_BLINK':
+          violationType = 'excessive_blinking';
+          severity = 'low';
+          description = 'Excessive blinking detected';
+          break;
+        case 'CLOSE_FACE':
+          violationType = 'face_too_close';
+          severity = 'medium';
+          description = 'Face too close to camera';
+          break;
+        default:
+          violationType = 'gaze_looking_away';
+          severity = 'low';
+          description = violation.description;
+      }
 
-    // Detect Sustained Look-Away (>3 seconds)
-    if (gazeData.isLookingAway && gazeData.gazeDuration > 3000 &&
-        now - lastViolationEventTimeRef.current.gaze_sustained > SUSTAINED_DEBOUNCE) {
       recordViolation({
-        violation_type: 'gaze_sustained_away' as ViolationType,
-        severity: 'high' as ViolationSeverity,
-        occurred_at: new Date().toISOString(),
-        duration_ms: gazeData.gazeDuration,
-        description: `Looked away for ${Math.round(gazeData.gazeDuration / 1000)}s`,
-        metadata: { direction: gazeData.gazeDirection },
+        violation_type: violationType,
+        severity: severity,
+        occurred_at: new Date(violation.timestamp).toISOString(),
+        duration_ms: violation.duration,
+        description: description,
+        metadata: {
+          zone: gazeZone,
+          headPose: gazeSample ? {
+            yaw: gazeSample.headYaw,
+            pitch: gazeSample.headPitch,
+            roll: gazeSample.headRoll
+          } : undefined
+        },
       });
-      lastViolationEventTimeRef.current.gaze_sustained = now;
-    }
+    });
 
-    // Detect Extreme Head Pose (yaw > 45 degrees)
-    if (gazeData.headPose && Math.abs(gazeData.headPose.yaw) > 45 &&
-        now - lastViolationEventTimeRef.current.head_pose > SUSTAINED_DEBOUNCE) {
-      recordViolation({
-        violation_type: 'head_pose_extreme' as ViolationType,
-        severity: 'medium' as ViolationSeverity,
-        occurred_at: new Date().toISOString(),
-        description: `Head turned ${Math.round(gazeData.headPose.yaw)}°`,
-        metadata: { pose: gazeData.headPose },
-      });
-      lastViolationEventTimeRef.current.head_pose = now;
-    }
-
-    // Detect brief look-away events (1-3 seconds)
-    if (gazeData.isLookingAway && gazeData.gazeDuration > 1000 && gazeData.gazeDuration <= 3000 &&
-        now - lastViolationEventTimeRef.current.gaze_brief > BRIEF_DEBOUNCE) {
-      recordViolation({
-        violation_type: 'gaze_looking_away' as ViolationType,
-        severity: 'low' as ViolationSeverity,
-        occurred_at: new Date().toISOString(),
-        duration_ms: gazeData.gazeDuration,
-        description: `Brief look away for ${Math.round(gazeData.gazeDuration / 1000)}s`,
-        metadata: { direction: gazeData.gazeDirection },
-      });
-      lastViolationEventTimeRef.current.gaze_brief = now;
-    }
-  }, [gazeData, examStarted, recordViolation]);
+    prevGazeViolationsRef.current = gazeViolations;
+  }, [gazeViolations, examStarted, recordViolation, gazeZone, gazeSample]);
 
   // ── Warning overlays ──
   useEffect(() => {
@@ -252,10 +254,63 @@ export const Exam = () => {
     }
   }, [trackedViolations, violationCount, examStarted]); // Removed lastAlertTime from dependencies
 
-  // ── Stop detection on unmount ──
+  // ── Proctoring violation callback (camera-based violations) ──
   useEffect(() => {
-    return () => { stopDetection(); };
-  }, [stopDetection]);
+    if (!examStarted || !session?.id) return;
+
+    const handleProctoringViolation = (violation: { 
+      type: string; 
+      severity: string; 
+      description: string; 
+      metadata?: Record<string, unknown> 
+    }) => {
+      const now = new Date().toISOString();
+      
+      recordViolation({
+        violation_type: violation.type as ViolationType,
+        severity: violation.severity as ViolationSeverity,
+        occurred_at: now,
+        description: violation.description,
+        metadata: violation.metadata,
+      });
+
+      // Calculate current score to check if alert should be sent
+      const localViolations: LocalViolationEvent[] = trackedViolations.map(v => ({
+        id: v.id,
+        type: v.violation_type as any,
+        severity: v.severity as any,
+        timestamp: v.occurred_at,
+        duration: v.duration_ms ?? undefined,
+        description: v.description || '',
+        metadata: v.metadata,
+      }));
+
+      const { score, level } = calculateViolationScore(localViolations);
+
+      // Send alert to instructor if critical/high risk
+      if (level === 'critical' || level === 'high') {
+        console.log(`[Exam] Sending alert to instructor: ${violation.type} (score: ${score}, level: ${level})`);
+        sendCriticalAlert({
+          examId: currentExamId!,
+          studentId: user!.id,
+          sessionId: session?.id,
+          violationScore: score,
+          events: localViolations.slice(-5) // Send last 5 violations
+        }).catch(err => {
+          console.error('[Exam] Failed to send alert:', err);
+        });
+      }
+    };
+
+    // Set the callback in useProctoring
+    if (setViolationCallback) {
+      setViolationCallback(handleProctoringViolation);
+    }
+
+    return () => {
+      // Cleanup if needed
+    };
+  }, [examStarted, session?.id, currentExamId, user?.id, recordViolation, trackedViolations, setViolationCallback]);
 
   // ── Video refs ──
   const setCombinedVideoRef = useCallback((element: HTMLVideoElement | null) => {
@@ -630,14 +685,14 @@ export const Exam = () => {
               {status.tabActive ? <CheckCircle className="w-4 h-4 text-green-600" /> : <AlertTriangle className="w-4 h-4 text-red-600" />}
             </div>
             <div className={`flex items-center justify-between p-3 rounded-lg ${
-              isDetecting ? gazeStatus === 'looking-away' ? 'bg-red-50' : 'bg-green-50' : 'bg-gray-50'
+              gazeRunning ? gazeStatus === 'looking-away' ? 'bg-red-50' : 'bg-green-50' : 'bg-gray-50'
             }`}>
               <span className={`text-sm font-medium ${
-                isDetecting ? gazeStatus === 'looking-away' ? 'text-red-700' : 'text-green-700' : 'text-gray-500'
+                gazeRunning ? gazeStatus === 'looking-away' ? 'text-red-700' : 'text-green-700' : 'text-gray-500'
               }`}>
-                {isDetecting ? 'Eye Gaze' : 'Gaze Detection'}
+                {gazeRunning ? 'Eye Gaze' : 'Gaze Detection'}
               </span>
-              {isDetecting ? (
+              {gazeRunning ? (
                 gazeStatus === 'looking-away' ? <AlertTriangle className="w-4 h-4 text-red-600" /> : <CheckCircle className="w-4 h-4 text-green-600" />
               ) : (
                 <div className="w-4 h-4 border-2 border-gray-400 border-t-transparent rounded-full animate-spin" />

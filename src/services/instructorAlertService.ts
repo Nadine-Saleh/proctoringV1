@@ -1,8 +1,11 @@
 import { ViolationEvent } from '../utils/violationScorer';
+import { InstructorAlertDatabaseService } from './InstructorAlertDatabaseService';
+import { getInstructorWebSocketService, hasInstructorWebSocketService } from './WebSocketService';
 
 interface AlertPayload {
   examId: string;
   studentId: string;
+  sessionId?: string;
   violationScore: number;
   events: ViolationEvent[];
   timestamp: string;
@@ -18,17 +21,18 @@ const lastAlertTimePerStudent: Record<string, number> = {};
 const DEBOUNCE_INTERVAL_MS = 60000; // 60 seconds
 
 /**
- * Sends a critical alert to the instructor with debouncing and fallback.
+ * Sends a critical alert to the instructor with debouncing, database persistence, and fallback.
  * @param params - Alert parameters
  * @returns Promise with success status and alert ID
  */
 export async function sendCriticalAlert(params: {
   examId: string;
   studentId: string;
+  sessionId?: string;
   violationScore: number;
   events: ViolationEvent[];
 }): Promise<AlertResponse> {
-  const { examId, studentId, violationScore, events } = params;
+  const { examId, studentId, sessionId, violationScore, events } = params;
 
   // 1. Debounce check
   const now = Date.now();
@@ -47,6 +51,7 @@ export async function sendCriticalAlert(params: {
   const payload: AlertPayload = {
     examId,
     studentId,
+    sessionId: sessionId || '',
     violationScore,
     events,
     timestamp: new Date().toISOString()
@@ -55,19 +60,54 @@ export async function sendCriticalAlert(params: {
   let alertId = '';
   let success = false;
 
-  // 2. Try WebSocket first
+  // 2. Persist to database first
+  if (sessionId) {
+    try {
+      const riskLevel = violationScore >= 75 ? 'critical' : violationScore >= 50 ? 'high' : violationScore >= 25 ? 'medium' : 'low';
+      const violationSummary = events.slice(-5).map(e => ({
+        type: e.type,
+        severity: e.severity,
+        timestamp: e.timestamp,
+        description: e.description,
+      }));
+
+      const dbResult = await InstructorAlertDatabaseService.create({
+        exam_id: examId,
+        session_id: sessionId,
+        student_id: studentId,
+        alert_type: 'cheating_risk',
+        priority: riskLevel === 'critical' ? 'critical' : 'high',
+        cheating_score_at_time: violationScore,
+        title: `Cheating Risk: ${riskLevel.toUpperCase()}`,
+        message: `Student has a ${riskLevel} risk level with score ${violationScore}/100`,
+        violation_summary: { events: violationSummary, score: violationScore, level: riskLevel },
+      });
+
+      if (dbResult.success && dbResult.alertId) {
+        alertId = `db_${dbResult.alertId}`;
+        success = true;
+        console.log(`[AlertService] Alert persisted to database: ${dbResult.alertId}`);
+      }
+    } catch (error) {
+      console.error('[AlertService] Database alert creation failed:', error);
+    }
+  }
+
+  // 3. Try WebSocket for real-time delivery
   try {
     const wsSuccess = await sendViaWebSocket(payload);
     if (wsSuccess) {
       success = true;
-      alertId = `ws_${Date.now()}_${Math.random().toString(36).slice(2, 8)}`;
+      if (!alertId) {
+        alertId = `ws_${Date.now()}_${Math.random().toString(36).slice(2, 8)}`;
+      }
       console.log(`[AlertService] Alert sent via WebSocket for student ${studentId}`);
     }
   } catch (error) {
     console.warn('[AlertService] WebSocket send failed, falling back to HTTP:', error);
   }
 
-  // 3. Fallback to HTTP if WebSocket failed
+  // 4. Fallback to HTTP if WebSocket failed and DB didn't succeed
   if (!success) {
     try {
       const httpResult = await sendViaHTTP(payload);
@@ -81,7 +121,7 @@ export async function sendCriticalAlert(params: {
     }
   }
 
-  // 4. Update last alert time
+  // 5. Update last alert time
   if (success) {
     lastAlertTimePerStudent[studentId] = now;
   }
@@ -93,7 +133,15 @@ export async function sendCriticalAlert(params: {
  * Attempts to send alert via WebSocket connection.
  */
 async function sendViaWebSocket(payload: AlertPayload): Promise<boolean> {
-  // Check if instructor socket exists and is connected
+  // Try new WebSocketService first
+  if (hasInstructorWebSocketService()) {
+    const wsService = getInstructorWebSocketService();
+    if (wsService.isConnected()) {
+      return wsService.send('critical_alert', payload);
+    }
+  }
+
+  // Fallback to legacy window.instructorSocket
   const instructorSocket = (window as unknown as Record<string, unknown>)[
     'instructorSocket'
   ] as WebSocket | undefined;

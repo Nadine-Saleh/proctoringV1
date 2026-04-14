@@ -9,6 +9,9 @@ export interface ProctoringStatus {
   modelsLoaded: boolean;
   loading: boolean;
   errorMessage: string | null;
+  faceNotDetected: boolean;
+  faceTooClose: boolean;
+  faceTooFar: boolean;
 }
 
 export interface UseProctoringReturn {
@@ -16,6 +19,8 @@ export interface UseProctoringReturn {
   videoRef: React.RefCallback<HTMLVideoElement>;
   retryCamera: () => void;
   clearError: () => void;
+  recordViolation: (violation: { type: string; severity: string; description: string; metadata?: Record<string, unknown> }) => void;
+  setViolationCallback: (callback: (violation: { type: string; severity: string; description: string; metadata?: Record<string, unknown> }) => void) => void;
 }
 
 export const useProctoring = (isEnabled: boolean = true): UseProctoringReturn => {
@@ -24,6 +29,9 @@ export const useProctoring = (isEnabled: boolean = true): UseProctoringReturn =>
   const isInitializedRef = useRef(false);
   const hasRequestedPermissionRef = useRef(false);
   const detectionIntervalRef = useRef<any>(null);
+  const violationCallbackRef = useRef<((violation: { type: string; severity: string; description: string; metadata?: Record<string, unknown> }) => void) | null>(null);
+  const faceNotDetectedCountRef = useRef(0);
+  const lastFaceNotDetectedAlertRef = useRef(0);
 
   const [status, setStatus] = useState<ProctoringStatus>({
     camera: false,
@@ -32,8 +40,16 @@ export const useProctoring = (isEnabled: boolean = true): UseProctoringReturn =>
     tabActive: true,
     modelsLoaded: false,
     loading: true,
-    errorMessage: null
+    errorMessage: null,
+    faceNotDetected: false,
+    faceTooClose: false,
+    faceTooFar: false
   });
+
+  // Violation callback setter (exposed for external use)
+  const setViolationCallbackFn = useCallback((callback: (violation: { type: string; severity: string; description: string; metadata?: Record<string, unknown> }) => void) => {
+    violationCallbackRef.current = callback;
+  }, []);
 
   // Load face-api models
   const loadModels = useCallback(async () => {
@@ -134,12 +150,77 @@ export const useProctoring = (isEnabled: boolean = true): UseProctoringReturn =>
         );
 
         const faceCount = detections.length;
+        const now = Date.now();
 
-        setStatus(prev => ({
-          ...prev,
-          faceDetected: faceCount >= 1,
-          multipleFaces: faceCount > 1
-        }));
+        // Multiple faces detection
+        if (faceCount > 1) {
+          setStatus(prev => ({ ...prev, multipleFaces: true, faceDetected: true }));
+          violationCallbackRef.current?.({
+            type: 'multiple_faces',
+            severity: 'critical',
+            description: `${faceCount} faces detected in frame`,
+            metadata: { faceCount }
+          });
+        } else if (faceCount === 1) {
+          setStatus(prev => ({ 
+            ...prev, 
+            multipleFaces: false, 
+            faceDetected: true,
+            faceNotDetected: false 
+          }));
+          faceNotDetectedCountRef.current = 0;
+        } else {
+          // No face detected
+          faceNotDetectedCountRef.current++;
+          
+          // Only alert after 3 consecutive misses (6 seconds)
+          if (faceNotDetectedCountRef.current >= 3 && now - lastFaceNotDetectedAlertRef.current > 30000) {
+            setStatus(prev => ({ ...prev, faceDetected: false, faceNotDetected: true }));
+            violationCallbackRef.current?.({
+              type: 'face_not_detected',
+              severity: 'high',
+              description: 'No face detected in frame for 6+ seconds',
+              metadata: { consecutiveMisses: faceNotDetectedCountRef.current }
+            });
+            lastFaceNotDetectedAlertRef.current = now;
+          } else {
+            setStatus(prev => ({ ...prev, faceDetected: false }));
+          }
+        }
+
+        // Face distance estimation (using detection box size)
+        if (faceCount === 1 && detections[0].box) {
+          const boxArea = detections[0].box.width * detections[0].box.height;
+          const videoArea = videoRef.current!.videoWidth * videoRef.current!.videoHeight;
+          const faceRatio = boxArea / videoArea;
+          
+          // Thresholds based on face occupying screen area
+          if (faceRatio > 0.15) {
+            setStatus(prev => ({ ...prev, faceTooClose: true, faceTooFar: false }));
+            if (now - lastFaceNotDetectedAlertRef.current > 30000) {
+              violationCallbackRef.current?.({
+                type: 'face_too_close',
+                severity: 'medium',
+                description: 'Face too close to camera',
+                metadata: { faceRatio: Math.round(faceRatio * 100) }
+              });
+              lastFaceNotDetectedAlertRef.current = now;
+            }
+          } else if (faceRatio < 0.03) {
+            setStatus(prev => ({ ...prev, faceTooClose: false, faceTooFar: true }));
+            if (now - lastFaceNotDetectedAlertRef.current > 30000) {
+              violationCallbackRef.current?.({
+                type: 'face_too_far',
+                severity: 'medium',
+                description: 'Face too far from camera',
+                metadata: { faceRatio: Math.round(faceRatio * 100) }
+              });
+              lastFaceNotDetectedAlertRef.current = now;
+            }
+          } else {
+            setStatus(prev => ({ ...prev, faceTooClose: false, faceTooFar: false }));
+          }
+        }
       } catch {
         // Silently ignore detection errors during normal operation
       }
@@ -194,6 +275,11 @@ export const useProctoring = (isEnabled: boolean = true): UseProctoringReturn =>
     setStatus(prev => ({ ...prev, errorMessage: null }));
   }, []);
 
+  // Record violation wrapper
+  const recordViolation = useCallback((violation: { type: string; severity: string; description: string; metadata?: Record<string, unknown> }) => {
+    violationCallbackRef.current?.(violation);
+  }, []);
+
   // Load models on mount
   useEffect(() => {
     loadModels();
@@ -235,6 +321,8 @@ export const useProctoring = (isEnabled: boolean = true): UseProctoringReturn =>
     status,
     videoRef: setVideoRef,
     retryCamera,
-    clearError
+    clearError,
+    recordViolation,
+    setViolationCallback: setViolationCallbackFn
   };
 };

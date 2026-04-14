@@ -1,4 +1,4 @@
-import { useState, useEffect } from 'react';
+import { useState, useEffect, useRef } from 'react';
 import { useApp } from '../../context/AppContext';
 import { supabase } from '../../lib/supabase/client';
 import { ViolationEventService, ExamSessionService } from '../../examSession';
@@ -13,8 +13,28 @@ import {
   Eye,
   Loader2,
   CheckCircle,
-  Clock
+  Clock,
+  Bell,
+  Zap,
+  Activity
 } from 'lucide-react';
+
+interface LiveAlert {
+  id: string;
+  examId: string;
+  studentId: string;
+  studentName: string;
+  violationScore: number;
+  riskLevel: string;
+  events: Array<{
+    type: string;
+    severity: string;
+    description: string;
+    timestamp: string;
+  }>;
+  timestamp: string;
+  acknowledged: boolean;
+}
 
 export const ProctoringReport = () => {
   const { user } = useApp();
@@ -23,11 +43,100 @@ export const ProctoringReport = () => {
   const [severityFilter, setSeverityFilter] = useState<string>('all');
   const [typeFilter, setTypeFilter] = useState<string>('all');
 
+  // Real-time monitoring state
+  const [liveAlerts, setLiveAlerts] = useState<LiveAlert[]>([]);
+  const [showLiveMonitoring, setShowLiveMonitoring] = useState(true);
+  const [isConnected, setIsConnected] = useState(false);
+  const wsRef = useRef<WebSocket | null>(null);
+  const audioRef = useRef<HTMLAudioElement | null>(null);
+
   // Data state
   const [exams, setExams] = useState<Array<{ id: string; title: string }>>([]);
   const [violations, setViolations] = useState<ViolationEvent[]>([]);
   const [summaries, setSummaries] = useState<Record<string, ViolationSummary[]>>({});
   const [sessions, setSessions] = useState<ExamSessionSummary[]>([]);
+
+  // Initialize WebSocket for real-time alerts
+  useEffect(() => {
+    if (!user) return;
+
+    try {
+      const wsUrl = `ws://localhost:4000/instructor/${user.id}`;
+      const ws = new WebSocket(wsUrl);
+      wsRef.current = ws;
+
+      ws.onopen = () => {
+        console.log('[ProctoringReport] Connected to real-time monitoring');
+        setIsConnected(true);
+        (window as any).instructorSocket = ws;
+      };
+
+      ws.onmessage = (event) => {
+        try {
+          const data = JSON.parse(event.data);
+          
+          if (data.type === 'critical_alert') {
+            const alert: LiveAlert = {
+              id: `alert_${Date.now()}`,
+              examId: data.payload.examId,
+              studentId: data.payload.studentId,
+              studentName: '',
+              violationScore: data.payload.violationScore,
+              riskLevel: data.payload.violationScore >= 75 ? 'critical' : 'high',
+              events: data.payload.events.map((e: any) => ({
+                type: e.type,
+                severity: e.severity,
+                description: e.description,
+                timestamp: e.timestamp
+              })),
+              timestamp: data.payload.timestamp,
+              acknowledged: false
+            };
+
+            setLiveAlerts(prev => [alert, ...prev].slice(0, 20));
+            
+            // Play alert sound
+            if (audioRef.current) {
+              audioRef.current.play().catch(() => {});
+            }
+
+            // Show browser notification
+            if (Notification.permission === 'granted') {
+              new Notification('🚨 Cheating Alert', {
+                body: `Student risk level: ${alert.riskLevel.toUpperCase()}`,
+                icon: '/alert-icon.png'
+              });
+            }
+          }
+        } catch (err) {
+          console.error('[ProctoringReport] Error processing alert:', err);
+        }
+      };
+
+      ws.onclose = () => {
+        console.log('[ProctoringReport] Disconnected from real-time monitoring');
+        setIsConnected(false);
+      };
+
+      ws.onerror = (error) => {
+        console.error('[ProctoringReport] WebSocket error:', error);
+        setIsConnected(false);
+      };
+
+      // Request notification permission
+      if (Notification.permission !== 'granted') {
+        Notification.requestPermission();
+      }
+
+      return () => {
+        if (wsRef.current) {
+          wsRef.current.close();
+        }
+      };
+    } catch (err) {
+      console.error('[ProctoringReport] Failed to connect to WebSocket:', err);
+    }
+  }, [user]);
 
   // Load instructor's exams
   useEffect(() => {
@@ -153,9 +262,30 @@ export const ProctoringReport = () => {
     });
   };
 
+  const formatTimeAgo = (timestamp: string) => {
+    const date = new Date(timestamp);
+    const now = new Date();
+    const diffMs = now.getTime() - date.getTime();
+    const diffMins = Math.floor(diffMs / 60000);
+    
+    if (diffMins < 1) return 'Just now';
+    if (diffMins === 1) return '1 min ago';
+    if (diffMins < 60) return `${diffMins} mins ago`;
+    
+    const diffHours = Math.floor(diffMins / 60);
+    if (diffHours === 1) return '1 hour ago';
+    return `${diffHours} hours ago`;
+  };
+
   const getStudentName = (studentId: string) => {
     const session = sessions.find(s => s.student_id === studentId);
     return session?.student_name || 'Unknown Student';
+  };
+
+  const acknowledgeAlert = (alertId: string) => {
+    setLiveAlerts(prev => prev.map(a => 
+      a.id === alertId ? { ...a, acknowledged: true } : a
+    ));
   };
 
   if (isLoading && examId !== 'all') {
@@ -171,11 +301,110 @@ export const ProctoringReport = () => {
 
   return (
     <div className="min-h-screen bg-gradient-to-br from-gray-50 to-blue-50">
+      {/* Hidden audio for alert sounds */}
+      <audio ref={audioRef} src="data:audio/wav;base64,UklGRl9vT19XQVZFZm10IBAAAAABAAEAQB8AAEAfAAABAAgAZGF0YU" preload="auto" />
+      
       <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 py-12">
         <div className="mb-8">
-          <h1 className="text-4xl font-bold text-gray-900 mb-2">Proctoring Report</h1>
-          <p className="text-lg text-gray-600">Monitor flagged events and suspicious activities</p>
+          <div className="flex items-center justify-between">
+            <div>
+              <h1 className="text-4xl font-bold text-gray-900 mb-2">Proctoring Report</h1>
+              <p className="text-lg text-gray-600">Monitor flagged events and suspicious activities</p>
+            </div>
+            <div className="flex items-center space-x-4">
+              <div className={`flex items-center space-x-2 px-4 py-2 rounded-lg ${
+                isConnected ? 'bg-green-100 text-green-700' : 'bg-red-100 text-red-700'
+              }`}>
+                <Activity className={`w-5 h-5 ${isConnected ? 'animate-pulse' : ''}`} />
+                <span className="font-medium">{isConnected ? 'Live Monitoring Active' : 'Disconnected'}</span>
+              </div>
+              <button
+                onClick={() => setShowLiveMonitoring(!showLiveMonitoring)}
+                className={`flex items-center space-x-2 px-4 py-2 rounded-lg font-medium ${
+                  showLiveMonitoring ? 'bg-blue-600 text-white' : 'bg-gray-200 text-gray-700'
+                }`}
+              >
+                <Bell className="w-5 h-5" />
+                <span>Live Alerts ({liveAlerts.filter(a => !a.acknowledged).length})</span>
+              </button>
+            </div>
+          </div>
         </div>
+
+        {/* Live Alerts Panel */}
+        {showLiveMonitoring && liveAlerts.length > 0 && (
+          <div className="mb-8 bg-gradient-to-r from-red-50 to-orange-50 border-2 border-red-200 rounded-xl p-6">
+            <div className="flex items-center justify-between mb-4">
+              <div className="flex items-center space-x-3">
+                <Zap className="w-6 h-6 text-red-600 animate-pulse" />
+                <h2 className="text-xl font-bold text-red-800">Live Cheating Alerts</h2>
+                <span className="px-3 py-1 bg-red-600 text-white text-sm font-bold rounded-full">
+                  {liveAlerts.filter(a => !a.acknowledged).length} New
+                </span>
+              </div>
+            </div>
+            <div className="space-y-3">
+              {liveAlerts.slice(0, 5).map(alert => (
+                <div
+                  key={alert.id}
+                  className={`p-4 rounded-lg border-2 transition-all ${
+                    alert.acknowledged 
+                      ? 'bg-gray-100 border-gray-300 opacity-60' 
+                      : 'bg-white border-red-300 shadow-lg'
+                  }`}
+                >
+                  <div className="flex items-center justify-between">
+                    <div className="flex items-center space-x-4 flex-1">
+                      <div className={`w-12 h-12 rounded-full flex items-center justify-center font-bold text-white ${
+                        alert.riskLevel === 'critical' ? 'bg-red-600' : 'bg-orange-600'
+                      }`}>
+                        {alert.studentName?.charAt(0) || 'S'}
+                      </div>
+                      <div className="flex-1">
+                        <div className="flex items-center space-x-3">
+                          <h3 className="font-bold text-gray-900">
+                            {alert.studentName || `Student ${alert.studentId.slice(0, 8)}`}
+                          </h3>
+                          <span className={`px-3 py-1 rounded-full text-xs font-bold ${
+                            alert.riskLevel === 'critical' 
+                              ? 'bg-red-600 text-white' 
+                              : 'bg-orange-600 text-white'
+                          }`}>
+                            {alert.riskLevel.toUpperCase()} RISK
+                          </span>
+                        </div>
+                        <div className="flex items-center space-x-4 mt-1">
+                          <span className="text-sm text-gray-600">
+                            Score: <span className="font-bold text-red-600">{alert.violationScore}/100</span>
+                          </span>
+                          <span className="text-sm text-gray-600">{formatTimeAgo(alert.timestamp)}</span>
+                        </div>
+                        <div className="flex flex-wrap gap-2 mt-2">
+                          {alert.events.slice(0, 3).map((event, idx) => (
+                            <span key={idx} className="text-xs px-2 py-1 bg-red-100 text-red-700 rounded">
+                              {event.type.replace('_', ' ').toUpperCase()}
+                            </span>
+                          ))}
+                        </div>
+                      </div>
+                    </div>
+                    <button
+                      onClick={() => acknowledgeAlert(alert.id)}
+                      disabled={alert.acknowledged}
+                      className={`px-4 py-2 rounded-lg font-medium ${
+                        alert.acknowledged
+                          ? 'bg-gray-300 text-gray-500 cursor-not-allowed'
+                          : 'bg-green-600 text-white hover:bg-green-700'
+                      }`}
+                    >
+                      {alert.acknowledged ? 'Acknowledged' : 'Acknowledge'}
+                    </button>
+                  </div>
+                </div>
+              ))}
+            </div>
+          </div>
+        )}
 
         {/* Exam Selector */}
         <div className="mb-6">
@@ -237,6 +466,15 @@ export const ProctoringReport = () => {
                 </div>
                 <div className="text-2xl font-bold text-green-600">
                   {sessions.filter(s => s.status === 'in_progress').length}
+                </div>
+              </div>
+              <div className="bg-white rounded-xl shadow-sm border border-gray-200 p-4">
+                <div className="flex items-center justify-between mb-2">
+                  <span className="text-xs font-medium text-gray-600">Live Alerts</span>
+                  <Bell className="w-4 h-4 text-red-600" />
+                </div>
+                <div className="text-2xl font-bold text-red-600">
+                  {liveAlerts.filter(a => !a.acknowledged).length}
                 </div>
               </div>
             </div>

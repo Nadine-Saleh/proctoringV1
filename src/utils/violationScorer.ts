@@ -1,15 +1,25 @@
 export type ViolationType =
   | 'gaze_looking_away'
   | 'gaze_sustained_away'
-  | 'multiple_faces'
-  | 'tab_switch'
+  | 'gaze_prolonged_away'
+  | 'eye_closure'
   | 'excessive_blinking'
-  | 'phone_detection'
-  | 'head_pose_extreme'
+  | 'rapid_eye_movement'
+  | 'face_not_detected'
+  | 'multiple_faces'
   | 'face_too_close'
-  | 'face_too_far';
+  | 'face_too_far'
+  | 'tab_switch'
+  | 'tab_switch_prolonged'
+  | 'window_minimize'
+  | 'head_pose_extreme'
+  | 'head_pose_moderate'
+  | 'phone_detected'
+  | 'headphones_detected'
+  | 'answer_pattern_suspicious'
+  | 'ip_address_change';
 
-export type ViolationSeverity = 'low' | 'medium' | 'high';
+export type ViolationSeverity = 'low' | 'medium' | 'high' | 'critical';
 
 export interface ViolationEvent {
   id: string;
@@ -27,10 +37,20 @@ export const WEIGHTS: Record<ViolationType, number> = {
   multiple_faces: 10,
   tab_switch: 3,
   excessive_blinking: 1,
-  phone_detection: 8,
+  phone_detected: 8,
   head_pose_extreme: 4,
   face_too_close: 3,
-  face_too_far: 3
+  face_too_far: 3,
+  face_not_detected: 6,
+  gaze_prolonged_away: 7,
+  eye_closure: 4,
+  rapid_eye_movement: 3,
+  tab_switch_prolonged: 6,
+  window_minimize: 4,
+  head_pose_moderate: 2,
+  headphones_detected: 5,
+  answer_pattern_suspicious: 9,
+  ip_address_change: 7
 };
 
 export interface ViolationScoreResult {
@@ -82,14 +102,19 @@ export function calculateViolationScore(
       new Date(event.timestamp).getTime() >= twoMinutesAgo
   );
 
-  // Determine risk level
+  // Determine critical-severity events in last 5 minutes
+  const criticalSeverityRecent = recentEvents.filter(
+    (event) => event.severity === 'critical'
+  );
+
+  // Determine risk level with enhanced thresholds
   let level: 'low' | 'medium' | 'high' | 'critical';
 
-  if (normalizedScore >= 80 && highSeverityRecent.length >= 3) {
+  if (normalizedScore >= 75 || criticalSeverityRecent.length >= 2 || (normalizedScore >= 60 && highSeverityRecent.length >= 3)) {
     level = 'critical';
-  } else if (normalizedScore >= 60) {
+  } else if (normalizedScore >= 50 || highSeverityRecent.length >= 2) {
     level = 'high';
-  } else if (normalizedScore >= 30) {
+  } else if (normalizedScore >= 25) {
     level = 'medium';
   } else {
     level = 'low';
