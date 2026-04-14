@@ -1,6 +1,6 @@
 import { useState, FormEvent } from 'react';
 import { Link, useNavigate } from 'react-router-dom';
-import { login } from '../../services/authService';
+import { login, getUserProfile } from '../../services/authService';
 import { Eye, EyeOff, LogIn, Loader2 } from 'lucide-react';
 
 export function Login() {
@@ -22,19 +22,25 @@ export function Login() {
       if (!result.success) {
         // Provide helpful error messages
         let errorMessage = result.error || 'Login failed';
-        
+
         if (errorMessage.includes('Invalid login credentials')) {
           errorMessage = 'Invalid email or password. Please check your credentials.';
         } else if (errorMessage.includes('Email not confirmed')) {
           errorMessage = 'Please verify your email address before logging in.';
         }
-        
+
         setError(errorMessage);
         return;
       }
 
-      // Redirect to home after successful login
-      navigate('/');
+      // Fetch user profile to determine redirect
+      const userProfile = await getUserProfile();
+      const redirectPath = userProfile?.role === 'instructor' || userProfile?.role === 'admin'
+        ? '/instructor'
+        : '/';
+
+      // Redirect based on role
+      navigate(redirectPath);
     } catch (err) {
       setError('An unexpected error occurred. Please try again.');
       console.error('[Login] Error:', err);

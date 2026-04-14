@@ -1,6 +1,6 @@
 import { useState, FormEvent } from 'react';
 import { Link, useNavigate } from 'react-router-dom';
-import { signup } from '../../services/authService';
+import { signup, getUserProfile } from '../../services/authService';
 import { Eye, EyeOff, UserPlus, Loader2 } from 'lucide-react';
 
 export function Signup() {
@@ -67,17 +67,23 @@ export function Signup() {
       if (!result.success) {
         // Provide helpful error messages
         let errorMessage = result.error || 'Signup failed';
-        
+
         if (errorMessage.includes('User already registered')) {
           errorMessage = 'An account with this email already exists.';
         }
-        
+
         setError(errorMessage);
         return;
       }
 
-      // Redirect to home after successful signup
-      navigate('/');
+      // Fetch user profile to determine redirect
+      const userProfile = await getUserProfile();
+      const redirectPath = userProfile?.role === 'instructor' || userProfile?.role === 'admin'
+        ? '/instructor'
+        : '/';
+
+      // Redirect based on role
+      navigate(redirectPath);
     } catch (err) {
       setError('An unexpected error occurred. Please try again.');
       console.error('[Signup] Error:', err);
