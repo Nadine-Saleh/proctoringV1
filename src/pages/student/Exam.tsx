@@ -4,13 +4,15 @@ import { useApp } from '../../context/AppContext';
 import { useProctoring } from '../../hooks/useProctoring';
 import { useEyeGazeDetection } from '../../hooks/useEyeGazeDetection';
 import { useLivenessCheck } from '../../hooks/useLivenessCheck';
+import { useMicrophoneContext } from '../../context/MicrophoneContext';
 import { LivenessCheckModal } from '../../components/LivenessCheckModal';
 import { DistanceSetupModal } from '../../components/DistanceSetupModal';
+import { MicrophonePermissionModal } from '../../components/MicrophonePermissionModal';
 import { mockQuestions } from '../../data/mockData';
 import { calculateViolationScore, getRiskLevel, ViolationEvent } from '../../utils/violationScorer';
 import { sendCriticalAlert } from '../../services/instructorAlertService';
 import {
-  Clock, AlertTriangle, CheckCircle,
+  Clock, AlertTriangle, CheckCircle, MicOff,
   ChevronLeft, ChevronRight, CameraOff, Video, ArrowLeftRight
 } from 'lucide-react';
 
@@ -27,6 +29,44 @@ export const Exam = () => {
   const [gazeStatus, setGazeStatus] = useState<'center' | 'looking-away'>('center');
   const [criticalWarning, setCriticalWarning] = useState<{ message: string; severity: 'high' | 'critical' } | null>(null);
 
+  // LocalStorage persistence for mandatory modal sequence
+  const STORAGE_KEYS = {
+    STEPS_PREFIX: 'proctoring_steps_',
+    EXAM_ID: 'current_exam_id'
+  } as const;
+
+  const getStoredSteps = useCallback((examId: string) => {
+    try {
+      const key = `${STORAGE_KEYS.STEPS_PREFIX}${examId}`;
+      const stored = localStorage.getItem(key);
+      return stored ? JSON.parse(stored) as Record<'distance' | 'liveness' | 'microphone', boolean> : {} as Record<'distance' | 'liveness' | 'microphone', boolean>;
+    } catch {
+      return {} as Record<'distance' | 'liveness' | 'microphone', boolean>;
+    }
+  }, []);
+
+  const setStepCompleted = useCallback((examId: string, step: 'distance' | 'liveness' | 'microphone') => {
+    try {
+      const key = `${STORAGE_KEYS.STEPS_PREFIX}${examId}`;
+      const steps = getStoredSteps(examId);
+      steps[step] = true;
+      localStorage.setItem(key, JSON.stringify(steps));
+      localStorage.setItem(STORAGE_KEYS.EXAM_ID, examId);
+    } catch (e) {
+      console.warn('[Exam] Failed to save step:', step, e);
+    }
+  }, [getStoredSteps]);
+
+  const clearStoredSteps = useCallback((examId: string) => {
+    try {
+      const key = `${STORAGE_KEYS.STEPS_PREFIX}${examId}`;
+      localStorage.removeItem(key);
+      localStorage.removeItem(STORAGE_KEYS.EXAM_ID);
+    } catch (e) {
+      console.warn('[Exam] Failed to clear storage:', e);
+    }
+  }, []);
+
   // Distance standardization
   const [optimalDistanceCm, setOptimalDistanceCm] = useState<number | null>(null);
 
@@ -39,6 +79,12 @@ export const Exam = () => {
   const [lastAlertTime, setLastAlertTime] = useState(0);
 
   const { status, videoRef: proctoringVideoRef, retryCamera } = useProctoring(examStarted);
+  const {
+    status: micStatus,
+    isRecording,
+    isStreamReady,
+    streamHealthy: micStreamHealthy
+  } = useMicrophoneContext();
   const {
     gazeData,
     isDetecting,
@@ -265,23 +311,37 @@ export const Exam = () => {
   };
 
   const handleSubmit = useCallback(() => {
+    if (currentExam?.id) {
+      clearStoredSteps(currentExam.id);
+    }
     navigate('/results');
-  }, [navigate]);
+  }, [navigate, currentExam, clearStoredSteps]);
 
   const handleSetOptimalDistance = useCallback((distance: number) => {
     setOptimalDistanceCm(distance);
+    setStepCompleted(currentExam!.id, 'distance');
     setShowDistanceSetup(false);
     setShowLivenessCheck(true);
     console.log(`[Exam] ✓ Distance set to: ${distance}cm, moving to liveness check`);
-  }, []);
+  }, [currentExam, setStepCompleted]);
+
+  const [showMicrophonePermission, setShowMicrophonePermission] = useState(false);
 
   const handleLivenessComplete = useCallback(() => {
-    // Only allow exam start if liveness check passed
+    // Only allow exam start if liveness check passed, show mic permission next
     if (livenessPassed) {
+      setStepCompleted(currentExam!.id, 'liveness');
       setShowLivenessCheck(false);
-      setExamStarted(true);
+      setShowMicrophonePermission(true);
     }
-  }, [livenessPassed]);
+  }, [livenessPassed, currentExam, setStepCompleted]);
+
+  const handleMicrophoneComplete = useCallback(() => {
+    console.log('[Exam] Microphone complete triggered - starting exam');
+    setStepCompleted(currentExam!.id, 'microphone');
+    setShowMicrophonePermission(false);
+    setExamStarted(true);
+  }, [currentExam, setStepCompleted]);
 
   const handleLivenessRetry = useCallback(() => {
     resetCheck();
@@ -311,6 +371,44 @@ export const Exam = () => {
     }, 1000);
     return () => clearInterval(timer);
   }, [currentExam, navigate, examStarted, handleSubmit]);
+
+  // Restore modal states from storage on mount/refresh
+  useEffect(() => {
+    if (!currentExam?.id) return;
+
+    const storedExamId = localStorage.getItem(STORAGE_KEYS.EXAM_ID);
+    if (storedExamId !== currentExam.id) {
+      // New/different exam - clear old storage
+      clearStoredSteps(storedExamId || '');
+      return;
+    }
+
+    const steps = getStoredSteps(currentExam.id);
+
+    if (steps.microphone) {
+      // All steps complete - start exam directly
+      setShowDistanceSetup(false);
+      setShowLivenessCheck(false);
+      setShowMicrophonePermission(false);
+      setExamStarted(true);
+      console.log('[Exam] Restored: All steps complete, exam started');
+    } else if (steps.liveness) {
+      // Liveness done, need mic
+      setShowDistanceSetup(false);
+      setShowLivenessCheck(false);
+      setShowMicrophonePermission(true);
+      console.log('[Exam] Restored: Need microphone permission');
+    } else if (steps.distance) {
+      // Distance done, need liveness
+      setShowDistanceSetup(false);
+      setShowLivenessCheck(true);
+      console.log('[Exam] Restored: Need liveness check');
+    } else {
+      // Start from beginning
+      setShowDistanceSetup(true);
+      console.log('[Exam] Restored: Start from distance setup');
+    }
+  }, [currentExam?.id, getStoredSteps, clearStoredSteps]);
 
   // Show "no exam" state if navigating directly to /exam
   if (!currentExam) {
@@ -359,6 +457,22 @@ export const Exam = () => {
     );
   }
 
+  // Show microphone permission modal (third step - mandatory before exam)
+  if (showMicrophonePermission) {
+    return (
+      <MicrophonePermissionModal
+        isOpen={showMicrophonePermission}
+        onComplete={handleMicrophoneComplete}
+      />
+    );
+  }
+
+  // Compute mic status after all explicit flow modals (hooks run always)
+  const isMicActive = micStatus.microphone && isRecording && isStreamReady && micStreamHealthy;
+
+  // Mic lost during exam - show recovery warning
+  const showMicWarning = examStarted && !isMicActive;
+
   return (
     <div className="min-h-screen bg-gray-50 flex">
       <div className="flex-1 flex flex-col">
@@ -379,6 +493,20 @@ export const Exam = () => {
             </div>
           </div>
         </div>
+
+        {/* Microphone Warning Banner */}
+        {showMicWarning && (
+          <div className="bg-red-50 border-l-4 border-red-400 p-4 mx-6 my-4">
+            <div className="flex items-center">
+              <MicOff className="w-5 h-5 text-red-600 mr-2 flex-shrink-0" />
+              <div>
+                <p className="text-sm font-medium text-red-800">
+                  Microphone connection lost. Please check your microphone and refresh the page.
+                </p>
+              </div>
+            </div>
+          </div>
+        )}
 
         {/* Question Area */}
         <div className="flex-1 overflow-auto">
@@ -645,6 +773,26 @@ export const Exam = () => {
                 )
               ) : (
                 <div className="w-4 h-4 border-2 border-gray-400 border-t-transparent rounded-full animate-spin" />
+              )}
+            </div>
+
+            {/* Microphone Status */}
+            <div
+              className={`flex items-center justify-between p-3 rounded-lg ${
+                micStatus.microphone && isRecording && micStreamHealthy
+                  ? 'bg-green-50'
+                  : 'bg-red-50'
+              }`}
+            >
+              <span className={`text-sm font-medium ${
+                micStatus.microphone && isRecording && micStreamHealthy ? 'text-green-700' : 'text-red-700'
+              }`}>
+                Microphone {micStreamHealthy ? '✓' : '⚠️'}
+              </span>
+              {micStatus.microphone && isRecording && micStreamHealthy ? (
+                <CheckCircle className="w-4 h-4 text-green-600" />
+              ) : (
+                <MicOff className="w-4 h-4 text-red-600" />
               )}
             </div>
 
