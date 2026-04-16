@@ -47,6 +47,7 @@ export interface ViolationEvent {
   reviewed_at: string | null;
   review_notes: string | null;
   created_at: string;
+  evidence_image: string | null; // Base64 encoded snapshot or null
 }
 
 export interface CreateViolationEventInput {
@@ -60,6 +61,7 @@ export interface CreateViolationEventInput {
   duration_ms?: number | null;
   description?: string | null;
   metadata?: Record<string, unknown>;
+  evidence_image?: string | null; // Base64 encoded snapshot or null
 }
 
 export interface UpdateViolationEventInput {

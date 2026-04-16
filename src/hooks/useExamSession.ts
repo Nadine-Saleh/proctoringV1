@@ -5,9 +5,10 @@
 // Responsibility: React interface for session management
 
 import { useState, useCallback, useRef, useEffect } from 'react';
-import { ExamSessionService } from '../services/ExamSessionService';
+import { ExamSessionService } from '../services/examSessionService';
 import { ExamSubmissionService } from '../services/ExamSubmissionService';
 import { SessionHeartbeat } from '../utils/SessionHeartbeat';
+import { supabase } from '../lib/supabase/client';
 import type {
   ExamSession,
   ExamSubmission,
@@ -73,6 +74,33 @@ export function useExamSession(): UseExamSessionReturn {
     setError(null);
 
     try {
+      // Verify user is authenticated with Supabase
+      const { data: { user: supabaseUser } } = await supabase.auth.getUser();
+      if (!supabaseUser) {
+        const errorMsg = 'User not authenticated with Supabase. Please sign in again.';
+        console.error('[useExamSession]', errorMsg);
+        setError(errorMsg);
+        setIsLoading(false);
+        return false;
+      }
+
+      // Verify the studentId matches the authenticated user
+      if (supabaseUser.id !== studentId) {
+        console.warn('[useExamSession] User ID mismatch: auth=', supabaseUser.id, 'provided=', studentId);
+      }
+
+      // First, check if there's already an active session for this student/exam
+      const existingResult = await ExamSessionService.getActiveSession(studentId, examId);
+
+      if (existingResult.success && existingResult.session) {
+        // Reuse existing session
+        console.log('[useExamSession] Found existing active session:', existingResult.session.id);
+        setSession(existingResult.session);
+        startHeartbeat(existingResult.session.id);
+        startTimer();
+        return true;
+      }
+
       // Create the session
       const result = await ExamSessionService.create({
         exam_id: examId,
@@ -82,6 +110,7 @@ export function useExamSession(): UseExamSessionReturn {
       });
 
       if (!result.success || !result.session) {
+        console.error('[useExamSession] Failed to create session:', JSON.stringify(result, null, 2));
         setError(result.error ?? 'Failed to start exam session');
         return false;
       }

@@ -21,6 +21,7 @@ export interface UseProctoringReturn {
   clearError: () => void;
   recordViolation: (violation: { type: string; severity: string; description: string; metadata?: Record<string, unknown> }) => void;
   setViolationCallback: (callback: (violation: { type: string; severity: string; description: string; metadata?: Record<string, unknown> }) => void) => void;
+  captureViolationSnapshot: (options?: { maxWidth?: number; maxHeight?: number; quality?: number }) => Promise<string | null>;
 }
 
 export const useProctoring = (isEnabled: boolean = true): UseProctoringReturn => {
@@ -32,6 +33,7 @@ export const useProctoring = (isEnabled: boolean = true): UseProctoringReturn =>
   const violationCallbackRef = useRef<((violation: { type: string; severity: string; description: string; metadata?: Record<string, unknown> }) => void) | null>(null);
   const faceNotDetectedCountRef = useRef(0);
   const lastFaceNotDetectedAlertRef = useRef(0);
+  const canvasRef = useRef<HTMLCanvasElement | null>(null);
 
   const [status, setStatus] = useState<ProctoringStatus>({
     camera: false,
@@ -280,6 +282,74 @@ export const useProctoring = (isEnabled: boolean = true): UseProctoringReturn =>
     violationCallbackRef.current?.(violation);
   }, []);
 
+  // Capture violation snapshot from video frame
+  const captureViolationSnapshot = useCallback(async (
+    options?: { maxWidth?: number; maxHeight?: number; quality?: number }
+  ): Promise<string | null> => {
+    try {
+      const video = videoRef.current;
+      if (!video || video.readyState < 2) {
+        console.warn('[useProctoring] Cannot capture snapshot: video not ready');
+        return null;
+      }
+
+      // Create canvas if it doesn't exist
+      if (!canvasRef.current) {
+        canvasRef.current = document.createElement('canvas');
+      }
+
+      const canvas = canvasRef.current;
+      
+      // Configurable dimensions with sensible defaults
+      const maxWidth = options?.maxWidth ?? 320;
+      const maxHeight = options?.maxHeight ?? 240;
+      const quality = options?.quality ?? 0.6; // Lower default quality for better compression
+
+      // Calculate scaled dimensions maintaining aspect ratio
+      const videoWidth = video.videoWidth;
+      const videoHeight = video.videoHeight;
+      const aspectRatio = videoWidth / videoHeight;
+
+      let width = maxWidth;
+      let height = maxHeight;
+
+      // Maintain aspect ratio
+      if (videoWidth / videoHeight > aspectRatio) {
+        height = Math.round(width / aspectRatio);
+      } else {
+        width = Math.round(height * aspectRatio);
+      }
+
+      canvas.width = width;
+      canvas.height = height;
+
+      const ctx = canvas.getContext('2d');
+      if (!ctx) {
+        console.warn('[useProctoring] Cannot get canvas context');
+        return null;
+      }
+
+      // Draw current video frame to canvas
+      ctx.drawImage(video, 0, 0, width, height);
+
+      // Convert to compressed base64 JPEG
+      const dataUrl = canvas.toDataURL('image/jpeg', quality);
+
+      // Log snapshot metrics for debugging
+      const sizeKB = Math.round(dataUrl.length / 1024);
+      console.log('[useProctoring] Violation snapshot captured:', {
+        dimensions: `${width}x${height}`,
+        size: `${sizeKB} KB`,
+        quality
+      });
+      
+      return dataUrl;
+    } catch (err) {
+      console.error('[useProctoring] Failed to capture violation snapshot:', err);
+      return null;
+    }
+  }, []);
+
   // Load models on mount
   useEffect(() => {
     loadModels();
@@ -323,6 +393,7 @@ export const useProctoring = (isEnabled: boolean = true): UseProctoringReturn =>
     retryCamera,
     clearError,
     recordViolation,
-    setViolationCallback: setViolationCallbackFn
+    setViolationCallback: setViolationCallbackFn,
+    captureViolationSnapshot
   };
 };

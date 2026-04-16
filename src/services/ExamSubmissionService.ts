@@ -217,10 +217,11 @@ export class ExamSubmissionService {
    */
   private static async getExamQuestions(examId: string): Promise<{ success: boolean; questions?: QuestionForGrading[]; error?: string }> {
     try {
+      const examUuid = ensureUuid(examId, 'exam');
       const { data, error } = await supabase
         .from('questions')
         .select('id, exam_id, question_text, question_type, correct_answer, points')
-        .eq('exam_id', examId)
+        .eq('exam_id', examUuid)
         .order('sort_order', { ascending: true });
 
       if (error) {

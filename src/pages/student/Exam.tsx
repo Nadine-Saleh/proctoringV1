@@ -85,7 +85,7 @@ export const Exam = () => {
   const [_riskLevel, setRiskLevel] = useState<'low' | 'medium' | 'high' | 'critical'>('low');
   const [lastAlertTime, setLastAlertTime] = useState(0);
 
-  const { status, videoRef: proctoringVideoRef, retryCamera, setViolationCallback } = useProctoring(examStarted);
+  const { status, videoRef: proctoringVideoRef, retryCamera, setViolationCallback, captureViolationSnapshot } = useProctoring(examStarted);
   const {
     isRunning: gazeRunning,
     modelsLoaded: gazeModelsLoaded,
@@ -118,7 +118,9 @@ export const Exam = () => {
   const combinedVideoRef = useRef<HTMLVideoElement | null>(null);
 
   // Use liveness face distance before exam starts, then gaze distance after
-  const faceDistanceCm = examStarted ? (gazeSample?.faceDistance ?? 0) * 100 : livenessFaceDistanceCm; // Convert 0-1 to cm approximation
+  // Gaze faceDistance is 0-1 normalized, convert to approximate cm (30-100cm range)
+  const gazeDistanceCm = gazeSample ? Math.round(30 + (1 - gazeSample.faceDistance) * 70) : null;
+  const faceDistanceCm = examStarted ? gazeDistanceCm : livenessFaceDistanceCm;
 
   // ── Start gaze tracking when exam starts ──
   useEffect(() => {
@@ -146,8 +148,8 @@ export const Exam = () => {
 
     // Process new violations
     const newViolations = gazeViolations.filter(v => !prevGazeViolationsRef.current.find(pv => pv.id === v.id));
-    
-    newViolations.forEach(violation => {
+
+    newViolations.forEach(async (violation) => {
       // Map GazeViolation to ViolationEvent format
       let violationType: ViolationType;
       let severity: ViolationSeverity;
@@ -180,25 +182,35 @@ export const Exam = () => {
           description = violation.description;
       }
 
+      // Capture snapshot for high/critical violations
+      let evidenceImage: string | null = null;
+      if (severity === 'high') {
+        evidenceImage = await captureViolationSnapshot();
+        if (evidenceImage) {
+          console.log(`[Exam] Violation snapshot captured: ${violationType}`);
+        }
+      }
+
       recordViolation({
         violation_type: violationType,
         severity: severity,
         occurred_at: new Date(violation.timestamp).toISOString(),
         duration_ms: violation.duration,
         description: description,
+        evidence_image: evidenceImage,
         metadata: {
           zone: gazeZone,
           headPose: gazeSample ? {
             yaw: gazeSample.headYaw,
             pitch: gazeSample.headPitch,
             roll: gazeSample.headRoll
-          } : undefined
+          } : undefined,
         },
       });
     });
 
     prevGazeViolationsRef.current = gazeViolations;
-  }, [gazeViolations, examStarted, recordViolation, gazeZone, gazeSample]);
+  }, [gazeViolations, examStarted, recordViolation, gazeZone, gazeSample, captureViolationSnapshot]);
 
   // ── Warning overlays ──
   useEffect(() => {
@@ -243,6 +255,7 @@ export const Exam = () => {
       duration: v.duration_ms ?? undefined,
       description: v.description || '',
       metadata: v.metadata,
+      evidenceImage: v.evidence_image || null
     }));
 
     const { score, level } = calculateViolationScore(localViolations);
@@ -258,20 +271,33 @@ export const Exam = () => {
   useEffect(() => {
     if (!examStarted || !session?.id) return;
 
-    const handleProctoringViolation = (violation: { 
-      type: string; 
-      severity: string; 
-      description: string; 
-      metadata?: Record<string, unknown> 
+    const handleProctoringViolation = async (violation: {
+      type: string;
+      severity: string;
+      description: string;
+      metadata?: Record<string, unknown>
     }) => {
       const now = new Date().toISOString();
-      
+      const severity = violation.severity as ViolationSeverity;
+
+      // Capture snapshot for high/critical violations
+      let evidenceImage: string | null = null;
+      if (severity === 'high' || severity === 'critical') {
+        evidenceImage = await captureViolationSnapshot();
+        if (evidenceImage) {
+          console.log(`[Exam] Violation snapshot captured: ${violation.type}`);
+        }
+      }
+
       recordViolation({
         violation_type: violation.type as ViolationType,
-        severity: violation.severity as ViolationSeverity,
+        severity: severity,
         occurred_at: now,
         description: violation.description,
-        metadata: violation.metadata,
+        evidence_image: evidenceImage,
+        metadata: {
+          ...violation.metadata,
+        },
       });
 
       // Calculate current score to check if alert should be sent
@@ -283,6 +309,7 @@ export const Exam = () => {
         duration: v.duration_ms ?? undefined,
         description: v.description || '',
         metadata: v.metadata,
+        evidenceImage: v.evidence_image || null
       }));
 
       const { score, level } = calculateViolationScore(localViolations);
@@ -310,7 +337,7 @@ export const Exam = () => {
     return () => {
       // Cleanup if needed
     };
-  }, [examStarted, session?.id, currentExamId, user?.id, recordViolation, trackedViolations, setViolationCallback]);
+  }, [examStarted, session?.id, currentExamId, user?.id, recordViolation, trackedViolations, setViolationCallback, captureViolationSnapshot]);
 
   // ── Video refs ──
   const setCombinedVideoRef = useCallback((element: HTMLVideoElement | null) => {
@@ -412,6 +439,8 @@ export const Exam = () => {
     if (livenessPassed && currentExam && user) {
       setShowLivenessCheck(false);
       setExamStarted(true);
+
+      console.log('[Exam] Starting session for exam:', currentExam.id, 'type:', typeof currentExam.id);
 
       // Start the session in database
       const success = await startSession(

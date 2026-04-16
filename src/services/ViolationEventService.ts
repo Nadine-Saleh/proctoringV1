@@ -5,6 +5,7 @@
 // Responsibility: CRUD operations for violation_events table
 
 import { supabase } from '../lib/supabase/client';
+import { ensureUuid } from '../utils/uuid';
 import type {
   ViolationEvent,
   CreateViolationEventInput,
@@ -49,13 +50,15 @@ export class ViolationEventService {
   static async create(input: CreateViolationEventInput): Promise<{ success: boolean; event?: ViolationEvent; error?: string }> {
     try {
       const weight = input.weight ?? DEFAULT_WEIGHTS[input.violation_type] ?? 1;
+      const examUuid = ensureUuid(input.exam_id, 'exam');
+      const studentUuid = ensureUuid(input.student_id, 'student');
 
       const { data, error } = await supabase
         .from('violation_events')
         .insert({
           session_id: input.session_id,
-          exam_id: input.exam_id,
-          student_id: input.student_id,
+          exam_id: examUuid,
+          student_id: studentUuid,
           violation_type: input.violation_type,
           severity: input.severity ?? 'medium',
           weight,
@@ -63,6 +66,7 @@ export class ViolationEventService {
           duration_ms: input.duration_ms ?? null,
           description: input.description ?? null,
           metadata: input.metadata ?? {},
+          evidence_image: input.evidence_image ?? null,
           is_reviewed: false,
         } as any)
         .select()
@@ -88,8 +92,8 @@ export class ViolationEventService {
     try {
       const records = inputs.map(input => ({
         session_id: input.session_id,
-        exam_id: input.exam_id,
-        student_id: input.student_id,
+        exam_id: ensureUuid(input.exam_id, 'exam'),
+        student_id: ensureUuid(input.student_id, 'student'),
         violation_type: input.violation_type,
         severity: input.severity ?? 'medium',
         weight: input.weight ?? DEFAULT_WEIGHTS[input.violation_type] ?? 1,
@@ -97,6 +101,7 @@ export class ViolationEventService {
         duration_ms: input.duration_ms ?? null,
         description: input.description ?? null,
         metadata: input.metadata ?? {},
+        evidence_image: input.evidence_image ?? null,
         is_reviewed: false,
       }));
 
@@ -147,10 +152,11 @@ export class ViolationEventService {
    */
   static async getByExam(examId: string): Promise<{ success: boolean; events?: ViolationEvent[]; error?: string }> {
     try {
+      const examUuid = ensureUuid(examId, 'exam');
       const { data, error } = await supabase
         .from('violation_events')
         .select('*')
-        .eq('exam_id', examId)
+        .eq('exam_id', examUuid)
         .order('occurred_at', { ascending: false });
 
       if (error) {
@@ -171,10 +177,11 @@ export class ViolationEventService {
    */
   static async getByStudent(studentId: string): Promise<{ success: boolean; events?: ViolationEvent[]; error?: string }> {
     try {
+      const studentUuid = ensureUuid(studentId, 'student');
       const { data, error } = await supabase
         .from('violation_events')
         .select('*')
-        .eq('student_id', studentId)
+        .eq('student_id', studentUuid)
         .order('occurred_at', { ascending: false });
 
       if (error) {

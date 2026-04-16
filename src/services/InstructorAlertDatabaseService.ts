@@ -5,6 +5,7 @@
 // Responsibility: CRUD operations for instructor_alerts table
 
 import { supabase } from '../lib/supabase/client';
+import { ensureUuid } from '../utils/uuid';
 import type { ViolationEvent } from '../utils/violationScorer';
 
 export interface InstructorAlert {
@@ -60,11 +61,14 @@ export class InstructorAlertDatabaseService {
    */
   static async create(input: CreateAlertInput): Promise<{ success: boolean; alertId?: string; error?: string }> {
     try {
+      const examUuid = ensureUuid(input.exam_id, 'exam');
+      const studentUuid = ensureUuid(input.student_id, 'student');
+      
       const { data, error } = await supabase
         .rpc('create_instructor_alert', {
-          p_exam_id: input.exam_id,
+          p_exam_id: examUuid,
           p_session_id: input.session_id,
-          p_student_id: input.student_id,
+          p_student_id: studentUuid,
           p_alert_type: input.alert_type || 'cheating_risk',
           p_priority: input.priority || 'high',
           p_cheating_score_at_time: input.cheating_score_at_time || null,
@@ -94,13 +98,14 @@ export class InstructorAlertDatabaseService {
     limit: number = 50
   ): Promise<{ success: boolean; alerts?: AlertWithStudentInfo[]; error?: string }> {
     try {
+      const examUuid = ensureUuid(examId, 'exam');
       const { data, error } = await supabase
         .from('instructor_alerts')
         .select(`
           *,
           users!instructor_alerts_student_id_fkey (full_name, email)
         `)
-        .eq('exam_id', examId)
+        .eq('exam_id', examUuid)
         .eq('is_acknowledged', false)
         .order('created_at', { ascending: false })
         .limit(limit);
@@ -143,13 +148,14 @@ export class InstructorAlertDatabaseService {
     limit: number = 100
   ): Promise<{ success: boolean; alerts?: AlertWithStudentInfo[]; error?: string }> {
     try {
+      const examUuid = ensureUuid(examId, 'exam');
       const { data, error } = await supabase
         .from('instructor_alerts')
         .select(`
           *,
           users!instructor_alerts_student_id_fkey (full_name, email)
         `)
-        .eq('exam_id', examId)
+        .eq('exam_id', examUuid)
         .order('created_at', { ascending: false })
         .limit(limit);
 
@@ -226,10 +232,11 @@ export class InstructorAlertDatabaseService {
     error?: string;
   }> {
     try {
+      const examUuid = ensureUuid(examId, 'exam');
       const { data, error } = await supabase
         .from('instructor_alerts')
         .select('priority, is_acknowledged')
-        .eq('exam_id', examId);
+        .eq('exam_id', examUuid);
 
       if (error) {
         console.error('[InstructorAlertService] Failed to count alerts:', error);

@@ -275,17 +275,27 @@ export class GazeTrackingEngine {
 
   start(onGazeUpdate?: (sample: GazeSample) => void): void {
     if (!this.faceLandmarker) {
-      console.error('[GazeEngine] Models not loaded');
+      console.error('[GazeEngine] Models not loaded - cannot start gaze tracking');
       return;
     }
 
-    if (this.state.isRunning) return;
+    if (!this.videoElement) {
+      console.error('[GazeEngine] No video element set - cannot start gaze tracking');
+      return;
+    }
 
+    if (this.state.isRunning) {
+      console.log('[GazeEngine] Already running');
+      return;
+    }
+
+    console.log('[GazeEngine] Starting gaze tracking...');
     this.onGazeUpdate = onGazeUpdate;
     this.sessionStartTime = Date.now();
     this.updateState({ isRunning: true });
-    
+
     this.processFrame();
+    console.log('[GazeEngine] Gaze tracking started successfully');
   }
 
   stop(): void {
@@ -380,6 +390,9 @@ export class GazeTrackingEngine {
 
   private processFrame = (): void => {
     if (!this.state.isRunning || !this.faceLandmarker || !this.videoElement) {
+      if (this.state.isRunning && !this.videoElement) {
+        console.warn('[GazeEngine] Running but no video element set');
+      }
       return;
     }
 
@@ -402,14 +415,14 @@ export class GazeTrackingEngine {
 
       try {
         const result = this.faceLandmarker!.detectForVideo(video, now);
-        
+
         if (result.faceLandmarks && result.faceLandmarks.length > 0) {
           const landmarks = result.faceLandmarks[0];
           const sample = this.analyzeGaze(landmarks, now);
-          
+
           this.onGazeUpdate?.(sample);
           this.updateState({ currentSample: sample, currentZone: sample.zone });
-          
+
           this.checkViolations(sample);
           this.updateSessionTracking(sample);
         } else {
@@ -592,9 +605,13 @@ export class GazeTrackingEngine {
     }
 
     const faceHeight = Math.hypot(forehead.x - chin.x, forehead.y - chin.y);
-    
+
     // Larger face height = closer to camera
-    return Math.max(0, Math.min(1, 1 - faceHeight));
+    // Typical face height in normalized coordinates: 0.15 (far) to 0.35 (close)
+    // Map to 0-1 range where 0 = far, 1 = close
+    const distance = (faceHeight - 0.15) / (0.35 - 0.15);
+    
+    return Math.max(0, Math.min(1, distance));
   }
 
   // ==================== Violation Detection ====================

@@ -5,6 +5,7 @@
 // Responsibility: Calculate, store, and retrieve cheating scores
 
 import { supabase } from '../lib/supabase/client';
+import { ensureUuid } from '../utils/uuid';
 import {
   calculateViolationScore,
   getRiskLevel,
@@ -120,10 +121,11 @@ export class CheatingScoreService {
     error?: string;
   }> {
     try {
+      const examUuid = ensureUuid(examId, 'exam');
       const { data, error } = await supabase
         .from('cheating_scores')
         .select('*')
-        .eq('exam_id', examId)
+        .eq('exam_id', examUuid)
         .order('overall_score', { ascending: false });
 
       if (error) {
@@ -163,8 +165,9 @@ export class CheatingScoreService {
     error?: string;
   }> {
     try {
+      const examUuid = examId ? ensureUuid(examId, 'exam') : null;
       const { data, error } = await supabase.rpc('get_high_risk_sessions', {
-        p_exam_id: examId || null,
+        p_exam_id: examUuid,
         p_minutes_ago: minutesAgo,
       });
 

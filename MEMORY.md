@@ -6,8 +6,39 @@ This file tracks the complete implementation status of the cheating score system
 
 ## Current Status: Phase 3 Complete ✅
 
-**Last Updated**: April 14, 2026  
+**Last Updated**: April 14, 2026
 **Next Phase**: Phase 4 - Advanced Features & AI Enhancements
+
+---
+
+## Major Refactoring: Gaze Tracking System Migration ✅ COMPLETE
+
+### What Changed
+- **Replaced legacy gaze system** - Migrated from `useEyeGazeDetection.ts` to new `useGazeTracking.ts` + `GazeTrackingEngine.ts`
+- **Deleted legacy files**:
+  - `src/hooks/useEyeGazeDetection.ts` ❌ (removed)
+  - `src/components/EyeGazeMonitor.tsx` ❌ (removed)
+- **Updated Exam.tsx** - Now uses `useGazeTracking` hook with shared `videoRef` for both proctoring and gaze
+- **Violation mapping** - New engine has built-in violation detection; violations are synced to `useViolationTracker`
+- **UI updates** - Replaced `isDetecting` references with `gazeRunning` for status display
+
+### Key Improvements
+- **Better performance** - Frame skipping (~10fps) with optimized MediaPipe pipeline
+- **More accurate detection** - Improved gaze zone classification with head pose estimation (yaw/pitch/roll)
+- **Built-in violation tracking** - Engine detects OFF_SCREEN, PROLONGED_AWAY, EXCESSIVE_BLINK, CLOSE_FACE violations
+- **Cleaner architecture** - Single gaze tracking system, no split-brain logic
+- **Framework-agnostic engine** - `GazeTrackingEngine.ts` can be reused in other projects
+
+### Technical Details
+- Violation mapping: `GazeViolation` → `ViolationEvent` format for persistence
+- Video ref sharing: `combinedVideoRef` feeds both `useProctoring` and `useGazeTracking`
+- Progressive warning system: 3-level escalation (yellow → orange → red)
+- Attention metrics: on-screen time, off-screen time, blink rate, gaze shifts
+
+### Verification
+- ✅ TypeScript type check passed
+- ✅ Build successful (no compile errors)
+- ✅ No new lint errors introduced
 
 ---
 
@@ -25,12 +56,18 @@ This file tracks the complete implementation status of the cheating score system
 
 ### Key Files
 - `src/utils/violationScorer.ts` - Scoring algorithm
-- `src/hooks/useProctoring.ts` - Main proctoring logic
-- `src/hooks/useEyeGazeDetection.ts` - Gaze tracking
+- `src/hooks/useProctoring.ts` - Main proctoring logic (face/tab detection)
+- `src/hooks/useGazeTracking.ts` - Gaze tracking hook (wraps GazeTrackingEngine)
+- `src/lib/gaze/GazeTrackingEngine.ts` - Production-ready gaze tracking engine
 - `src/hooks/useViolationTracker.ts` - Violation batch tracking
 
 ### Status
 ✅ Complete and tested
+
+### Notes
+- **Legacy system removed**: `useEyeGazeDetection.ts` and `EyeGazeMonitor.tsx` deleted
+- **New system active**: `GazeTrackingEngine.ts` with built-in violation detection
+- **Integration**: Exam.tsx maps engine violations to violation tracker format
 
 ---
 
@@ -316,7 +353,14 @@ VITE_WS_URL=ws://localhost:4000/instructor
 
 ## Recent Changes Log
 
-**April 14, 2026** - Phase 3 Complete
+**April 14, 2026** - Gaze Tracking System Migration + Phase 3 Complete
+- **URGENT**: Replaced legacy `useEyeGazeDetection` with new `useGazeTracking` + `GazeTrackingEngine`
+- Deleted `src/hooks/useEyeGazeDetection.ts` (legacy gaze system)
+- Deleted `src/components/EyeGazeMonitor.tsx` (legacy UI component)
+- Updated `Exam.tsx` to use new gaze tracking hook with shared videoRef
+- Implemented violation mapping: `GazeViolation` → `ViolationEvent` format
+- Updated UI status indicators from `isDetecting` to `gazeRunning`
+- Verified build and type check pass with no new errors
 - Created CheatingScoreService
 - Created InstructorAlertDatabaseService
 - Created WebSocketService

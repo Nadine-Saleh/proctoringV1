@@ -5,6 +5,7 @@
 // Responsibility: CRUD operations for student_answers table
 
 import { supabase } from '../lib/supabase/client';
+import { ensureUuid } from '../utils/uuid';
 import type {
   StudentAnswer,
   CreateStudentAnswerInput,
@@ -17,11 +18,12 @@ export class StudentAnswerService {
    */
   static async upsert(input: CreateStudentAnswerInput): Promise<{ success: boolean; answer?: StudentAnswer; error?: string }> {
     try {
+      const questionUuid = ensureUuid(input.question_id, 'question');
       const { data, error } = await supabase
         .from('student_answers')
         .upsert({
           session_id: input.session_id,
-          question_id: input.question_id,
+          question_id: questionUuid,
           selected_answer: input.selected_answer ?? null,
           time_spent_seconds: input.time_spent_seconds ?? null,
           answer_order: input.answer_order ?? null,
@@ -51,7 +53,7 @@ export class StudentAnswerService {
     try {
       const records = inputs.map(input => ({
         session_id: input.session_id,
-        question_id: input.question_id,
+        question_id: ensureUuid(input.question_id, 'question'),
         selected_answer: input.selected_answer ?? null,
         time_spent_seconds: input.time_spent_seconds ?? null,
         answer_order: input.answer_order ?? null,
@@ -133,11 +135,12 @@ export class StudentAnswerService {
     input: UpdateStudentAnswerInput
   ): Promise<{ success: boolean; error?: string }> {
     try {
+      const questionUuid = ensureUuid(questionId, 'question');
       const { error } = await supabase
         .from('student_answers')
         .update(input as any)
         .eq('session_id', sessionId)
-        .eq('question_id', questionId);
+        .eq('question_id', questionUuid);
 
       if (error) {
         console.error('[StudentAnswerService] Failed to update answer by question:', error);

@@ -29,6 +29,7 @@ export interface ViolationEvent {
   duration?: number;
   description: string;
   metadata?: Record<string, unknown>;
+  evidenceImage?: string | null; // Base64 encoded snapshot or null
 }
 
 export const WEIGHTS: Record<ViolationType, number> = {

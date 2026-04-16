@@ -1,11 +1,32 @@
 import { useNavigate } from 'react-router-dom';
-import { mockExams } from '../../data/mockData';
 import { Clock, FileText, Calendar, ChevronRight, AlertCircle } from 'lucide-react';
 import { useApp } from '../../context/AppContext';
+import { ExamService } from '../../services/ExamService';
+import { useEffect, useState } from 'react';
 
 export const StudentHome = () => {
   const navigate = useNavigate();
   const { setCurrentExam } = useApp();
+  const [exams, setExams] = useState<any[]>([]);
+  const [loading, setLoading] = useState(true);
+
+  useEffect(() => {
+    const loadExams = async () => {
+      const result = await ExamService.getPublishedExams();
+      if (result.success && result.exams) {
+        setExams(result.exams.map(exam => ({
+          id: exam.id,
+          title: exam.title,
+          subject: exam.subject || 'General',
+          duration: exam.duration_minutes,
+          status: 'available',
+          startDate: exam.published_at || exam.created_at,
+        })));
+      }
+      setLoading(false);
+    };
+    loadExams();
+  }, []);
 
   const handleStartExam = (exam: any) => {
     setCurrentExam(exam);

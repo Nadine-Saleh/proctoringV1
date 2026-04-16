@@ -119,6 +119,7 @@ export function useViolationTracker(sessionId?: string, examId?: string, student
       description: input.description ?? null,
       duration_ms: input.duration_ms ?? null,
       metadata: input.metadata ?? {},
+      evidence_image: input.evidence_image ?? null,
       is_reviewed: false,
       reviewed_by: null,
       reviewed_at: null,

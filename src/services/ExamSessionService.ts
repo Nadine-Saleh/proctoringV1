@@ -5,6 +5,7 @@
 // Responsibility: CRUD operations for exam_sessions table
 
 import { supabase } from '../lib/supabase/client';
+import { ensureUuid } from '../utils/uuid';
 import type {
   ExamSession,
   CreateExamSessionInput,
@@ -19,11 +20,22 @@ export class ExamSessionService {
    */
   static async create(input: CreateExamSessionInput): Promise<{ success: boolean; session?: ExamSession; error?: string }> {
     try {
+      console.log('[ExamSessionService.create] Incoming input:', JSON.stringify(input));
+      
+      // Check auth status before insert
+      const { data: { user } } = await supabase.auth.getUser();
+      
+      // Convert mock IDs to UUIDs for database compatibility
+      const examUuid = ensureUuid(input.exam_id, 'exam');
+      const studentUuid = ensureUuid(input.student_id, 'student');
+      
+      console.log('[ExamSessionService.create] UUIDs for database - examUuid:', examUuid, 'studentUuid:', studentUuid);
+
       const { data, error } = await supabase
         .from('exam_sessions')
         .insert({
-          exam_id: input.exam_id,
-          student_id: input.student_id,
+          exam_id: examUuid,
+          student_id: studentUuid,
           status: 'in_progress',
           liveness_check_passed: input.liveness_check_passed ?? false,
           liveness_check_data: input.liveness_check_data ?? null,
@@ -34,14 +46,15 @@ export class ExamSessionService {
         .single();
 
       if (error) {
-        console.error('[ExamSessionService] Failed to create session:', error);
+        console.error('[ExamSessionService.create] Supabase error:', error);
         return { success: false, error: error.message };
       }
 
+      console.log('[ExamSessionService.create] Session created:', data.id);
       return { success: true, session: data as ExamSession };
     } catch (err) {
       const message = err instanceof Error ? err.message : 'Unknown error';
-      console.error('[ExamSessionService] Unexpected error creating session:', err);
+      console.error('[ExamSessionService.create] Unexpected error:', err);
       return { success: false, error: message };
     }
   }
@@ -140,10 +153,11 @@ export class ExamSessionService {
    */
   static async getByStudent(studentId: string): Promise<{ success: boolean; sessions?: ExamSession[]; error?: string }> {
     try {
+      const studentUuid = ensureUuid(studentId, 'student');
       const { data, error } = await supabase
         .from('exam_sessions')
         .select('*')
-        .eq('student_id', studentId)
+        .eq('student_id', studentUuid)
         .order('created_at', { ascending: false });
 
       if (error) {
@@ -164,6 +178,9 @@ export class ExamSessionService {
    */
   static async getByExam(examId: string): Promise<{ success: boolean; summaries?: ExamSessionSummary[]; error?: string }> {
     try {
+      const examUuid = ensureUuid(examId, 'exam');
+      console.log('[ExamSessionService.getByExam] Fetching sessions for examUuid:', examUuid);
+
       // Fetch sessions with joined data
       const { data: sessions, error: sessionError } = await supabase
         .from('exam_sessions')
@@ -173,7 +190,7 @@ export class ExamSessionService {
           exams!exam_sessions_exam_id_fkey (title, duration_minutes),
           cheating_scores (overall_score, risk_level, total_violations)
         `)
-        .eq('exam_id', examId)
+        .eq('exam_id', examUuid)
         .order('created_at', { ascending: false });
 
       if (sessionError) {
@@ -215,23 +232,37 @@ export class ExamSessionService {
    */
   static async getActiveSession(studentId: string, examId: string): Promise<{ success: boolean; session?: ExamSession; error?: string }> {
     try {
+      console.log('[ExamSessionService.getActiveSession] Checking for active session - examId:', examId, 'studentId:', studentId);
+      
+      // Convert mock IDs to UUIDs for database compatibility
+      const examUuid = ensureUuid(examId, 'exam');
+      const studentUuid = ensureUuid(studentId, 'student');
+      
+      console.log('[ExamSessionService.getActiveSession] Converted UUIDs - examUuid:', examUuid, 'studentUuid:', studentUuid);
+      
       const { data, error } = await supabase
         .from('exam_sessions')
         .select('*')
-        .eq('student_id', studentId)
-        .eq('exam_id', examId)
+        .eq('student_id', studentUuid)
+        .eq('exam_id', examUuid)
         .eq('status', 'in_progress')
         .maybeSingle();
 
       if (error) {
-        console.error('[ExamSessionService] Failed to fetch active session:', error);
+        console.error('[ExamSessionService.getActiveSession] Supabase error:', error);
         return { success: false, error: error.message };
+      }
+
+      if (data) {
+        console.log('[ExamSessionService.getActiveSession] Found active session:', data.id);
+      } else {
+        console.log('[ExamSessionService.getActiveSession] No active session found');
       }
 
       return { success: true, session: data as ExamSession | undefined };
     } catch (err) {
       const message = err instanceof Error ? err.message : 'Unknown error';
-      console.error('[ExamSessionService] Unexpected error fetching active session:', err);
+      console.error('[ExamSessionService.getActiveSession] Unexpected error:', err);
       return { success: false, error: message };
     }
   }
