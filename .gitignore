@@ -22,3 +22,22 @@ QWEN.md
 *.sln
 *.sw?
 .env
+.env.test
+.env.local
+.env.*.local
+
+# Testing
+coverage
+*.coverage
+.nyc_output
+test-results
+*.lcov
+
+# Build artifacts
+build/
+out/
+
+# IDE
+*.iml
+.vscode
+.idea

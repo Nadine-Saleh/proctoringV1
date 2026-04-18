@@ -1,65 +1,98 @@
-export type ViolationType =
-  | 'gaze_looking_away'
-  | 'gaze_sustained_away'
-  | 'gaze_prolonged_away'
-  | 'eye_closure'
-  | 'excessive_blinking'
-  | 'rapid_eye_movement'
-  | 'face_not_detected'
-  | 'multiple_faces'
-  | 'face_too_close'
-  | 'face_too_far'
-  | 'tab_switch'
-  | 'tab_switch_prolonged'
-  | 'window_minimize'
-  | 'head_pose_extreme'
-  | 'head_pose_moderate'
-  | 'phone_detected'
-  | 'headphones_detected'
-  | 'answer_pattern_suspicious'
-  | 'ip_address_change';
+import { ViolationType, VIOLATION_TAXONOMY } from '../types/examSession';
 
-export type ViolationSeverity = 'low' | 'medium' | 'high' | 'critical';
-
-export interface ViolationEvent {
-  id: string;
-  type: ViolationType;
-  severity: ViolationSeverity;
-  timestamp: string; // ISO string
-  duration?: number;
-  description: string;
-  metadata?: Record<string, unknown>;
-  evidenceImage?: string | null; // Base64 encoded snapshot or null
+/**
+ * Proctoring policy configuration affecting scoring thresholds.
+ * Read from the exam's proctoring_policy field at score computation time.
+ */
+export interface ProctoringPolicy {
+  visual_evidence_allowed: boolean;
+  warning_threshold: number; // score threshold for warning banner (typically 30)
+  critical_threshold: number; // score threshold for critical alert (typically 70)
+  critical_sustain_seconds: number; // duration score must stay above critical (typically 5)
+  max_verification_attempts: number; // max face-verification retries (typically 3)
 }
 
-export const WEIGHTS: Record<ViolationType, number> = {
-  gaze_looking_away: 2,
-  gaze_sustained_away: 5,
-  multiple_faces: 10,
-  tab_switch: 3,
-  excessive_blinking: 1,
-  phone_detected: 8,
-  head_pose_extreme: 4,
-  face_too_close: 3,
-  face_too_far: 3,
-  face_not_detected: 6,
-  gaze_prolonged_away: 7,
-  eye_closure: 4,
-  rapid_eye_movement: 3,
-  tab_switch_prolonged: 6,
-  window_minimize: 4,
-  head_pose_moderate: 2,
-  headphones_detected: 5,
-  answer_pattern_suspicious: 9,
-  ip_address_change: 7
-};
+/**
+ * Severity-weighted exponential decay scorer.
+ *
+ * Formula: score = sum(severity_i * 2^(-t_i / HALF_LIFE_SECONDS))
+ *
+ * Each violation event contributes a decaying value based on:
+ * - Its severity (1-25, from the canonical taxonomy)
+ * - Time elapsed since it occurred (half-life = 60 seconds)
+ *
+ * Final score is clamped to [0, 100].
+ */
+export class CheatingScorer {
+  private static readonly HALF_LIFE_SECONDS = 60;
+  private static readonly MAX_SCORE = 100;
 
-export interface ViolationScoreResult {
-  score: number;
-  level: 'low' | 'medium' | 'high' | 'critical';
-  recentEvents: ViolationEvent[];
+  /**
+   * Compute the cheating score given a list of violation events.
+   * @param events Array of violation events with type, severity, and server_recorded_at timestamp
+   * @param nowMs Current time in milliseconds (default: Date.now())
+   * @returns Cheating score clamped to [0, 100]
+   */
+  static computeScore(
+    events: Array<{
+      type: ViolationType;
+      severity: number;
+      server_recorded_at: string;
+    }>,
+    nowMs: number = Date.now()
+  ): number {
+    let totalScore = 0;
+
+    for (const event of events) {
+      const elapsedSeconds = (nowMs - new Date(event.server_recorded_at).getTime()) / 1000;
+
+      // Exponential decay: severity * 2^(-elapsed / half_life)
+      const decayedValue = event.severity * Math.pow(2, -elapsedSeconds / this.HALF_LIFE_SECONDS);
+
+      totalScore += decayedValue;
+    }
+
+    // Clamp to [0, 100]
+    return Math.min(Math.max(totalScore, 0), this.MAX_SCORE);
+  }
+
+  /**
+   * Check if the score has crossed the warning threshold.
+   */
+  static isWarningThresholdCrossed(
+    score: number,
+    policy: ProctoringPolicy
+  ): boolean {
+    return score >= policy.warning_threshold;
+  }
+
+  /**
+   * Check if the score has crossed the critical threshold.
+   */
+  static isCriticalThresholdCrossed(
+    score: number,
+    policy: ProctoringPolicy
+  ): boolean {
+    return score >= policy.critical_threshold;
+  }
 }
 
+/**
+ * Validates a violation type against the canonical taxonomy.
+ */
+export function validateViolationType(type: string): boolean {
+  return type in VIOLATION_TAXONOMY;
+}
+
+// ============================================================================
+// Backward Compatibility Exports (Phase 2→3 transition)
+// ============================================================================
+
+export { ViolationEvent } from '../types/examSession';
+
+/**
+ * Legacy RiskLevelInfo interface for backward compatibility
+ */
 export interface RiskLevelInfo {
   level: 'low' | 'medium' | 'high' | 'critical';
   color: 'green' | 'yellow' | 'orange' | 'red';
@@ -67,71 +100,7 @@ export interface RiskLevelInfo {
 }
 
 /**
- * Calculates a weighted violation score based on recent events.
- * @param events - Array of violation events
- * @param timeWindowMs - Time window in milliseconds (default: 5 minutes)
- * @returns Normalized score (0-100), risk level, and recent events
- */
-export function calculateViolationScore(
-  events: ViolationEvent[],
-  timeWindowMs: number = 300000 // 5 mins
-): ViolationScoreResult {
-  const now = Date.now();
-  const windowStart = now - timeWindowMs;
-
-  // Filter events within the time window
-  const recentEvents = events.filter(
-    (event) => new Date(event.timestamp).getTime() >= windowStart
-  );
-
-  // Sum weights of recent events
-  const totalWeight = recentEvents.reduce((sum, event) => {
-    return sum + (WEIGHTS[event.type] || 0);
-  }, 0);
-
-  // Calculate maximum possible weight for normalization
-  // Estimate: max reasonable events in window is ~20, with average weight ~5
-  // So max raw score would be ~100, we normalize accordingly
-  const maxExpectedWeight = 100;
-  const normalizedScore = Math.min(100, Math.round((totalWeight / maxExpectedWeight) * 100));
-
-  // Determine high-severity events in last 2 minutes
-  const twoMinutesAgo = now - 120000;
-  const highSeverityRecent = recentEvents.filter(
-    (event) =>
-      event.severity === 'high' &&
-      new Date(event.timestamp).getTime() >= twoMinutesAgo
-  );
-
-  // Determine critical-severity events in last 5 minutes
-  const criticalSeverityRecent = recentEvents.filter(
-    (event) => event.severity === 'critical'
-  );
-
-  // Determine risk level with enhanced thresholds
-  let level: 'low' | 'medium' | 'high' | 'critical';
-
-  if (normalizedScore >= 75 || criticalSeverityRecent.length >= 2 || (normalizedScore >= 60 && highSeverityRecent.length >= 3)) {
-    level = 'critical';
-  } else if (normalizedScore >= 50 || highSeverityRecent.length >= 2) {
-    level = 'high';
-  } else if (normalizedScore >= 25) {
-    level = 'medium';
-  } else {
-    level = 'low';
-  }
-
-  return {
-    score: normalizedScore,
-    level,
-    recentEvents
-  };
-}
-
-/**
- * Gets the risk level information with color and alert flag.
- * @param score - The violation score (0-100)
- * @returns Risk level info with color and alert recommendation
+ * Legacy getRiskLevel function (stub for compatibility)
  */
 export function getRiskLevel(score: number): RiskLevelInfo {
   let level: 'low' | 'medium' | 'high' | 'critical';
@@ -151,12 +120,43 @@ export function getRiskLevel(score: number): RiskLevelInfo {
     color = 'green';
   }
 
-  // Should alert only if critical AND pattern detected (score is very high)
-  const shouldAlert = level === 'critical' && score >= 85;
-
   return {
     level,
     color,
-    shouldAlert
+    shouldAlert: level === 'critical' && score >= 85
   };
+}
+
+/**
+ * Legacy calculateViolationScore function (stub for compatibility)
+ */
+export function calculateViolationScore(
+  events: Array<{
+    type?: string;
+    severity?: string | number;
+    timestamp?: string;
+    id?: string;
+    session_id?: string;
+    client_event_id?: string;
+    server_recorded_at?: string;
+  }>,
+  timeWindowMs: number = 300000
+): { score: number; level: 'low' | 'medium' | 'high' | 'critical'; recentEvents: any[] } {
+  const now = Date.now();
+  const windowStart = now - timeWindowMs;
+
+  const recentEvents = events.filter((event) => {
+    const timestamp = event.timestamp || event.server_recorded_at;
+    if (!timestamp) return false;
+    return new Date(timestamp).getTime() >= windowStart;
+  });
+
+  const score = Math.min(100, recentEvents.length * 5);
+  let level: 'low' | 'medium' | 'high' | 'critical' = 'low';
+
+  if (score >= 75) level = 'critical';
+  else if (score >= 50) level = 'high';
+  else if (score >= 25) level = 'medium';
+
+  return { score, level, recentEvents };
 }
