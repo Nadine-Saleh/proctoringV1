@@ -7,6 +7,7 @@
 import { useState, useCallback, useRef, useEffect } from 'react';
 import { ViolationEventService } from '../services/ViolationEventService';
 import { OfflineQueue } from '../utils/OfflineQueue';
+import { generateClientEventId } from '../utils/idempotency';
 import type {
   ViolationEvent,
   CreateViolationEventInput,
@@ -103,28 +104,51 @@ export function useViolationTracker(sessionId?: string, examId?: string, student
     }
 
     // Create full input
+    const clientEventId = generateClientEventId(sessionId);
+    const clientCapturedAt = input.occurred_at || new Date().toISOString();
+
     const fullInput: CreateViolationEventInput = {
       session_id: sessionId,
-      exam_id: examId,
-      student_id: studentId,
-      ...input,
+      client_event_id: clientEventId,
+      type: (input.violation_type as any) || (input as any).type,
+      client_captured_at: clientCapturedAt,
+      metadata: input.metadata ?? {},
+      evidence_artifact_id: (input as any).evidence_artifact_id ?? null,
+      evidence_image: input.evidence_image ?? null,
+      // Add extra fields for local mapping if needed by other components
+      ...({
+        exam_id: examId,
+        student_id: studentId,
+        violation_type: input.violation_type,
+        occurred_at: clientCapturedAt,
+        severity: input.severity,
+        weight: input.weight,
+        description: input.description,
+        duration_ms: input.duration_ms,
+      } as any)
     };
 
     // Add to local state immediately (for UI feedback)
     const localEvent: ViolationEvent = {
-      id: input.violation_type + '_' + Date.now(),
-      ...fullInput,
-      severity: input.severity ?? 'medium',
-      weight: input.weight ?? 1,
-      description: input.description ?? null,
-      duration_ms: input.duration_ms ?? null,
+      id: clientEventId,
+      session_id: sessionId,
+      client_event_id: clientEventId,
+      type: (input.violation_type as any) || (input as any).type,
+      severity: typeof input.severity === 'number' ? input.severity : 10,
+      client_captured_at: clientCapturedAt,
+      server_recorded_at: new Date().toISOString(),
+      evidence_artifact_id: (input as any).evidence_artifact_id ?? null,
       metadata: input.metadata ?? {},
-      evidence_image: input.evidence_image ?? null,
-      is_reviewed: false,
-      reviewed_by: null,
-      reviewed_at: null,
-      review_notes: null,
       created_at: new Date().toISOString(),
+      // Backward compatibility fields for UI
+      ...({
+        violation_type: input.violation_type,
+        occurred_at: clientCapturedAt,
+        description: input.description,
+        duration_ms: input.duration_ms,
+        evidence_image: input.evidence_image,
+        weight: input.weight,
+      } as any)
     };
 
     setViolations(prev => [...prev, localEvent].slice(-100)); // Keep last 100
@@ -177,8 +201,8 @@ export function useViolationTracker(sessionId?: string, examId?: string, student
       if (result.success && result.events) {
         // Replace local events with server events (have real IDs)
         setViolations(prev => {
-          const serverIds = new Set(result.events!.map(e => e.violation_type + '_' + new Date(e.occurred_at).getTime()));
-          return prev.filter(v => !serverIds.has(v.violation_type + '_' + new Date(v.occurred_at).getTime()))
+          const serverEventIds = new Set(result.events!.map(e => e.client_event_id));
+          return prev.filter(v => !serverEventIds.has(v.client_event_id))
             .concat(result.events!);
         });
 

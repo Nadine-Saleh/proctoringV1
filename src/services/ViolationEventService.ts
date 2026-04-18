@@ -49,25 +49,20 @@ export class ViolationEventService {
    */
   static async create(input: CreateViolationEventInput): Promise<{ success: boolean; event?: ViolationEvent; error?: string }> {
     try {
-      const weight = input.weight ?? DEFAULT_WEIGHTS[input.violation_type] ?? 1;
-      const examUuid = ensureUuid(input.exam_id, 'exam');
-      const studentUuid = ensureUuid(input.student_id, 'student');
+      const examUuid = ensureUuid(input.exam_id as string, 'exam');
+      const studentUuid = ensureUuid(input.student_id as string, 'student');
 
       const { data, error } = await supabase
         .from('violation_events')
         .insert({
           session_id: input.session_id,
-          exam_id: examUuid,
-          student_id: studentUuid,
-          violation_type: input.violation_type,
-          severity: input.severity ?? 'medium',
-          weight,
-          occurred_at: input.occurred_at,
-          duration_ms: input.duration_ms ?? null,
-          description: input.description ?? null,
+          client_event_id: input.client_event_id,
+          type: input.type,
+          severity: typeof input.severity === 'number' ? input.severity : 10, // Phase 2 uses smallint
+          client_captured_at: input.client_captured_at,
           metadata: input.metadata ?? {},
+          evidence_artifact_id: input.evidence_artifact_id ?? null,
           evidence_image: input.evidence_image ?? null,
-          is_reviewed: false,
         } as any)
         .select()
         .single();
@@ -92,17 +87,13 @@ export class ViolationEventService {
     try {
       const records = inputs.map(input => ({
         session_id: input.session_id,
-        exam_id: ensureUuid(input.exam_id, 'exam'),
-        student_id: ensureUuid(input.student_id, 'student'),
-        violation_type: input.violation_type,
-        severity: input.severity ?? 'medium',
-        weight: input.weight ?? DEFAULT_WEIGHTS[input.violation_type] ?? 1,
-        occurred_at: input.occurred_at,
-        duration_ms: input.duration_ms ?? null,
-        description: input.description ?? null,
+        client_event_id: input.client_event_id,
+        type: input.type,
+        severity: typeof input.severity === 'number' ? input.severity : 10,
+        client_captured_at: input.client_captured_at,
         metadata: input.metadata ?? {},
+        evidence_artifact_id: input.evidence_artifact_id ?? null,
         evidence_image: input.evidence_image ?? null,
-        is_reviewed: false,
       }));
 
       const { data, error } = await supabase
@@ -132,7 +123,7 @@ export class ViolationEventService {
         .from('violation_events')
         .select('*')
         .eq('session_id', sessionId)
-        .order('occurred_at', { ascending: true });
+        .order('client_captured_at', { ascending: true });
 
       if (error) {
         console.error('[ViolationEventService] Failed to fetch session violations:', error);

@@ -12,7 +12,7 @@ import { LivenessCheckModal } from '../../components/LivenessCheckModal';
 import { DistanceSetupModal } from '../../components/DistanceSetupModal';
 import { ExamSubmissionModal } from '../../components/ExamSubmissionModal';
 import { mockQuestions } from '../../data/mockData';
-import { getRiskLevel, calculateViolationScore, ViolationEvent as LocalViolationEvent } from '../../utils/violationScorer';
+import { getRiskLevel, calculateViolationScore, type ViolationEvent as LocalViolationEvent } from '../../utils/violationScorer';
 import { sendCriticalAlert } from '../../services/instructorAlertService';
 import { ViolationType, ViolationSeverity } from '../../types/examSession';
 import {
@@ -23,7 +23,7 @@ import {
 export const Exam = () => {
   const navigate = useNavigate();
   const { currentExam, user } = useApp();
-  
+
   // Memoize values that depend on currentExam to prevent unnecessary re-renders
   const currentExamId = currentExam?.id ? String(currentExam.id) : undefined;
   const currentExamDuration = currentExam?.duration ?? 90;
@@ -206,6 +206,9 @@ export const Exam = () => {
             roll: gazeSample.headRoll
           } : undefined,
         },
+        client_event_id: '',
+        type: 'gaze_looking_away',
+        client_captured_at: ''
       });
     });
 
@@ -217,10 +220,10 @@ export const Exam = () => {
     if (violationCount === 0 || criticalWarning) return;
 
     const latestViolation = trackedViolations[trackedViolations.length - 1];
-    if (latestViolation && (latestViolation.severity === 'high' || latestViolation.severity === 'critical')) {
+    if (latestViolation && (latestViolation.severity as any === 'high' || latestViolation.severity as any === 'critical')) {
       setCriticalWarning({
         message: latestViolation.description || 'Violation detected',
-        severity: latestViolation.severity as 'high' | 'critical'
+        severity: (latestViolation.severity as unknown as 'high' | 'critical') || 'high'
       });
       setTimeout(() => {
         setCriticalWarning(prev => (prev && prev.message === latestViolation.description ? null : prev));
@@ -255,8 +258,14 @@ export const Exam = () => {
       duration: v.duration_ms ?? undefined,
       description: v.description || '',
       metadata: v.metadata,
-      evidenceImage: v.evidence_image || null
-    }));
+      evidenceImage: v.evidence_image || null,
+      evidence_image: v.evidence_image || null,
+      occurred_at: v.occurred_at,
+      violation_type: v.violation_type,
+      duration_ms: v.duration_ms ?? 0,
+      client_event_id: v.id,
+      client_captured_at: v.occurred_at
+    } as any));
 
     const { score, level } = calculateViolationScore(localViolations);
     setViolationScore(score);
@@ -298,6 +307,9 @@ export const Exam = () => {
         metadata: {
           ...violation.metadata,
         },
+        client_event_id: '',
+        type: violation.type as ViolationType,
+        client_captured_at: now
       });
 
       // Calculate current score to check if alert should be sent
@@ -309,20 +321,32 @@ export const Exam = () => {
         duration: v.duration_ms ?? undefined,
         description: v.description || '',
         metadata: v.metadata,
-        evidenceImage: v.evidence_image || null
-      }));
+        evidenceImage: v.evidence_image || null,
+        evidence_image: v.evidence_image || null,
+        occurred_at: v.occurred_at,
+        violation_type: v.violation_type,
+        duration_ms: v.duration_ms ?? 0,
+        client_event_id: v.id,
+        client_captured_at: v.occurred_at
+      } as any));
 
       const { score, level } = calculateViolationScore(localViolations);
 
       // Send alert to instructor if critical/high risk
       if (level === 'critical' || level === 'high') {
         console.log(`[Exam] Sending alert to instructor: ${violation.type} (score: ${score}, level: ${level})`);
+        const severityMap: Record<string, number> = { low: 1, medium: 2, high: 3, critical: 4 };
+        const eventsSummary = localViolations.slice(-5).map(v => ({
+          type: String(v.violation_type),
+          severity: typeof v.severity === 'string' ? severityMap[v.severity] || 1 : v.severity,
+          timestamp: String(v.occurred_at)
+        }));
         sendCriticalAlert({
           examId: currentExamId!,
           studentId: user!.id,
           sessionId: session?.id,
           violationScore: score,
-          events: localViolations.slice(-5) // Send last 5 violations
+          events: eventsSummary
         }).catch(err => {
           console.error('[Exam] Failed to send alert:', err);
         });
@@ -539,9 +563,8 @@ export const Exam = () => {
             </div>
             <div className="flex items-center space-x-6">
               <Clock className="w-5 h-5 text-gray-700" />
-              <span className={`text-lg font-mono font-semibold ${
-                timeRemaining < 300 ? 'text-red-600' : 'text-gray-700'
-              }`}>
+              <span className={`text-lg font-mono font-semibold ${timeRemaining < 300 ? 'text-red-600' : 'text-gray-700'
+                }`}>
                 {formatTime(timeRemaining)}
               </span>
               {/* Answer progress */}
@@ -564,18 +587,16 @@ export const Exam = () => {
                   <button
                     key={index}
                     onClick={() => handleAnswerSelect(question.id, index)}
-                    className={`w-full text-left p-4 rounded-lg border-2 transition-all ${
-                      answers.has(String(question.id)) && answers.get(String(question.id)) === index
-                        ? 'border-blue-500 bg-blue-50'
-                        : 'border-gray-200 hover:border-gray-300 bg-white'
-                    }`}
+                    className={`w-full text-left p-4 rounded-lg border-2 transition-all ${answers.has(String(question.id)) && answers.get(String(question.id)) === index
+                      ? 'border-blue-500 bg-blue-50'
+                      : 'border-gray-200 hover:border-gray-300 bg-white'
+                      }`}
                   >
                     <div className="flex items-center">
-                      <div className={`w-6 h-6 rounded-full border-2 flex items-center justify-center mr-3 ${
-                        answers.has(String(question.id)) && answers.get(String(question.id)) === index
-                          ? 'border-blue-500 bg-blue-500'
-                          : 'border-gray-300'
-                      }`}>
+                      <div className={`w-6 h-6 rounded-full border-2 flex items-center justify-center mr-3 ${answers.has(String(question.id)) && answers.get(String(question.id)) === index
+                        ? 'border-blue-500 bg-blue-500'
+                        : 'border-gray-300'
+                        }`}>
                         {answers.has(String(question.id)) && answers.get(String(question.id)) === index && (
                           <div className="w-2 h-2 bg-white rounded-full" />
                         )}
@@ -641,9 +662,8 @@ export const Exam = () => {
               autoPlay
               muted
               playsInline
-              className={`w-full h-full object-cover transform scale-x-[-1] transition-opacity ${
-                status.camera ? 'opacity-100' : 'opacity-0'
-              }`}
+              className={`w-full h-full object-cover transform scale-x-[-1] transition-opacity ${status.camera ? 'opacity-100' : 'opacity-0'
+                }`}
             />
             {status.loading && !status.errorMessage && (
               <div className="absolute inset-0 flex items-center justify-center bg-black/50">
@@ -674,9 +694,8 @@ export const Exam = () => {
             )}
             {criticalWarning && (
               <div className="absolute top-2 left-2 right-2 z-20">
-                <div className={`px-3 py-2 rounded-lg shadow-lg backdrop-blur-sm ${
-                  criticalWarning.severity === 'critical' ? 'bg-red-600/90' : 'bg-orange-600/90'
-                }`}>
+                <div className={`px-3 py-2 rounded-lg shadow-lg backdrop-blur-sm ${criticalWarning.severity === 'critical' ? 'bg-red-600/90' : 'bg-orange-600/90'
+                  }`}>
                   <div className="flex items-center space-x-2">
                     <AlertTriangle className="w-4 h-4 text-white flex-shrink-0" />
                     <p className="text-white text-xs font-medium flex-1">{criticalWarning.message}</p>
@@ -695,12 +714,10 @@ export const Exam = () => {
               <span className={`text-sm font-medium ${status.camera ? 'text-green-700' : 'text-red-700'}`}>Camera</span>
               {status.camera ? <CheckCircle className="w-4 h-4 text-green-600" /> : <AlertTriangle className="w-4 h-4 text-red-600" />}
             </div>
-            <div className={`flex items-center justify-between p-3 rounded-lg ${
-              status.modelsLoaded ? status.faceDetected ? 'bg-green-50' : 'bg-yellow-50' : 'bg-gray-50'
-            }`}>
-              <span className={`text-sm font-medium ${
-                status.modelsLoaded ? status.faceDetected ? 'text-green-700' : 'text-yellow-700' : 'text-gray-500'
+            <div className={`flex items-center justify-between p-3 rounded-lg ${status.modelsLoaded ? status.faceDetected ? 'bg-green-50' : 'bg-yellow-50' : 'bg-gray-50'
               }`}>
+              <span className={`text-sm font-medium ${status.modelsLoaded ? status.faceDetected ? 'text-green-700' : 'text-yellow-700' : 'text-gray-500'
+                }`}>
                 {status.modelsLoaded ? 'Face Detection' : 'Loading Models...'}
               </span>
               {status.modelsLoaded ? (
@@ -713,12 +730,10 @@ export const Exam = () => {
               <span className={`text-sm font-medium ${status.tabActive ? 'text-green-700' : 'text-red-700'}`}>Tab Status</span>
               {status.tabActive ? <CheckCircle className="w-4 h-4 text-green-600" /> : <AlertTriangle className="w-4 h-4 text-red-600" />}
             </div>
-            <div className={`flex items-center justify-between p-3 rounded-lg ${
-              gazeRunning ? gazeStatus === 'looking-away' ? 'bg-red-50' : 'bg-green-50' : 'bg-gray-50'
-            }`}>
-              <span className={`text-sm font-medium ${
-                gazeRunning ? gazeStatus === 'looking-away' ? 'text-red-700' : 'text-green-700' : 'text-gray-500'
+            <div className={`flex items-center justify-between p-3 rounded-lg ${gazeRunning ? gazeStatus === 'looking-away' ? 'bg-red-50' : 'bg-green-50' : 'bg-gray-50'
               }`}>
+              <span className={`text-sm font-medium ${gazeRunning ? gazeStatus === 'looking-away' ? 'text-red-700' : 'text-green-700' : 'text-gray-500'
+                }`}>
                 {gazeRunning ? 'Eye Gaze' : 'Gaze Detection'}
               </span>
               {gazeRunning ? (
@@ -744,9 +759,8 @@ export const Exam = () => {
                   </div>
                 </div>
                 <div className="mt-1 relative h-1 bg-gray-200 rounded-full overflow-hidden">
-                  <div className={`h-full rounded-full transition-all ${
-                    Math.abs(faceDistanceCm - optimalDistanceCm) > 15 ? 'bg-orange-400' : 'bg-green-400'
-                  }`} style={{ width: `${Math.max(10, Math.min(90, (faceDistanceCm / 100) * 100))}%` }} />
+                  <div className={`h-full rounded-full transition-all ${Math.abs(faceDistanceCm - optimalDistanceCm) > 15 ? 'bg-orange-400' : 'bg-green-400'
+                    }`} style={{ width: `${Math.max(10, Math.min(90, (faceDistanceCm / 100) * 100))}%` }} />
                 </div>
               </div>
             )}
@@ -771,13 +785,12 @@ export const Exam = () => {
               <button
                 key={q.id}
                 onClick={() => setCurrentQuestion(index)}
-                className={`p-3 rounded-lg text-sm font-medium transition-all ${
-                  currentQuestion === index
-                    ? 'bg-blue-600 text-white'
-                    : answers.has(String(q.id))
+                className={`p-3 rounded-lg text-sm font-medium transition-all ${currentQuestion === index
+                  ? 'bg-blue-600 text-white'
+                  : answers.has(String(q.id))
                     ? 'bg-green-100 text-green-700 border border-green-300'
                     : 'bg-gray-100 text-gray-600 hover:bg-gray-200'
-                }`}
+                  }`}
               >
                 {index + 1}
               </button>
@@ -832,3 +845,5 @@ export const Exam = () => {
     </div>
   );
 };
+
+

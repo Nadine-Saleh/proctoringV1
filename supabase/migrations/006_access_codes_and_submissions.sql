@@ -5,8 +5,19 @@
 -- 1. ALTER exams TABLE
 -- ============================================================================
 
+-- Rename questions to exam_questions if it exists from older schema
+DO $$
+BEGIN
+    IF EXISTS (SELECT FROM pg_tables WHERE schemaname = 'public' AND tablename = 'questions') AND 
+       NOT EXISTS (SELECT FROM pg_tables WHERE schemaname = 'public' AND tablename = 'exam_questions') THEN
+        ALTER TABLE public.questions RENAME TO exam_questions;
+        ALTER TABLE public.exam_questions RENAME COLUMN sort_order TO position;
+    END IF;
+END $$;
+
 ALTER TABLE public.exams
 ADD COLUMN IF NOT EXISTS access_code text,
+ADD COLUMN IF NOT EXISTS starts_at timestamptz,
 ADD COLUMN IF NOT EXISTS proctoring_policy jsonb NOT NULL DEFAULT '{
   "visual_evidence_allowed": true,
   "warning_threshold": 30,
@@ -59,6 +70,20 @@ CREATE TABLE IF NOT EXISTS public.verification_attempts (
 -- 4. NEW TABLE: exam_sessions
 -- ============================================================================
 
+-- Ensure columns exist if table was created in 001
+DO $$
+BEGIN
+    IF EXISTS (SELECT FROM pg_tables WHERE schemaname = 'public' AND tablename = 'exam_sessions') THEN
+        ALTER TABLE public.exam_sessions ADD COLUMN IF NOT EXISTS admitted_at timestamptz;
+        ALTER TABLE public.exam_sessions ADD COLUMN IF NOT EXISTS live_cheating_score float DEFAULT 0;
+        ALTER TABLE public.exam_sessions ADD COLUMN IF NOT EXISTS last_score_update_at timestamptz;
+        ALTER TABLE public.exam_sessions ADD COLUMN IF NOT EXISTS submit_reason text;
+        
+        -- Update existing sessions to a Phase 2 status if they use Phase 1 names
+        UPDATE public.exam_sessions SET status = 'in_progress' WHERE status = 'pending';
+    END IF;
+END $$;
+
 CREATE TABLE IF NOT EXISTS public.exam_sessions (
   id uuid PRIMARY KEY DEFAULT gen_random_uuid(),
   exam_id uuid NOT NULL REFERENCES public.exams(id) ON DELETE CASCADE,
@@ -91,6 +116,32 @@ CREATE INDEX IF NOT EXISTS idx_exam_sessions_student_status
 -- 5. NEW TABLE: violation_events
 -- ============================================================================
 
+-- Ensure columns exist if table was created in 001
+DO $$
+BEGIN
+    IF EXISTS (SELECT FROM pg_tables WHERE schemaname = 'public' AND tablename = 'violation_events') THEN
+        -- 1. ADD COLUMNS (NULLABLE at first)
+        ALTER TABLE public.violation_events ADD COLUMN IF NOT EXISTS client_event_id text;
+        ALTER TABLE public.violation_events ADD COLUMN IF NOT EXISTS type text;
+        ALTER TABLE public.violation_events ADD COLUMN IF NOT EXISTS client_captured_at timestamptz;
+        ALTER TABLE public.violation_events ADD COLUMN IF NOT EXISTS server_recorded_at timestamptz DEFAULT now();
+        ALTER TABLE public.violation_events ADD COLUMN IF NOT EXISTS evidence_artifact_id uuid;
+        ALTER TABLE public.violation_events ADD COLUMN IF NOT EXISTS evidence_image text; -- Phase 3 addition
+        
+        -- 2. BACKFILL (from Phase 1 columns if present)
+        UPDATE public.violation_events 
+          SET type = COALESCE(type, violation_type, 'unknown'),
+              client_captured_at = COALESCE(client_captured_at, occurred_at, now()),
+              client_event_id = COALESCE(client_event_id, id::text);
+              
+        -- 3. SET NOT NULL (match Phase 2 schema)
+        ALTER TABLE public.violation_events ALTER COLUMN client_event_id SET NOT NULL;
+        ALTER TABLE public.violation_events ALTER COLUMN type SET NOT NULL;
+        ALTER TABLE public.violation_events ALTER COLUMN client_captured_at SET NOT NULL;
+        ALTER TABLE public.violation_events ALTER COLUMN server_recorded_at SET NOT NULL;
+    END IF;
+END $$;
+
 CREATE TABLE IF NOT EXISTS public.violation_events (
   id uuid PRIMARY KEY DEFAULT gen_random_uuid(),
   session_id uuid NOT NULL REFERENCES public.exam_sessions(id) ON DELETE CASCADE,
@@ -100,6 +151,7 @@ CREATE TABLE IF NOT EXISTS public.violation_events (
   client_captured_at timestamptz NOT NULL,
   server_recorded_at timestamptz NOT NULL DEFAULT now(),
   evidence_artifact_id uuid,
+  evidence_image text,
   metadata jsonb,
   created_at timestamptz NOT NULL DEFAULT now()
 );
@@ -361,3 +413,53 @@ BEGIN
   WHERE id = p_exam_id AND instructor_id = auth.uid();
 END;
 $$ LANGUAGE plpgsql SECURITY DEFINER;
+
+-- ============================================================================
+-- 13. LIST_MY_EXAMS RPC
+-- ============================================================================
+
+CREATE OR REPLACE FUNCTION public.list_my_exams()
+RETURNS TABLE (
+  id uuid,
+  title text,
+  description text,
+  starts_at timestamptz,
+  duration_minutes integer,
+  status text,
+  access_code text,
+  published_at timestamptz,
+  closed_at timestamptz,
+  joined_count bigint,
+  in_progress_count bigint,
+  submitted_count bigint,
+  created_at timestamptz,
+  updated_at timestamptz
+) AS $$
+BEGIN
+  RETURN QUERY
+  SELECT
+    e.id,
+    e.title::text,
+    e.description::text,
+    e.starts_at,
+    e.duration_minutes,
+    e.status::text,
+    e.access_code::text,
+    e.published_at,
+    e.closed_at,
+    COALESCE(COUNT(CASE WHEN es.status != 'terminated' THEN 1 END), 0)::bigint as joined_count,
+    COALESCE(COUNT(CASE WHEN es.status = 'in_progress' THEN 1 END), 0)::bigint as in_progress_count,
+    COALESCE(COUNT(CASE WHEN es.status IN ('submitted', 'auto_submitted') THEN 1 END), 0)::bigint as submitted_count,
+    e.created_at,
+    e.updated_at
+  FROM public.exams e
+  LEFT JOIN public.exam_sessions es ON e.id = es.exam_id
+  WHERE e.instructor_id = auth.uid()
+  GROUP BY e.id, e.title, e.description, e.starts_at, e.duration_minutes, e.status, e.access_code, e.published_at, e.closed_at, e.created_at, e.updated_at
+  ORDER BY e.created_at DESC;
+END;
+$$ LANGUAGE plpgsql SECURITY DEFINER;
+
+-- Grant execution to roles
+GRANT EXECUTE ON FUNCTION public.list_my_exams() TO authenticated;
+GRANT EXECUTE ON FUNCTION public.list_my_exams() TO service_role;

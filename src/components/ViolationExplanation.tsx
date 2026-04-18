@@ -1,5 +1,5 @@
 import React from 'react';
-import { ViolationEvent } from '../utils/violationScorer';
+import { type ViolationEvent } from '../utils/violationScorer';
 import { AlertTriangle, Eye, UserX, MonitorOff, Smartphone, RotateCcw } from 'lucide-react';
 
 interface ViolationExplanationProps {

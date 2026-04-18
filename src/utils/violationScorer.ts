@@ -88,7 +88,7 @@ export function validateViolationType(type: string): boolean {
 // Backward Compatibility Exports (Phase 2→3 transition)
 // ============================================================================
 
-export { ViolationEvent } from '../types/examSession';
+export type { ViolationEvent } from '../types/examSession';
 
 /**
  * Legacy RiskLevelInfo interface for backward compatibility

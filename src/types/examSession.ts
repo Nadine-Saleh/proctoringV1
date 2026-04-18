@@ -5,11 +5,46 @@
 // Consumed by: violationScorer.ts, record_violation_batch RPC, student UI, instructor UI
 
 export const VIOLATION_TAXONOMY = {
-  gaze_off_screen: { severity: 15, description: 'Student gaze directed away from screen' },
-  face_not_visible: { severity: 20, description: 'Face not detected in frame' },
-  multiple_persons: { severity: 25, description: 'Multiple persons detected in frame' },
-  tab_focus_lost: { severity: 10, description: 'Browser tab lost focus' },
-  camera_unavailable: { severity: 25, description: 'Camera became unavailable' },
+
+  // Gaze
+  gaze_looking_away: { severity: 5, description: 'Student gaze directed away from screen' },
+  gaze_sustained_away: { severity: 15, description: 'Student gaze consistently off-screen' },
+  gaze_prolonged_away: { severity: 25, description: 'Student gaze off-screen for an extended period' },
+  
+  // Eye Behavior
+  eye_closure: { severity: 20, description: 'Eyes closed for a suspicious duration' },
+  excessive_blinking: { severity: 5, description: 'Highly frequent blinking pattern detected' },
+  rapid_eye_movement: { severity: 10, description: 'Rapid eye movements indicative of reading external material' },
+  
+  // Face Detection
+  face_not_detected: { severity: 20, description: 'No face detected in the camera frame' },
+  multiple_faces: { severity: 25, description: 'More than one face detected in the camera frame' },
+  face_too_close: { severity: 10, description: 'Student face is too close to the camera' },
+  face_too_far: { severity: 10, description: 'Student face is too far from the camera' },
+  
+  // Tab/Window
+  tab_switch: { severity: 15, description: 'Browser tab lost focus' },
+  tab_switch_prolonged: { severity: 25, description: 'Browser tab lost focus for an extended duration' },
+  window_minimize: { severity: 20, description: 'Exam window was minimized' },
+  
+  // Head Pose
+  head_pose_extreme: { severity: 15, description: 'Extreme head rotation detected' },
+  head_pose_moderate: { severity: 5, description: 'Moderate head rotation detected' },
+  
+  // Device/Environment
+  phone_detected: { severity: 25, description: 'Mobile phone detected in frame' },
+  headphones_detected: { severity: 20, description: 'Headphones or headset detected' },
+  
+  // Pattern-based
+  answer_pattern_suspicious: { severity: 15, description: 'Suspicious answer timing or pattern detected' },
+  ip_address_change: { severity: 20, description: 'Student IP address changed during the session' },
+
+  // Legacy/Compatibility
+  gaze_off_screen: { severity: 15, description: 'Student gaze directed away from screen (legacy)' },
+  face_not_visible: { severity: 20, description: 'Face not detected in frame (legacy)' },
+  multiple_persons: { severity: 25, description: 'Multiple persons detected in frame (legacy)' },
+  tab_focus_lost: { severity: 10, description: 'Browser tab lost focus (legacy)' },
+  camera_unavailable: { severity: 25, description: 'Camera became unavailable (legacy)' },
   audio_anomaly: { severity: 5, description: 'Unexpected audio detected (reserved for v2)' },
 } as const;
 
@@ -68,6 +103,11 @@ export interface UpdateExamSessionInput {
 // ============================================
 
 export interface ViolationEvent {
+  description: string;
+  evidence_image: null;
+  occurred_at: any;
+  violation_type: any;
+  duration_ms: undefined;
   id: string;
   session_id: string;
   client_event_id: string;
@@ -82,10 +122,19 @@ export interface ViolationEvent {
 
 export interface CreateViolationEventInput {
   session_id: string;
+  exam_id?: string;
+  student_id?: string;
   client_event_id: string;
   type: ViolationType;
+  violation_type?: ViolationType; // for backward compatibility
+  severity?: number | string;
+  weight?: number;
   client_captured_at: string;
+  occurred_at?: string; // for backward compatibility
+  duration_ms?: number | null;
+  description?: string | null;
   evidence_artifact_id?: string | null;
+  evidence_image?: string | null;
   metadata?: Record<string, unknown>;
 }
 
