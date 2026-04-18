@@ -9,6 +9,7 @@ import { Exam } from './pages/student/Exam';
 import { StudentResults } from './pages/student/Results';
 import { InstructorDashboard } from './pages/instructor/Dashboard';
 import { CreateExam } from './pages/instructor/CreateExam';
+import { ExamDetail } from './pages/instructor/ExamDetail';
 import { InstructorResults } from './pages/instructor/Results';
 import { ProctoringReport } from './pages/instructor/Proctoring';
 
@@ -75,10 +76,18 @@ function AppContent() {
           }
         />
         <Route
-          path="/instructor/create"
+          path="/instructor/exams/new"
           element={
             <ProtectedRoute requiredRole="instructor">
               <CreateExam />
+            </ProtectedRoute>
+          }
+        />
+        <Route
+          path="/instructor/exams/:examId"
+          element={
+            <ProtectedRoute requiredRole="instructor">
+              <ExamDetail />
             </ProtectedRoute>
           }
         />
