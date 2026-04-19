@@ -221,10 +221,10 @@ export class ExamSubmissionService {
     try {
       const examUuid = ensureUuid(examId, 'exam');
       const { data, error } = await supabase
-        .from('questions')
+        .from('exam_questions')
         .select('id, exam_id, question_text, question_type, correct_answer, points')
         .eq('exam_id', examUuid)
-        .order('sort_order', { ascending: true });
+        .order('position', { ascending: true });
 
       if (error) {
         console.error('[ExamSubmissionService] Failed to fetch questions:', error);
@@ -249,7 +249,7 @@ export class ExamSubmissionService {
         .from('student_answers')
         .select(`
           *,
-          questions!student_answers_question_id_fkey (
+          question:exam_questions!student_answers_question_id_fkey (
             id, exam_id, question_text, question_type, correct_answer, points
           )
         `)
@@ -271,7 +271,7 @@ export class ExamSubmissionService {
       const gradedAnswers: GradedAnswer[] = [];
 
       for (const answerRow of answers as any[]) {
-        const question = answerRow.questions as QuestionForGrading;
+        const question = answerRow.question as QuestionForGrading;
         if (!question) continue;
 
         const submittedAnswer = {
@@ -294,7 +294,7 @@ export class ExamSubmissionService {
 
       const grade: ExamGrade = {
         session_id: sessionId,
-        exam_id: answers[0]?.questions?.exam_id ?? '',
+        exam_id: answers[0]?.question?.exam_id ?? '',
         student_id: '',
         total_score: totalScore,
         percentage,

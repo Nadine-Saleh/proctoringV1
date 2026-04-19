@@ -2,6 +2,7 @@ import { useEffect, useState } from 'react';
 import { useNavigate, Link } from 'react-router-dom';
 import { Clock, FileText, Calendar, ChevronRight, AlertCircle, KeyRound, Loader2 } from 'lucide-react';
 import { IdentityVerificationService } from '../../services/IdentityVerificationService';
+import { useApp } from '../../context/AppContext';
 
 interface SessionRow {
   session_id: string;
@@ -70,6 +71,7 @@ const getSessionRoute = (session: SessionRow): string => {
 
 export const StudentHome = () => {
   const navigate = useNavigate();
+  const { setCurrentExam } = useApp();
   const [sessions, setSessions] = useState<SessionRow[]>([]);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
@@ -160,7 +162,14 @@ export const StudentHome = () => {
                       </div>
                     </div>
                     <button
-                      onClick={() => navigate(getSessionRoute(session))}
+                      onClick={() => {
+                        setCurrentExam({
+                          id: session.exam_id,
+                          title: session.exam_title,
+                          duration: session.duration_minutes,
+                        });
+                        navigate(getSessionRoute(session));
+                      }}
                       className="w-full py-2.5 px-4 bg-blue-600 text-white rounded-lg font-semibold hover:bg-blue-700 transition-colors flex items-center justify-center gap-2"
                     >
                       {session.status === 'in_progress' ? 'Continue Exam' : 'Continue'}

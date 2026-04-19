@@ -131,31 +131,31 @@ Existing single-project layout (see plan.md §Project Structure): `src/` for the
 
 ### Tests for User Story 3
 
-- [ ] T046 [P] [US3] Unit test in `tests/unit/violationScorer.test.ts`: exponential decay math — a severity-5 event decays to ≈ 2.5 after 60 s, to ≈ 1.25 after 120 s; clamped to `[0, 100]`; simultaneous events additive
-- [ ] T047 [P] [US3] Unit test in `tests/unit/CheatingScoreService.test.ts`: threshold crossings emit the right warning/critical signals only after `critical_sustain_seconds` sustained
-- [ ] T048 [P] [US3] Integration test in `tests/integration/record-violation-idempotent.test.ts`: replaying the same `client_event_id` twice inserts exactly one row; `deduplicated` counter in response equals 1
-- [ ] T049 [P] [US3] Integration test in `tests/integration/record-violation-policy-guard.test.ts`: uploading an evidence-attached event under a `visual_evidence_allowed=false` policy rejects the entire batch with `evidence_policy_violation`
-- [ ] T050 [P] [US3] Integration test in `tests/integration/alerts-critical-sustained.test.ts`: score crossing critical for < sustain_seconds does NOT raise alert; crossing for ≥ sustain_seconds DOES raise exactly one alert
-- [ ] T051 [P] [US3] Integration test in `tests/integration/alerts-camera-loss.test.ts`: any `camera_unavailable` event raises an `instructor_alerts` row with `reason='camera_lost'` regardless of score
-- [ ] T052 [P] [US3] Detection-fixture benchmark in `tests/fixtures/scored-sessions/benchmark.test.ts`: replay recorded sessions through `violationScorer`; assert recall ≥ 90% and false-positive rate ≤ 10% against ground truth (SC-005)
-- [ ] T053 [P] [US3] E2E test in `tests/e2e/monitor-during-exam.spec.ts`: verified student triggers tab-blur and gaze-off; instructor tab observes score updates on the Realtime channel within 5 s
+- [X] T046 [P] [US3] Unit test in `tests/unit/violationScorer.test.ts`: exponential decay math — a severity-5 event decays to ≈ 2.5 after 60 s, to ≈ 1.25 after 120 s; clamped to `[0, 100]`; simultaneous events additive
+- [X] T047 [P] [US3] Unit test in `tests/unit/CheatingScoreService.test.ts`: threshold crossings emit the right warning/critical signals only after `critical_sustain_seconds` sustained
+- [X] T048 [P] [US3] Integration test in `tests/integration/record-violation-idempotent.test.ts`: replaying the same `client_event_id` twice inserts exactly one row; `deduplicated` counter in response equals 1
+- [X] T049 [P] [US3] Integration test in `tests/integration/record-violation-policy-guard.test.ts`: uploading an evidence-attached event under a `visual_evidence_allowed=false` policy rejects the entire batch with `evidence_policy_violation`
+- [X] T050 [P] [US3] Integration test in `tests/integration/alerts-critical-sustained.test.ts`: score crossing critical for < sustain_seconds does NOT raise alert; crossing for ≥ sustain_seconds DOES raise exactly one alert
+- [X] T051 [P] [US3] Integration test in `tests/integration/alerts-camera-loss.test.ts`: any `camera_unavailable` event raises an `instructor_alerts` row with `reason='camera_lost'` regardless of score
+- [X] T052 [P] [US3] Detection-fixture benchmark in `tests/fixtures/scored-sessions/benchmark.test.ts`: replay recorded sessions through `violationScorer`; assert recall ≥ 90% and false-positive rate ≤ 10% against ground truth (SC-005)
+- [X] T053 [P] [US3] E2E test in `tests/e2e/monitor-during-exam.spec.ts`: verified student triggers tab-blur and gaze-off; instructor tab observes score updates on the Realtime channel within 5 s
 
 ### Implementation for User Story 3
 
-- [ ] T054 [US3] Add Postgres RPC `record_violation_batch(session_id uuid, events jsonb)` in `supabase/migrations/006_access_codes_and_submissions.sql` per `contracts/rpc-record-violation.md`: validates types against canonical taxonomy, enforces policy guard, recomputes score (decay on server), writes `violation_events` with `ON CONFLICT DO NOTHING`, raises `instructor_alerts` per the rules
-- [ ] T055 [P] [US3] Rewrite `src/services/ViolationEventService.ts` to batch events (every 2 s OR 50 events), persist to IndexedDB on network failure, and drain with retained `client_event_id` on reconnect per `research.md` R10
-- [ ] T056 [P] [US3] Refactor `src/services/CheatingScoreService.ts` to (a) consume authoritative `live_cheating_score` from `record_violation_batch` responses, (b) surface warning/critical state to hooks, (c) NOT compute its own score locally
-- [ ] T057 [P] [US3] Enhance `src/hooks/useGazeTracking.ts` to emit `gaze_off_screen` events when yaw/pitch exceed configured thresholds for the duration gate from the exam's `proctoring_policy`
-- [ ] T058 [P] [US3] Enhance `src/hooks/useFaceDetection.ts` to emit `face_not_visible`, `multiple_persons`, and `camera_unavailable` events with correct severities from the canonical taxonomy
-- [ ] T059 [P] [US3] Add `src/hooks/useTabFocusTracker.ts` (new) emitting `tab_focus_lost` events on `visibilitychange` / `blur`
-- [ ] T060 [US3] Refactor `src/hooks/useProctoring.ts` to orchestrate the above detection hooks and funnel all events through `ViolationEventService`
-- [ ] T061 [US3] Refactor `src/hooks/useViolationTracker.ts` to aggregate events and read the authoritative score from `CheatingScoreService`; remove any local scoring logic
-- [ ] T062 [US3] Wire `src/pages/student/Exam.tsx` to display graduated non-blocking warnings when `CheatingScoreService` reports `warning_threshold_crossed` or on individual severity ≥ 10 events (FR-016)
-- [ ] T063 [US3] Wire `src/pages/instructor/Proctoring.tsx` to subscribe to Supabase Realtime channel `oversight:exam:<examId>` per `contracts/realtime-channels.md`; display per-session score tiles + alert feed; implement reconnection reconciliation query
-- [ ] T064 [US3] Ensure camera lifecycle cleanup in `src/pages/student/Exam.tsx` (`useEffect` teardown releases MediaStream tracks on unmount / navigation / submit)
-- [ ] T065 [P] [US3] Populate `tests/fixtures/gaze-corpus/` with a minimum of 30 short recorded-frame clips + annotations covering each violation type (this is the ground-truth corpus Principle II demands)
-- [ ] T066 [P] [US3] Populate `tests/fixtures/scored-sessions/` with 10 end-to-end recorded sessions + expected violation timelines for the benchmark in T052
-- [ ] T067 [US3] Add Chrome DevTools Performance trace evidence to a new `docs/perf-baseline.md` measuring detection-loop fps and main-thread p95 on a baseline laptop (Constitution Principle IV — measurement, not guessing)
+- [X] T054 [US3] Add Postgres RPC `record_violation_batch(session_id uuid, events jsonb)` in `supabase/migrations/006_access_codes_and_submissions.sql` per `contracts/rpc-record-violation.md`: validates types against canonical taxonomy, enforces policy guard, recomputes score (decay on server), writes `violation_events` with `ON CONFLICT DO NOTHING`, raises `instructor_alerts` per the rules
+- [X] T055 [P] [US3] Rewrite `src/services/ViolationEventService.ts` to batch events (every 2 s OR 50 events), persist to IndexedDB on network failure, and drain with retained `client_event_id` on reconnect per `research.md` R10
+- [X] T056 [P] [US3] Refactor `src/services/CheatingScoreService.ts` to (a) consume authoritative `live_cheating_score` from `record_violation_batch` responses, (b) surface warning/critical state to hooks, (c) NOT compute its own score locally
+- [X] T057 [P] [US3] Enhance `src/hooks/useGazeTracking.ts` to emit `gaze_off_screen` events when yaw/pitch exceed configured thresholds for the duration gate from the exam's `proctoring_policy`
+- [X] T058 [P] [US3] Enhance `src/hooks/useFaceDetection.ts` to emit `face_not_visible`, `multiple_persons`, and `camera_unavailable` events with correct severities from the canonical taxonomy
+- [X] T059 [P] [US3] Add `src/hooks/useTabFocusTracker.ts` (new) emitting `tab_focus_lost` events on `visibilitychange` / `blur`
+- [X] T060 [US3] Refactor `src/hooks/useProctoring.ts` to orchestrate the above detection hooks and funnel all events through `ViolationEventService`
+- [X] T061 [US3] Refactor `src/hooks/useViolationTracker.ts` to aggregate events and read the authoritative score from `CheatingScoreService`; remove any local scoring logic
+- [X] T062 [US3] Wire `src/pages/student/Exam.tsx` to display graduated non-blocking warnings when `CheatingScoreService` reports `warning_threshold_crossed` or on individual severity ≥ 10 events (FR-016)
+- [X] T063 [US3] Wire `src/pages/instructor/Proctoring.tsx` to subscribe to Supabase Realtime channel `oversight:exam:<examId>` per `contracts/realtime-channels.md`; display per-session score tiles + alert feed; implement reconnection reconciliation query
+- [X] T064 [US3] Ensure camera lifecycle cleanup in `src/pages/student/Exam.tsx` (`useEffect` teardown releases MediaStream tracks on unmount / navigation / submit)
+- [X] T065 [P] [US3] Populate `tests/fixtures/gaze-corpus/` with a minimum of 30 short recorded-frame clips + annotations covering each violation type (this is the ground-truth corpus Principle II demands)
+- [X] T066 [P] [US3] Populate `tests/fixtures/scored-sessions/` with 10 end-to-end recorded sessions + expected violation timelines for the benchmark in T052
+- [X] T067 [US3] Add Chrome DevTools Performance trace evidence to a new `docs/perf-baseline.md` measuring detection-loop fps and main-thread p95 on a baseline laptop (Constitution Principle IV — measurement, not guessing)
 
 **Checkpoint**: US3 functional independently given US1 + US2. Instructor observes live score updates; students see warnings; events persist through offline windows; benchmark meets SC-005 targets.
 

@@ -6,15 +6,25 @@
  */
 
 import { useState, useEffect, useRef, useCallback } from 'react';
-import { 
+import {
   GazeTrackingEngine,
   GazeSample,
   GazeViolation,
   GazeWarning,
   AttentionMetrics,
   GazeTrackingState,
-  GazeTrackingConfig
+  GazeTrackingConfig,
 } from '../lib/gaze/GazeTrackingEngine';
+import { VIOLATION_TAXONOMY } from '../types/examSession';
+
+export interface CanonicalGazeViolation {
+  type: 'gaze_off_screen';
+  severity: number;
+  client_captured_at: string;
+  duration_ms: number;
+  description: string;
+  metadata: { zone: string };
+}
 
 export interface UseGazeTrackingReturn {
   // State
@@ -46,8 +56,10 @@ export interface UseGazeTrackingReturn {
 }
 
 export const useGazeTracking = (
-  initialConfig?: Partial<GazeTrackingConfig>
+  initialConfig?: Partial<GazeTrackingConfig> & { onCanonicalViolation?: (v: CanonicalGazeViolation) => void }
 ): UseGazeTrackingReturn => {
+  const onCanonicalViolationRef = useRef(initialConfig?.onCanonicalViolation);
+  onCanonicalViolationRef.current = initialConfig?.onCanonicalViolation;
   const engineRef = useRef<GazeTrackingEngine | null>(null);
   const [state, setState] = useState<GazeTrackingState>({
     isRunning: false,
@@ -86,6 +98,17 @@ export const useGazeTracking = (
 
     engine.setOnViolation((violation) => {
       console.warn('[GazeTracking] Violation:', violation);
+      // T057: emit canonical gaze_off_screen event
+      if (onCanonicalViolationRef.current) {
+        onCanonicalViolationRef.current({
+          type: 'gaze_off_screen',
+          severity: VIOLATION_TAXONOMY.gaze_off_screen.severity,
+          client_captured_at: new Date(violation.timestamp).toISOString(),
+          duration_ms: violation.duration,
+          description: violation.description,
+          metadata: { zone: violation.type },
+        });
+      }
     });
 
     engine.setOnWarning((warning) => {

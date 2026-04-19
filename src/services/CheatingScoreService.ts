@@ -1,9 +1,3 @@
-// ============================================
-// Phase 3: Cheating Score Service
-// ============================================
-// Handles cheating score calculation and persistence via Supabase
-// Responsibility: Calculate, store, and retrieve cheating scores
-
 import { supabase } from '../lib/supabase/client';
 import { ensureUuid } from '../utils/uuid';
 import {
@@ -40,27 +34,78 @@ export interface CheatingScoreResult {
   error?: string;
 }
 
+export interface RpcScoreResponse {
+  live_cheating_score: number;
+  crossed_warning_threshold: boolean;
+  crossed_critical_threshold: boolean;
+}
+
+export interface ScoreState {
+  score: number;
+  warningThresholdCrossed: boolean;
+  criticalThresholdCrossed: boolean;
+}
+
+type ScoreListener = (state: ScoreState) => void;
+
+/**
+ * Reactive score tracker for a single exam session.
+ * Updated from record_violation_batch RPC responses (T055/T056).
+ * Clients MUST NOT compute their own score — this is the authoritative source.
+ */
+export class CheatingScoreTracker {
+  private _score = 0;
+  private _warnCrossed = false;
+  private _critCrossed = false;
+  private _listeners = new Set<ScoreListener>();
+
+  // eslint-disable-next-line @typescript-eslint/no-unused-vars
+  constructor(_policy: { warning_threshold: number; critical_threshold: number; [key: string]: unknown }) {}
+
+  get liveScore(): number { return this._score; }
+  get warningThresholdCrossed(): boolean { return this._warnCrossed; }
+  get criticalThresholdCrossed(): boolean { return this._critCrossed; }
+
+  updateFromRpcResponse(res: RpcScoreResponse): void {
+    this._score = res.live_cheating_score;
+    if (res.crossed_warning_threshold) this._warnCrossed = true;
+    if (res.crossed_critical_threshold) this._critCrossed = true;
+
+    const state: ScoreState = {
+      score: this._score,
+      warningThresholdCrossed: this._warnCrossed,
+      criticalThresholdCrossed: this._critCrossed,
+    };
+    this._listeners.forEach(fn => fn(state));
+  }
+
+  subscribe(listener: ScoreListener): () => void {
+    this._listeners.add(listener);
+    return () => this._listeners.delete(listener);
+  }
+
+  reset(): void {
+    this._score = 0;
+    this._warnCrossed = false;
+    this._critCrossed = false;
+  }
+}
+
 export class CheatingScoreService {
-  /**
-   * Calculate and persist cheating score for a session using database function
-   */
   static async calculateAndPersist(
     sessionId: string,
     windowMinutes: number = 5
   ): Promise<CheatingScoreResult> {
     try {
-      // Call database function to calculate score
       const { error } = await supabase.rpc('calculate_cheating_score', {
         p_session_id: sessionId,
         p_window_minutes: windowMinutes,
       });
 
       if (error) {
-        console.error('[CheatingScoreService] Database function failed:', error);
         return { success: false, error: error.message };
       }
 
-      // Fetch the full score record
       const { data: scoreRecord, error: fetchError } = await supabase
         .from('cheating_scores')
         .select('*')
@@ -68,21 +113,15 @@ export class CheatingScoreService {
         .single();
 
       if (fetchError) {
-        console.error('[CheatingScoreService] Failed to fetch score record:', fetchError);
         return { success: false, error: fetchError.message };
       }
 
       return { success: true, score: scoreRecord as CheatingScore };
     } catch (err) {
-      const message = err instanceof Error ? err.message : 'Unknown error';
-      console.error('[CheatingScoreService] Unexpected error:', err);
-      return { success: false, error: message };
+      return { success: false, error: err instanceof Error ? err.message : 'Unknown error' };
     }
   }
 
-  /**
-   * Get cheating score for a session
-   */
   static async getBySession(sessionId: string): Promise<{
     success: boolean;
     score?: CheatingScore;
@@ -96,25 +135,16 @@ export class CheatingScoreService {
         .single();
 
       if (error) {
-        if (error.code === 'PGRST116') {
-          // No rows found
-          return { success: true, score: undefined };
-        }
-        console.error('[CheatingScoreService] Failed to fetch score:', error);
+        if (error.code === 'PGRST116') return { success: true, score: undefined };
         return { success: false, error: error.message };
       }
 
       return { success: true, score: data as CheatingScore };
     } catch (err) {
-      const message = err instanceof Error ? err.message : 'Unknown error';
-      console.error('[CheatingScoreService] Unexpected error fetching score:', err);
-      return { success: false, error: message };
+      return { success: false, error: err instanceof Error ? err.message : 'Unknown error' };
     }
   }
 
-  /**
-   * Get cheating scores for an exam (all students)
-   */
   static async getByExam(examId: string): Promise<{
     success: boolean;
     scores?: CheatingScore[];
@@ -128,22 +158,13 @@ export class CheatingScoreService {
         .eq('exam_id', examUuid)
         .order('overall_score', { ascending: false });
 
-      if (error) {
-        console.error('[CheatingScoreService] Failed to fetch exam scores:', error);
-        return { success: false, error: error.message };
-      }
-
+      if (error) return { success: false, error: error.message };
       return { success: true, scores: data as CheatingScore[] };
     } catch (err) {
-      const message = err instanceof Error ? err.message : 'Unknown error';
-      console.error('[CheatingScoreService] Unexpected error fetching exam scores:', err);
-      return { success: false, error: message };
+      return { success: false, error: err instanceof Error ? err.message : 'Unknown error' };
     }
   }
 
-  /**
-   * Get high-risk sessions for an exam
-   */
   static async getHighRiskSessions(
     examId?: string,
     minutesAgo: number = 30
@@ -171,23 +192,13 @@ export class CheatingScoreService {
         p_minutes_ago: minutesAgo,
       });
 
-      if (error) {
-        console.error('[CheatingScoreService] Failed to fetch high-risk sessions:', error);
-        return { success: false, error: error.message };
-      }
-
+      if (error) return { success: false, error: error.message };
       return { success: true, sessions: data || [] };
     } catch (err) {
-      const message = err instanceof Error ? err.message : 'Unknown error';
-      console.error('[CheatingScoreService] Unexpected error fetching high-risk sessions:', err);
-      return { success: false, error: message };
+      return { success: false, error: err instanceof Error ? err.message : 'Unknown error' };
     }
   }
 
-  /**
-   * Calculate score client-side (for real-time updates without DB call)
-   * This is useful for immediate UI feedback before persisting to DB
-   */
   static calculateClientSide(violations: ScorerViolationEvent[]): {
     score: number;
     level: 'low' | 'medium' | 'high' | 'critical';
@@ -195,7 +206,6 @@ export class CheatingScoreService {
   } {
     const result = calculateViolationScore(violations);
     const riskInfo = getRiskLevel(result.score);
-
     return {
       score: result.score,
       level: result.level,

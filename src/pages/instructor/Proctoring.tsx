@@ -47,7 +47,8 @@ export const ProctoringReport = () => {
   const [liveAlerts, setLiveAlerts] = useState<LiveAlert[]>([]);
   const [showLiveMonitoring, setShowLiveMonitoring] = useState(true);
   const [isConnected, setIsConnected] = useState(false);
-  const wsRef = useRef<WebSocket | null>(null);
+  const [sessionScores, setSessionScores] = useState<Record<string, number>>({});
+  const realtimeChannelRef = useRef<ReturnType<typeof supabase.channel> | null>(null);
   const audioRef = useRef<HTMLAudioElement | null>(null);
 
   // Data state
@@ -56,87 +57,90 @@ export const ProctoringReport = () => {
   const [summaries, setSummaries] = useState<Record<string, ViolationSummary[]>>({});
   const [sessions, setSessions] = useState<ExamSessionSummary[]>([]);
 
-  // Initialize WebSocket for real-time alerts
+  // T063: Subscribe to Supabase Realtime oversight channel for the selected exam
   useEffect(() => {
-    if (!user) return;
-
-    try {
-      const wsUrl = `ws://localhost:4000/instructor/${user.id}`;
-      const ws = new WebSocket(wsUrl);
-      wsRef.current = ws;
-
-      ws.onopen = () => {
-        console.log('[ProctoringReport] Connected to real-time monitoring');
-        setIsConnected(true);
-        (window as any).instructorSocket = ws;
-      };
-
-      ws.onmessage = (event) => {
-        try {
-          const data = JSON.parse(event.data);
-          
-          if (data.type === 'critical_alert') {
-            const alert: LiveAlert = {
-              id: `alert_${Date.now()}`,
-              examId: data.payload.examId,
-              studentId: data.payload.studentId,
-              studentName: '',
-              violationScore: data.payload.violationScore,
-              riskLevel: data.payload.violationScore >= 75 ? 'critical' : 'high',
-              events: data.payload.events.map((e: any) => ({
-                type: e.type,
-                severity: e.severity,
-                description: e.description,
-                timestamp: e.timestamp
-              })),
-              timestamp: data.payload.timestamp,
-              acknowledged: false
-            };
-
-            setLiveAlerts(prev => [alert, ...prev].slice(0, 20));
-            
-            // Play alert sound
-            if (audioRef.current) {
-              audioRef.current.play().catch(() => {});
-            }
-
-            // Show browser notification
-            if (Notification.permission === 'granted') {
-              new Notification('🚨 Cheating Alert', {
-                body: `Student risk level: ${alert.riskLevel.toUpperCase()}`,
-                icon: '/alert-icon.png'
-              });
-            }
-          }
-        } catch (err) {
-          console.error('[ProctoringReport] Error processing alert:', err);
-        }
-      };
-
-      ws.onclose = () => {
-        console.log('[ProctoringReport] Disconnected from real-time monitoring');
-        setIsConnected(false);
-      };
-
-      ws.onerror = (error) => {
-        console.error('[ProctoringReport] WebSocket error:', error);
-        setIsConnected(false);
-      };
-
-      // Request notification permission
-      if (Notification.permission !== 'granted') {
-        Notification.requestPermission();
-      }
-
-      return () => {
-        if (wsRef.current) {
-          wsRef.current.close();
-        }
-      };
-    } catch (err) {
-      console.error('[ProctoringReport] Failed to connect to WebSocket:', err);
+    // Clean up previous channel
+    if (realtimeChannelRef.current) {
+      supabase.removeChannel(realtimeChannelRef.current);
+      realtimeChannelRef.current = null;
+      setIsConnected(false);
     }
-  }, [user]);
+
+    if (!user || examId === 'all') return;
+
+    const channelName = `oversight:exam:${examId}`;
+    const channel = supabase
+      .channel(channelName)
+      .on(
+        'postgres_changes',
+        { event: 'UPDATE', schema: 'public', table: 'exam_sessions', filter: `exam_id=eq.${examId}` },
+        (payload) => {
+          const row = payload.new as { id: string; live_cheating_score: number; status: string; student_id: string };
+          setSessionScores(prev => ({ ...prev, [row.id]: row.live_cheating_score }));
+        }
+      )
+      .on(
+        'postgres_changes',
+        { event: 'INSERT', schema: 'public', table: 'instructor_alerts', filter: `exam_id=eq.${examId}` },
+        (payload) => {
+          const row = payload.new as {
+            id: string;
+            session_id: string;
+            reason: string;
+            raised_at: string;
+          };
+
+          const session = sessions.find(s => s.session_id === row.session_id);
+          const alert: LiveAlert = {
+            id: row.id,
+            examId: examId,
+            studentId: session?.student_id ?? '',
+            studentName: session?.student_name ?? 'Unknown Student',
+            violationScore: sessionScores[row.session_id] ?? 0,
+            riskLevel: row.reason === 'critical_score_sustained' ? 'critical' : 'high',
+            events: [{ type: row.reason, severity: 'high', description: row.reason.replace(/_/g, ' '), timestamp: row.raised_at }],
+            timestamp: row.raised_at,
+            acknowledged: false,
+          };
+
+          setLiveAlerts(prev => [alert, ...prev].slice(0, 20));
+
+          if (audioRef.current) audioRef.current.play().catch(() => {});
+          if (Notification.permission === 'granted') {
+            new Notification('Proctoring Alert', {
+              body: `${alert.studentName}: ${row.reason.replace(/_/g, ' ')}`,
+            });
+          }
+        }
+      )
+      .subscribe((status) => {
+        setIsConnected(status === 'SUBSCRIBED');
+      });
+
+    realtimeChannelRef.current = channel;
+
+    // Request notification permission
+    if (Notification.permission !== 'granted') Notification.requestPermission();
+
+    // Reconciliation on (re)connect: fetch current session scores
+    supabase
+      .from('exam_sessions')
+      .select('id, live_cheating_score')
+      .eq('exam_id', examId)
+      .then(({ data }) => {
+        if (data) {
+          const scores: Record<string, number> = {};
+          for (const s of data) scores[s.id] = s.live_cheating_score ?? 0;
+          setSessionScores(scores);
+        }
+      });
+
+    return () => {
+      supabase.removeChannel(channel);
+      realtimeChannelRef.current = null;
+      setIsConnected(false);
+    };
+  }, [user, examId]); // eslint-disable-line react-hooks/exhaustive-deps
 
   // Load instructor's exams
   useEffect(() => {
@@ -539,6 +543,21 @@ export const ProctoringReport = () => {
                             </div>
                           </div>
                           <div className="flex items-center space-x-4">
+                            {/* T063: Live score tile updated via Realtime */}
+                            {session.status === 'in_progress' && (
+                              <div className={`px-3 py-1 rounded-lg text-xs font-bold border ${
+                                (sessionScores[session.session_id] ?? 0) >= 70
+                                  ? 'bg-red-100 text-red-700 border-red-200'
+                                  : (sessionScores[session.session_id] ?? 0) >= 40
+                                  ? 'bg-amber-100 text-amber-700 border-amber-200'
+                                  : 'bg-green-100 text-green-700 border-green-200'
+                              }`}>
+                                <span>Score: </span>
+                                <span data-testid="student-score">
+                                  {Math.round(sessionScores[session.session_id] ?? 0)}
+                                </span>
+                              </div>
+                            )}
                             <span className={`px-3 py-1 rounded-full text-xs font-semibold border ${
                               session.status === 'in_progress' ? 'bg-green-100 text-green-700 border-green-200' :
                               session.status === 'submitted' ? 'bg-blue-100 text-blue-700 border-blue-200' :

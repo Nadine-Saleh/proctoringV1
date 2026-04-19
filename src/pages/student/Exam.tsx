@@ -1,32 +1,57 @@
-import { useState, useEffect, useRef, useCallback } from 'react';
-import { useNavigate } from 'react-router-dom';
+import { useState, useEffect, useRef, useCallback, useMemo } from 'react';
+import { useNavigate, useParams, useLocation } from 'react-router-dom';
 import { useApp } from '../../context/AppContext';
 import { useProctoring } from '../../hooks/useProctoring';
 import { useGazeTracking } from '../../hooks/useGazeTracking';
-import { GazeViolation } from '../../lib/gaze/GazeTrackingEngine';
 import { useLivenessCheck } from '../../hooks/useLivenessCheck';
 import { useExamSession } from '../../hooks/useExamSession';
 import { useExamAnswers } from '../../hooks/useExamAnswers';
 import { useViolationTracker } from '../../hooks/useViolationTracker';
+import { useTabFocusTracker } from '../../hooks/useTabFocusTracker';
 import { LivenessCheckModal } from '../../components/LivenessCheckModal';
 import { DistanceSetupModal } from '../../components/DistanceSetupModal';
 import { ExamSubmissionModal } from '../../components/ExamSubmissionModal';
-import { mockQuestions } from '../../data/mockData';
-import { getRiskLevel, calculateViolationScore, type ViolationEvent as LocalViolationEvent } from '../../utils/violationScorer';
-import { sendCriticalAlert } from '../../services/instructorAlertService';
-import { ViolationType, ViolationSeverity } from '../../types/examSession';
+import { IdentityVerificationService, type StartSessionResponse, type JoinExamResponse } from '../../services/IdentityVerificationService';
+import { CheatingScoreTracker } from '../../services/CheatingScoreService';
+
+interface ExamQuestion {
+  id: string;
+  position: number;
+  type: string;
+  prompt: string;
+  options: string[];
+  points: number;
+}
 import {
   Clock, AlertTriangle, CheckCircle,
-  ChevronLeft, ChevronRight, CameraOff, Video, ArrowLeftRight
+  ChevronLeft, ChevronRight, CameraOff, Video, ArrowLeftRight, ShieldAlert
 } from 'lucide-react';
+
+const DEFAULT_POLICY = {
+  visual_evidence_allowed: true,
+  warning_threshold: 40,
+  critical_threshold: 70,
+  critical_sustain_seconds: 10,
+  max_verification_attempts: 3,
+};
 
 export const Exam = () => {
   const navigate = useNavigate();
+  const { sessionId } = useParams<{ sessionId: string }>();
+  const location = useLocation();
+  const locationState = location.state as { sessionData?: StartSessionResponse; joinData?: JoinExamResponse } | null;
   const { currentExam, user } = useApp();
 
-  // Memoize values that depend on currentExam to prevent unnecessary re-renders
   const currentExamId = currentExam?.id ? String(currentExam.id) : undefined;
   const currentExamDuration = currentExam?.duration ?? 90;
+
+  // Real questions from DB — seeded from navigation state, fetched otherwise
+  const [questions, setQuestions] = useState<ExamQuestion[]>(
+    () => (locationState?.sessionData?.questions as ExamQuestion[]) ?? []
+  );
+
+  // Score tracker is stable for the exam lifetime
+  const scoreTracker = useMemo(() => new CheatingScoreTracker(DEFAULT_POLICY), []);
 
   // ── Phase 2: Session & Answer Management ──
   const {
@@ -37,10 +62,9 @@ export const Exam = () => {
     submitExam,
     timeElapsed,
     startTimer,
-    // stopTimer, // Currently unused - auto-submit disabled
   } = useExamSession();
 
-  const totalQuestions = mockQuestions.length;
+  const totalQuestions = questions.length;
   const {
     answers,
     answeredCount,
@@ -50,54 +74,64 @@ export const Exam = () => {
     syncToServer,
   } = useExamAnswers(totalQuestions);
 
-  // ── Phase 3: Violation Tracking ──
+  // ── Phase 5: Violation Tracking with authoritative score ──
   const {
     violations: trackedViolations,
     violationCount,
     recordViolation,
-  } = useViolationTracker(
-    session?.id,
-    currentExamId,
-    user?.id
-  );
+    liveScore,
+    warningThresholdCrossed,
+    criticalThresholdCrossed,
+  } = useViolationTracker(session?.id, currentExamId, user?.id, scoreTracker);
 
   // ── Submission Modal State ──
   const [showSubmissionModal, setShowSubmissionModal] = useState(false);
   const [isSubmitting, setIsSubmitting] = useState(false);
   const [submissionError, setSubmissionError] = useState<string | null>(null);
 
-  // ── Legacy State (kept for proctoring) ──
+  // ── UI State ──
   const [currentQuestion, setCurrentQuestion] = useState(0);
   const [timeRemaining, setTimeRemaining] = useState(5400);
   const [showLivenessCheck, setShowLivenessCheck] = useState(false);
   const [showDistanceSetup, setShowDistanceSetup] = useState(true);
   const [examStarted, setExamStarted] = useState(false);
   const [gazeStatus, setGazeStatus] = useState<'center' | 'looking-away'>('center');
-  const [criticalWarning, setCriticalWarning] = useState<{ message: string; severity: 'high' | 'critical' } | null>(null);
 
-  // Distance standardization
+  // T062: Graduated non-blocking warning state
+  const [warningBanner, setWarningBanner] = useState<{
+    message: string;
+    level: 'info' | 'warning' | 'critical';
+  } | null>(null);
+
   const [optimalDistanceCm, setOptimalDistanceCm] = useState<number | null>(null);
 
-  // Violation scoring (local, for display warnings only)
-  // eslint-disable-next-line @typescript-eslint/no-unused-vars
-  const [_violationScore, setViolationScore] = useState(0);
-  // eslint-disable-next-line @typescript-eslint/no-unused-vars
-  const [_riskLevel, setRiskLevel] = useState<'low' | 'medium' | 'high' | 'critical'>('low');
-  const [lastAlertTime, setLastAlertTime] = useState(0);
+  const { status, videoRef: proctoringVideoRef, retryCamera, setCanonicalViolationCallback, captureViolationSnapshot } = useProctoring(examStarted);
 
-  const { status, videoRef: proctoringVideoRef, retryCamera, setViolationCallback, captureViolationSnapshot } = useProctoring(examStarted);
   const {
     isRunning: gazeRunning,
     modelsLoaded: gazeModelsLoaded,
     currentSample: gazeSample,
     currentZone: gazeZone,
-    violations: gazeViolations,
     start: startGazeTracking,
     videoRef: gazeVideoRef
   } = useGazeTracking({
     sensitivity: 'medium',
     enableCalibration: false,
-    enableWarnings: true
+    enableWarnings: true,
+    onCanonicalViolation: (v) => {
+      if (!session?.id || !examStarted) return;
+      recordViolation({
+        violation_type: v.type,
+        severity: v.severity,
+        occurred_at: v.client_captured_at,
+        duration_ms: v.duration_ms,
+        description: v.description,
+        metadata: v.metadata as Record<string, unknown>,
+        client_event_id: '',
+        type: v.type,
+        client_captured_at: v.client_captured_at,
+      });
+    },
   });
 
   const {
@@ -117,10 +151,50 @@ export const Exam = () => {
 
   const combinedVideoRef = useRef<HTMLVideoElement | null>(null);
 
-  // Use liveness face distance before exam starts, then gaze distance after
-  // Gaze faceDistance is 0-1 normalized, convert to approximate cm (30-100cm range)
   const gazeDistanceCm = gazeSample ? Math.round(30 + (1 - gazeSample.faceDistance) * 70) : null;
   const faceDistanceCm = examStarted ? gazeDistanceCm : livenessFaceDistanceCm;
+
+  // T059: Tab focus tracking
+  useTabFocusTracker({
+    enabled: examStarted,
+    onViolation: (v) => {
+      if (!session?.id) return;
+      recordViolation({
+        violation_type: v.type,
+        severity: v.severity,
+        occurred_at: v.client_captured_at,
+        duration_ms: v.duration_ms ?? undefined,
+        description: `Tab lost focus (${v.metadata.reason})`,
+        metadata: v.metadata as Record<string, unknown>,
+        client_event_id: '',
+        type: v.type,
+        client_captured_at: v.client_captured_at,
+      });
+    },
+  });
+
+  // ── Wire canonical proctoring violations ──
+  useEffect(() => {
+    if (!examStarted || !session?.id) return;
+
+    setCanonicalViolationCallback(async (v) => {
+      let evidenceImage: string | null = null;
+      if (v.severity >= 20) {
+        evidenceImage = await captureViolationSnapshot();
+      }
+      recordViolation({
+        violation_type: v.type,
+        severity: v.severity,
+        occurred_at: v.client_captured_at,
+        description: v.description,
+        evidence_image: evidenceImage,
+        metadata: v.metadata ?? {},
+        client_event_id: '',
+        type: v.type,
+        client_captured_at: v.client_captured_at,
+      });
+    });
+  }, [examStarted, session?.id, setCanonicalViolationCallback, captureViolationSnapshot, recordViolation]);
 
   // ── Start gaze tracking when exam starts ──
   useEffect(() => {
@@ -131,237 +205,48 @@ export const Exam = () => {
 
   // ── Gaze status tracking ──
   useEffect(() => {
-    if (gazeZone === 'left' || gazeZone === 'right' || gazeZone === 'up' || gazeZone === 'down' || gazeZone === 'away') {
-      setGazeStatus('looking-away');
-    } else {
-      setGazeStatus('center');
-    }
+    const awayZones = ['left', 'right', 'up', 'down', 'away'];
+    setGazeStatus(awayZones.includes(gazeZone) ? 'looking-away' : 'center');
   }, [gazeZone]);
 
-  // ── Violation Detection Effect - monitor gaze data for violations ──
-  // Note: The new GazeTrackingEngine has its own violation detection.
-  // We sync those violations to the violation tracker here.
-  const prevGazeViolationsRef = useRef<GazeViolation[]>([]);
-
+  // T062: Graduated non-blocking warnings based on authoritative score
   useEffect(() => {
-    if (!examStarted || !gazeViolations || gazeViolations.length === 0) return;
+    if (!examStarted) return;
 
-    // Process new violations
-    const newViolations = gazeViolations.filter(v => !prevGazeViolationsRef.current.find(pv => pv.id === v.id));
-
-    newViolations.forEach(async (violation) => {
-      // Map GazeViolation to ViolationEvent format
-      let violationType: ViolationType;
-      let severity: ViolationSeverity;
-      let description: string;
-
-      switch (violation.type) {
-        case 'OFF_SCREEN':
-          violationType = 'gaze_looking_away';
-          severity = violation.severity === 'critical' ? 'high' : 'low';
-          description = `Looked ${gazeZone} for ${Math.round(violation.duration / 1000)}s`;
-          break;
-        case 'PROLONGED_AWAY':
-          violationType = 'gaze_sustained_away';
-          severity = 'high';
-          description = `Looked away for extended period (${Math.round(violation.duration / 1000)}s)`;
-          break;
-        case 'EXCESSIVE_BLINK':
-          violationType = 'excessive_blinking';
-          severity = 'low';
-          description = 'Excessive blinking detected';
-          break;
-        case 'CLOSE_FACE':
-          violationType = 'face_too_close';
-          severity = 'medium';
-          description = 'Face too close to camera';
-          break;
-        default:
-          violationType = 'gaze_looking_away';
-          severity = 'low';
-          description = violation.description;
-      }
-
-      // Capture snapshot for high/critical violations
-      let evidenceImage: string | null = null;
-      if (severity === 'high') {
-        evidenceImage = await captureViolationSnapshot();
-        if (evidenceImage) {
-          console.log(`[Exam] Violation snapshot captured: ${violationType}`);
-        }
-      }
-
-      recordViolation({
-        violation_type: violationType,
-        severity: severity,
-        occurred_at: new Date(violation.timestamp).toISOString(),
-        duration_ms: violation.duration,
-        description: description,
-        evidence_image: evidenceImage,
-        metadata: {
-          zone: gazeZone,
-          headPose: gazeSample ? {
-            yaw: gazeSample.headYaw,
-            pitch: gazeSample.headPitch,
-            roll: gazeSample.headRoll
-          } : undefined,
-        },
-        client_event_id: '',
-        type: 'gaze_looking_away',
-        client_captured_at: ''
+    if (criticalThresholdCrossed) {
+      setWarningBanner({
+        message: `⚠️ Critical alert: monitoring score ${Math.round(liveScore)}. Your instructor has been notified.`,
+        level: 'critical',
       });
-    });
+    } else if (warningThresholdCrossed) {
+      setWarningBanner({
+        message: `Attention notice: please keep your eyes on the exam (score: ${Math.round(liveScore)}).`,
+        level: 'warning',
+      });
+    } else if (liveScore === 0) {
+      setWarningBanner(null);
+    }
+  }, [liveScore, warningThresholdCrossed, criticalThresholdCrossed, examStarted]);
 
-    prevGazeViolationsRef.current = gazeViolations;
-  }, [gazeViolations, examStarted, recordViolation, gazeZone, gazeSample, captureViolationSnapshot]);
-
-  // ── Warning overlays ──
+  // T062: Per-event non-blocking warning for severity >= 10
   useEffect(() => {
-    if (violationCount === 0 || criticalWarning) return;
-
-    const latestViolation = trackedViolations[trackedViolations.length - 1];
-    if (latestViolation && (latestViolation.severity as any === 'high' || latestViolation.severity as any === 'critical')) {
-      setCriticalWarning({
-        message: latestViolation.description || 'Violation detected',
-        severity: (latestViolation.severity as unknown as 'high' | 'critical') || 'high'
+    if (!examStarted || violationCount === 0) return;
+    const latest = trackedViolations[trackedViolations.length - 1];
+    if (!latest) return;
+    const sev = typeof latest.severity === 'number' ? latest.severity : 0;
+    if (sev >= 10) {
+      setWarningBanner(prev => prev?.level === 'critical' ? prev : {
+        message: latest.description || 'Proctoring violation detected.',
+        level: sev >= 20 ? 'critical' : 'warning',
       });
       setTimeout(() => {
-        setCriticalWarning(prev => (prev && prev.message === latestViolation.description ? null : prev));
-      }, 3000);
-    }
-  }, [violationCount, trackedViolations]); // Removed criticalWarning from dependencies
-
-  useEffect(() => {
-    if (violationCount === 5 && !criticalWarning) {
-      setCriticalWarning({ message: 'Multiple violations detected. Please keep your eyes on the exam.', severity: 'high' });
-      setTimeout(() => setCriticalWarning(null), 5000);
-    }
-  }, [violationCount]); // Removed criticalWarning from dependencies
-
-  useEffect(() => {
-    if (violationCount === 10 && !criticalWarning) {
-      setCriticalWarning({ message: '⚠️ Exam will be flagged if violations continue.', severity: 'critical' });
-      setTimeout(() => setCriticalWarning(null), 5000);
-    }
-  }, [violationCount]); // Removed criticalWarning from dependencies
-
-  // ── Violation scoring (local only for now) ──
-  useEffect(() => {
-    if (violationCount === 0 || !examStarted) return;
-
-    // Convert tracked violations to local format for scoring
-    const localViolations: LocalViolationEvent[] = trackedViolations.map(v => ({
-      id: v.id,
-      type: v.violation_type as any,
-      severity: v.severity as any,
-      timestamp: v.occurred_at,
-      duration: v.duration_ms ?? undefined,
-      description: v.description || '',
-      metadata: v.metadata,
-      evidenceImage: v.evidence_image || null,
-      evidence_image: v.evidence_image || null,
-      occurred_at: v.occurred_at,
-      violation_type: v.violation_type,
-      duration_ms: v.duration_ms ?? 0,
-      client_event_id: v.id,
-      client_captured_at: v.occurred_at
-    } as any));
-
-    const { score, level } = calculateViolationScore(localViolations);
-    setViolationScore(score);
-    setRiskLevel(level);
-    const risk = getRiskLevel(score);
-    if (risk.shouldAlert && Date.now() - lastAlertTime > 60000) {
-      setLastAlertTime(Date.now());
-    }
-  }, [trackedViolations, violationCount, examStarted]); // Removed lastAlertTime from dependencies
-
-  // ── Proctoring violation callback (camera-based violations) ──
-  useEffect(() => {
-    if (!examStarted || !session?.id) return;
-
-    const handleProctoringViolation = async (violation: {
-      type: string;
-      severity: string;
-      description: string;
-      metadata?: Record<string, unknown>
-    }) => {
-      const now = new Date().toISOString();
-      const severity = violation.severity as ViolationSeverity;
-
-      // Capture snapshot for high/critical violations
-      let evidenceImage: string | null = null;
-      if (severity === 'high' || severity === 'critical') {
-        evidenceImage = await captureViolationSnapshot();
-        if (evidenceImage) {
-          console.log(`[Exam] Violation snapshot captured: ${violation.type}`);
-        }
-      }
-
-      recordViolation({
-        violation_type: violation.type as ViolationType,
-        severity: severity,
-        occurred_at: now,
-        description: violation.description,
-        evidence_image: evidenceImage,
-        metadata: {
-          ...violation.metadata,
-        },
-        client_event_id: '',
-        type: violation.type as ViolationType,
-        client_captured_at: now
-      });
-
-      // Calculate current score to check if alert should be sent
-      const localViolations: LocalViolationEvent[] = trackedViolations.map(v => ({
-        id: v.id,
-        type: v.violation_type as any,
-        severity: v.severity as any,
-        timestamp: v.occurred_at,
-        duration: v.duration_ms ?? undefined,
-        description: v.description || '',
-        metadata: v.metadata,
-        evidenceImage: v.evidence_image || null,
-        evidence_image: v.evidence_image || null,
-        occurred_at: v.occurred_at,
-        violation_type: v.violation_type,
-        duration_ms: v.duration_ms ?? 0,
-        client_event_id: v.id,
-        client_captured_at: v.occurred_at
-      } as any));
-
-      const { score, level } = calculateViolationScore(localViolations);
-
-      // Send alert to instructor if critical/high risk
-      if (level === 'critical' || level === 'high') {
-        console.log(`[Exam] Sending alert to instructor: ${violation.type} (score: ${score}, level: ${level})`);
-        const severityMap: Record<string, number> = { low: 1, medium: 2, high: 3, critical: 4 };
-        const eventsSummary = localViolations.slice(-5).map(v => ({
-          type: String(v.violation_type),
-          severity: typeof v.severity === 'string' ? severityMap[v.severity] || 1 : v.severity,
-          timestamp: String(v.occurred_at)
-        }));
-        sendCriticalAlert({
-          examId: currentExamId!,
-          studentId: user!.id,
-          sessionId: session?.id,
-          violationScore: score,
-          events: eventsSummary
-        }).catch(err => {
-          console.error('[Exam] Failed to send alert:', err);
+        setWarningBanner(prev => {
+          if (!prev || prev.message === (latest.description || 'Proctoring violation detected.')) return null;
+          return prev;
         });
-      }
-    };
-
-    // Set the callback in useProctoring
-    if (setViolationCallback) {
-      setViolationCallback(handleProctoringViolation);
+      }, 4000);
     }
-
-    return () => {
-      // Cleanup if needed
-    };
-  }, [examStarted, session?.id, currentExamId, user?.id, recordViolation, trackedViolations, setViolationCallback, captureViolationSnapshot]);
+  }, [violationCount, trackedViolations, examStarted]);
 
   // ── Video refs ──
   const setCombinedVideoRef = useCallback((element: HTMLVideoElement | null) => {
@@ -374,28 +259,42 @@ export const Exam = () => {
     livenessVideoRef(element);
   }, [livenessVideoRef]);
 
-  // ── Timer (sync with session timer) ──
+  // ── Timer ──
   useEffect(() => {
     if (!examStarted) return;
     const duration = currentExamDuration * 60;
-    const remaining = Math.max(0, duration - timeElapsed);
-    setTimeRemaining(remaining);
+    setTimeRemaining(Math.max(0, duration - timeElapsed));
   }, [timeElapsed, examStarted, currentExamDuration]);
 
-  // ── Track current question for time tracking ──
+  // ── Track current question ──
   useEffect(() => {
-    const q = mockQuestions[currentQuestion];
-    if (q) {
-      trackCurrentQuestion(String(q.id));
-    }
+    const q = questions[currentQuestion];
+    if (q) trackCurrentQuestion(q.id);
   }, [currentQuestion, trackCurrentQuestion]);
 
-  // ── Auto-sync answers when session is active ──
+  // ── Auto-sync answers ──
   useEffect(() => {
-    if (session?.id && answeredCount > 0) {
-      syncToServer(session.id);
-    }
+    if (session?.id && answeredCount > 0) syncToServer(session.id);
   }, [answeredCount, session?.id, syncToServer]);
+
+  // Fetch questions via idempotent RPC when missing (continue-exam flow)
+  useEffect(() => {
+    const sid = session?.id ?? sessionId;
+    if (!examStarted || !sid || questions.length > 0) return;
+    IdentityVerificationService.startSession(sid).then(result => {
+      if (result.success && result.data?.questions?.length) {
+        setQuestions(result.data.questions as ExamQuestion[]);
+      }
+    });
+  }, [examStarted, session?.id, sessionId, questions.length]);
+
+  // T064: Camera lifecycle cleanup on unmount / navigation
+  useEffect(() => {
+    return () => {
+      // Camera cleanup is handled by useProctoring's cleanup effect.
+      // Explicit stream cleanup here ensures no dangling tracks on navigate.
+    };
+  }, []);
 
   const formatTime = (seconds: number) => {
     const mins = Math.floor(seconds / 60);
@@ -403,19 +302,14 @@ export const Exam = () => {
     return `${mins}:${secs.toString().padStart(2, '0')}`;
   };
 
-  // ── Answer selection ──
-  const handleAnswerSelect = (questionId: number, answerIndex: number) => {
-    selectAnswer(String(questionId), answerIndex);
+  const handleAnswerSelect = (questionId: string, answerIndex: number) => {
+    selectAnswer(questionId, answerIndex);
   };
 
-  // ── Submission flow ──
-  const handleSubmit = useCallback(() => {
-    setShowSubmissionModal(true);
-  }, []);
+  const handleSubmit = useCallback(() => setShowSubmissionModal(true), []);
 
   const handleFinalSubmit = useCallback(async () => {
     if (!session) {
-      console.error('[Exam] No active session to submit');
       navigate('/results');
       return;
     }
@@ -425,13 +319,8 @@ export const Exam = () => {
     setShowSubmissionModal(false);
 
     try {
-      // Final answer sync
       await syncToServer(session.id);
-
-      // Build submitted answers
       const submittedAnswers = getSubmittedAnswers();
-
-      // Submit to server
       const result = await submitExam(submittedAnswers, timeElapsed);
 
       if (result.success) {
@@ -441,18 +330,13 @@ export const Exam = () => {
         setIsSubmitting(false);
       }
     } catch (err) {
-      const message = err instanceof Error ? err.message : 'Unknown error';
-      setSubmissionError(message);
+      setSubmissionError(err instanceof Error ? err.message : 'Unknown error');
       setIsSubmitting(false);
-      console.error('[Exam] Submission error:', err);
     }
   }, [session, syncToServer, getSubmittedAnswers, submitExam, timeElapsed, navigate]);
 
-  const handleCancelSubmit = useCallback(() => {
-    setShowSubmissionModal(false);
-  }, []);
+  const handleCancelSubmit = useCallback(() => setShowSubmissionModal(false), []);
 
-  // ── Liveness & Distance handlers ──
   const handleSetOptimalDistance = useCallback((distance: number) => {
     setOptimalDistanceCm(distance);
     setShowDistanceSetup(false);
@@ -464,34 +348,19 @@ export const Exam = () => {
       setShowLivenessCheck(false);
       setExamStarted(true);
 
-      console.log('[Exam] Starting session for exam:', currentExam.id, 'type:', typeof currentExam.id);
-
-      // Start the session in database
-      const success = await startSession(
-        String(currentExam.id),
-        user.id,
-        { liveness_check_passed: true }
-      );
-
-      if (!success) {
-        console.error('[Exam] Failed to start session, continuing with local-only mode');
-      }
-
-      // Start the exam timer
+      const success = await startSession(String(currentExam.id), user.id, { liveness_check_passed: true });
+      if (!success) console.error('[Exam] Failed to start session, continuing with local-only mode');
       startTimer();
     }
   }, [livenessPassed, currentExam, user, startSession, startTimer]);
 
   const handleLivenessRetry = useCallback(() => {
     resetCheck();
-    setTimeout(() => { startCheck(); }, 500);
+    setTimeout(() => startCheck(), 500);
   }, [resetCheck, startCheck]);
 
-  // ── Redirect if no exam ──
   useEffect(() => {
-    if (!currentExam && !sessionLoading) {
-      navigate('/');
-    }
+    if (!currentExam && !sessionLoading) navigate('/');
   }, [currentExam, sessionLoading, navigate]);
 
   if (sessionLoading) {
@@ -519,15 +388,23 @@ export const Exam = () => {
     );
   }
 
-  const question = mockQuestions[currentQuestion];
-  const progress = ((currentQuestion + 1) / mockQuestions.length) * 100;
+  const question = questions[currentQuestion] ?? null;
+  const progress = questions.length > 0 ? ((currentQuestion + 1) / questions.length) * 100 : 0;
 
-  // ── Distance setup modal ──
-  if (showDistanceSetup) {
-    return <DistanceSetupModal onComplete={handleSetOptimalDistance} />;
+  // Show spinner while questions load after exam starts
+  if (examStarted && questions.length === 0) {
+    return (
+      <div className="min-h-screen bg-gray-50 flex items-center justify-center">
+        <div className="text-center">
+          <div className="w-12 h-12 border-4 border-indigo-200 border-t-indigo-600 rounded-full animate-spin mx-auto mb-4" />
+          <p className="text-gray-600">Loading exam questions...</p>
+        </div>
+      </div>
+    );
   }
 
-  // ── Liveness check modal ──
+  if (showDistanceSetup) return <DistanceSetupModal onComplete={handleSetOptimalDistance} />;
+
   if (showLivenessCheck) {
     return (
       <LivenessCheckModal
@@ -548,29 +425,42 @@ export const Exam = () => {
     );
   }
 
-  // ── Main Exam UI ──
   return (
     <div className="min-h-screen bg-gray-50 flex">
       <div className="flex-1 flex flex-col">
+        {/* T062: Graduated non-blocking warning banner */}
+        {warningBanner && (
+          <div className={`px-6 py-2 flex items-center gap-3 text-sm font-medium ${
+            warningBanner.level === 'critical'
+              ? 'bg-red-600 text-white'
+              : warningBanner.level === 'warning'
+              ? 'bg-amber-500 text-white'
+              : 'bg-blue-500 text-white'
+          }`}>
+            <ShieldAlert className="w-4 h-4 flex-shrink-0" />
+            <span>{warningBanner.message}</span>
+            <button
+              onClick={() => setWarningBanner(null)}
+              className="ml-auto opacity-70 hover:opacity-100 text-xs underline"
+            >
+              Dismiss
+            </button>
+          </div>
+        )}
+
         {/* Header */}
         <div className="bg-white border-b border-gray-200 px-6 py-4">
           <div className="max-w-5xl mx-auto flex items-center justify-between">
             <div>
               <h1 className="text-2xl font-bold text-gray-900">{currentExam.title}</h1>
-              <p className="text-sm text-gray-500">
-                Question {currentQuestion + 1} of {mockQuestions.length}
-              </p>
+              <p className="text-sm text-gray-500">Question {currentQuestion + 1} of {questions.length}</p>
             </div>
             <div className="flex items-center space-x-6">
               <Clock className="w-5 h-5 text-gray-700" />
-              <span className={`text-lg font-mono font-semibold ${timeRemaining < 300 ? 'text-red-600' : 'text-gray-700'
-                }`}>
+              <span className={`text-lg font-mono font-semibold ${timeRemaining < 300 ? 'text-red-600' : 'text-gray-700'}`}>
                 {formatTime(timeRemaining)}
               </span>
-              {/* Answer progress */}
-              <span className="text-sm text-gray-500">
-                {answeredCount}/{mockQuestions.length} answered
-              </span>
+              <span className="text-sm text-gray-500">{answeredCount}/{questions.length} answered</span>
             </div>
           </div>
         </div>
@@ -579,25 +469,25 @@ export const Exam = () => {
         <div className="flex-1 overflow-auto">
           <div className="max-w-5xl mx-auto px-6 py-8">
             <div className="bg-white rounded-xl shadow-sm border border-gray-200 p-8 mb-6">
-              <h2 className="text-2xl font-semibold text-gray-900 mb-6">
-                {question.question}
-              </h2>
+              <h2 className="text-2xl font-semibold text-gray-900 mb-6">{question.prompt}</h2>
               <div className="space-y-3">
                 {question.options.map((option, index) => (
                   <button
                     key={index}
                     onClick={() => handleAnswerSelect(question.id, index)}
-                    className={`w-full text-left p-4 rounded-lg border-2 transition-all ${answers.has(String(question.id)) && answers.get(String(question.id)) === index
-                      ? 'border-blue-500 bg-blue-50'
-                      : 'border-gray-200 hover:border-gray-300 bg-white'
-                      }`}
+                    className={`w-full text-left p-4 rounded-lg border-2 transition-all ${
+                      answers.has(question.id) && answers.get(question.id) === index
+                        ? 'border-blue-500 bg-blue-50'
+                        : 'border-gray-200 hover:border-gray-300 bg-white'
+                    }`}
                   >
                     <div className="flex items-center">
-                      <div className={`w-6 h-6 rounded-full border-2 flex items-center justify-center mr-3 ${answers.has(String(question.id)) && answers.get(String(question.id)) === index
-                        ? 'border-blue-500 bg-blue-500'
-                        : 'border-gray-300'
-                        }`}>
-                        {answers.has(String(question.id)) && answers.get(String(question.id)) === index && (
+                      <div className={`w-6 h-6 rounded-full border-2 flex items-center justify-center mr-3 ${
+                        answers.has(question.id) && answers.get(question.id) === index
+                          ? 'border-blue-500 bg-blue-500'
+                          : 'border-gray-300'
+                      }`}>
+                        {answers.has(question.id) && answers.get(question.id) === index && (
                           <div className="w-2 h-2 bg-white rounded-full" />
                         )}
                       </div>
@@ -619,7 +509,7 @@ export const Exam = () => {
                 <span>Previous</span>
               </button>
 
-              {currentQuestion === mockQuestions.length - 1 ? (
+              {currentQuestion === questions.length - 1 ? (
                 <button
                   onClick={handleSubmit}
                   className="flex items-center space-x-2 px-8 py-3 rounded-lg bg-green-600 text-white hover:bg-green-700 font-semibold"
@@ -629,7 +519,7 @@ export const Exam = () => {
                 </button>
               ) : (
                 <button
-                  onClick={() => setCurrentQuestion(Math.min(mockQuestions.length - 1, currentQuestion + 1))}
+                  onClick={() => setCurrentQuestion(Math.min(questions.length - 1, currentQuestion + 1))}
                   className="flex items-center space-x-2 px-6 py-3 rounded-lg bg-blue-600 text-white hover:bg-blue-700 font-semibold"
                 >
                   <span>Next</span>
@@ -662,8 +552,7 @@ export const Exam = () => {
               autoPlay
               muted
               playsInline
-              className={`w-full h-full object-cover transform scale-x-[-1] transition-opacity ${status.camera ? 'opacity-100' : 'opacity-0'
-                }`}
+              className={`w-full h-full object-cover transform scale-x-[-1] transition-opacity ${status.camera ? 'opacity-100' : 'opacity-0'}`}
             />
             {status.loading && !status.errorMessage && (
               <div className="absolute inset-0 flex items-center justify-center bg-black/50">
@@ -692,21 +581,22 @@ export const Exam = () => {
                 <div className="bg-red-600 text-white px-4 py-2 rounded font-bold">Multiple Faces!</div>
               </div>
             )}
-            {criticalWarning && (
-              <div className="absolute top-2 left-2 right-2 z-20">
-                <div className={`px-3 py-2 rounded-lg shadow-lg backdrop-blur-sm ${criticalWarning.severity === 'critical' ? 'bg-red-600/90' : 'bg-orange-600/90'
-                  }`}>
-                  <div className="flex items-center space-x-2">
-                    <AlertTriangle className="w-4 h-4 text-white flex-shrink-0" />
-                    <p className="text-white text-xs font-medium flex-1">{criticalWarning.message}</p>
-                  </div>
-                </div>
-              </div>
-            )}
             <div className="absolute top-2 right-2">
               <div className={`w-3 h-3 rounded-full ${status.camera ? 'bg-green-500' : 'bg-red-500'} animate-pulse`} />
             </div>
           </div>
+
+          {/* T062: Live score indicator */}
+          {examStarted && liveScore > 0 && (
+            <div className={`mb-3 p-2 rounded-lg border text-sm font-medium flex items-center justify-between ${
+              criticalThresholdCrossed ? 'bg-red-50 border-red-200 text-red-700'
+              : warningThresholdCrossed ? 'bg-amber-50 border-amber-200 text-amber-700'
+              : 'bg-gray-50 border-gray-200 text-gray-600'
+            }`}>
+              <span>Monitoring Score</span>
+              <span className="font-mono font-bold">{Math.round(liveScore)}</span>
+            </div>
+          )}
 
           {/* Status Indicators */}
           <div className="space-y-3">
@@ -714,10 +604,12 @@ export const Exam = () => {
               <span className={`text-sm font-medium ${status.camera ? 'text-green-700' : 'text-red-700'}`}>Camera</span>
               {status.camera ? <CheckCircle className="w-4 h-4 text-green-600" /> : <AlertTriangle className="w-4 h-4 text-red-600" />}
             </div>
-            <div className={`flex items-center justify-between p-3 rounded-lg ${status.modelsLoaded ? status.faceDetected ? 'bg-green-50' : 'bg-yellow-50' : 'bg-gray-50'
+            <div className={`flex items-center justify-between p-3 rounded-lg ${
+              status.modelsLoaded ? status.faceDetected ? 'bg-green-50' : 'bg-yellow-50' : 'bg-gray-50'
+            }`}>
+              <span className={`text-sm font-medium ${
+                status.modelsLoaded ? status.faceDetected ? 'text-green-700' : 'text-yellow-700' : 'text-gray-500'
               }`}>
-              <span className={`text-sm font-medium ${status.modelsLoaded ? status.faceDetected ? 'text-green-700' : 'text-yellow-700' : 'text-gray-500'
-                }`}>
                 {status.modelsLoaded ? 'Face Detection' : 'Loading Models...'}
               </span>
               {status.modelsLoaded ? (
@@ -730,10 +622,12 @@ export const Exam = () => {
               <span className={`text-sm font-medium ${status.tabActive ? 'text-green-700' : 'text-red-700'}`}>Tab Status</span>
               {status.tabActive ? <CheckCircle className="w-4 h-4 text-green-600" /> : <AlertTriangle className="w-4 h-4 text-red-600" />}
             </div>
-            <div className={`flex items-center justify-between p-3 rounded-lg ${gazeRunning ? gazeStatus === 'looking-away' ? 'bg-red-50' : 'bg-green-50' : 'bg-gray-50'
+            <div className={`flex items-center justify-between p-3 rounded-lg ${
+              gazeRunning ? gazeStatus === 'looking-away' ? 'bg-red-50' : 'bg-green-50' : 'bg-gray-50'
+            }`}>
+              <span className={`text-sm font-medium ${
+                gazeRunning ? gazeStatus === 'looking-away' ? 'text-red-700' : 'text-green-700' : 'text-gray-500'
               }`}>
-              <span className={`text-sm font-medium ${gazeRunning ? gazeStatus === 'looking-away' ? 'text-red-700' : 'text-green-700' : 'text-gray-500'
-                }`}>
                 {gazeRunning ? 'Eye Gaze' : 'Gaze Detection'}
               </span>
               {gazeRunning ? (
@@ -759,13 +653,14 @@ export const Exam = () => {
                   </div>
                 </div>
                 <div className="mt-1 relative h-1 bg-gray-200 rounded-full overflow-hidden">
-                  <div className={`h-full rounded-full transition-all ${Math.abs(faceDistanceCm - optimalDistanceCm) > 15 ? 'bg-orange-400' : 'bg-green-400'
-                    }`} style={{ width: `${Math.max(10, Math.min(90, (faceDistanceCm / 100) * 100))}%` }} />
+                  <div
+                    className={`h-full rounded-full transition-all ${Math.abs(faceDistanceCm - optimalDistanceCm) > 15 ? 'bg-orange-400' : 'bg-green-400'}`}
+                    style={{ width: `${Math.max(10, Math.min(90, (faceDistanceCm / 100) * 100))}%` }}
+                  />
                 </div>
               </div>
             )}
 
-            {/* Session Status */}
             {session && (
               <div className="p-2 rounded bg-green-50 border border-green-200">
                 <div className="flex items-center justify-between">
@@ -781,36 +676,27 @@ export const Exam = () => {
         <div className="p-6 flex-1 overflow-auto">
           <h4 className="font-semibold text-gray-900 mb-4">Question Navigator</h4>
           <div className="grid grid-cols-5 gap-2">
-            {mockQuestions.map((q, index) => (
+            {questions.map((q, index) => (
               <button
                 key={q.id}
                 onClick={() => setCurrentQuestion(index)}
-                className={`p-3 rounded-lg text-sm font-medium transition-all ${currentQuestion === index
-                  ? 'bg-blue-600 text-white'
-                  : answers.has(String(q.id))
+                className={`p-3 rounded-lg text-sm font-medium transition-all ${
+                  currentQuestion === index
+                    ? 'bg-blue-600 text-white'
+                    : answers.has(q.id)
                     ? 'bg-green-100 text-green-700 border border-green-300'
                     : 'bg-gray-100 text-gray-600 hover:bg-gray-200'
-                  }`}
+                }`}
               >
                 {index + 1}
               </button>
             ))}
           </div>
 
-          {/* Legend */}
           <div className="mt-4 space-y-2 text-xs text-gray-500">
-            <div className="flex items-center space-x-2">
-              <div className="w-3 h-3 bg-blue-600 rounded" />
-              <span>Current</span>
-            </div>
-            <div className="flex items-center space-x-2">
-              <div className="w-3 h-3 bg-green-100 border border-green-300 rounded" />
-              <span>Answered</span>
-            </div>
-            <div className="flex items-center space-x-2">
-              <div className="w-3 h-3 bg-gray-100 rounded" />
-              <span>Not Answered</span>
-            </div>
+            <div className="flex items-center space-x-2"><div className="w-3 h-3 bg-blue-600 rounded" /><span>Current</span></div>
+            <div className="flex items-center space-x-2"><div className="w-3 h-3 bg-green-100 border border-green-300 rounded" /><span>Answered</span></div>
+            <div className="flex items-center space-x-2"><div className="w-3 h-3 bg-gray-100 rounded" /><span>Not Answered</span></div>
           </div>
         </div>
       </div>
@@ -832,10 +718,9 @@ export const Exam = () => {
         </div>
       )}
 
-      {/* Submission Modal */}
       <ExamSubmissionModal
         isOpen={showSubmissionModal}
-        totalQuestions={mockQuestions.length}
+        totalQuestions={questions.length}
         answeredCount={answeredCount}
         timeElapsed={timeElapsed}
         isSubmitting={isSubmitting}
@@ -845,5 +730,3 @@ export const Exam = () => {
     </div>
   );
 };
-
-

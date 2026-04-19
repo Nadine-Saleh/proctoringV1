@@ -2,12 +2,14 @@ import { useEffect, useState } from 'react';
 import { useNavigate, useParams, useLocation } from 'react-router-dom';
 import { PlayCircle, Clock, FileText, ShieldCheck, AlertCircle, Loader2 } from 'lucide-react';
 import { IdentityVerificationService, type JoinExamResponse } from '../../services/IdentityVerificationService';
+import { useApp } from '../../context/AppContext';
 import { supabase } from '../../lib/supabase/client';
 
 export const ReadyToStart = () => {
   const { sessionId } = useParams<{ sessionId: string }>();
   const navigate = useNavigate();
   const location = useLocation();
+  const { setCurrentExam } = useApp();
   const joinData = (location.state as { joinData?: JoinExamResponse } | null)?.joinData;
 
   const [loading, setLoading] = useState(false);
@@ -45,6 +47,16 @@ export const ReadyToStart = () => {
         setError(msg);
       }
       return;
+    }
+
+    if (joinData?.exam) {
+      setCurrentExam({
+        id: joinData.exam.id,
+        title: joinData.exam.title,
+        description: joinData.exam.description,
+        duration: joinData.exam.duration_minutes,
+        proctoring_policy: joinData.exam.proctoring_policy,
+      });
     }
 
     navigate(`/exam/${sessionId}`, {

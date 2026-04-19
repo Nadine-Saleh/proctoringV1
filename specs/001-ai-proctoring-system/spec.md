@@ -7,6 +7,12 @@
 
 ## Clarifications
 
+### Session 2026-04-19
+
+- Q: What form of data is stored as the student's reference face? → A: Mathematical embedding only — a float vector (128 numbers) derived from the face; cannot be reversed into an image.
+- Q: When is the reference embedding captured? → A: Inline at first exam join — if no embedding exists, the join flow inserts a reference-capture screen before the first verification attempt counts against the retry budget.
+- Q: Is one reference embedding stored per student (reused across all exams) or fresh per exam? → A: One per student — a single embedding keyed by student_id is reused for every exam the student takes.
+
 ### Session 2026-04-18
 
 - Q: On sustained critical cheating score, should the system auto-terminate, alert only, auto-pause, or escalate? → A: Alert only — never auto-terminate; instructor decides via an explicit manual control.
@@ -40,12 +46,12 @@ A student authenticates to the platform, enters the access code for the exam the
 
 **Why this priority**: Identity verification is the primary trust gate of the entire product. Without it, monitoring and grade attribution are meaningless. This story closes the "who is taking the exam" question before any scoring begins.
 
-**Independent Test**: A student account with a stored reference face enters a valid access code, completes verification on the first attempt, and is routed to the exam start screen. Verified by confirming the student's session record shows `verified`, the exam is listed on their active-exams screen, and the admit timestamp is recorded.
+**Independent Test**: A student account with a stored reference embedding enters a valid access code, completes verification on the first attempt, and is routed to the exam start screen. Verified by confirming the student's session record shows `verified`, the exam is listed on their active-exams screen, and the admit timestamp is recorded.
 
 **Acceptance Scenarios**:
 
 1. **Given** an authenticated student holding a valid access code for an exam whose window is open, **When** the student enters the code and grants camera access, **Then** the system presents the identity verification step.
-2. **Given** a student at the verification step whose live capture matches their stored reference face within the configured confidence threshold, **When** verification completes, **Then** the student is admitted to the exam and an admit record is stored.
+2. **Given** a student at the verification step whose live-captured embedding matches their stored reference embedding within the configured confidence threshold, **When** verification completes, **Then** the student is admitted to the exam and an admit record is stored.
 3. **Given** a student whose first verification attempt does not match, **When** the student retries, **Then** the system allows up to the configured maximum number of attempts with clear guidance (lighting, face framing) between attempts.
 4. **Given** a student who has exceeded the maximum verification attempts, **When** the final attempt fails, **Then** the student is blocked from entry, the instructor is notified for manual review, and no exam session is created.
 5. **Given** a student entering an access code that is invalid, expired, or outside the exam window, **When** they submit the code, **Then** the system rejects entry with a specific reason message.
@@ -98,7 +104,7 @@ When the student submits the exam (manually or via auto-submit at the end of the
 - **Time zones and clock skew**: A student joins just before the exam window opens or just after it closes according to their device clock, but the server's authoritative clock disagrees. The system MUST use the server-authoritative clock for admit and submit decisions.
 - **Duplicate join on the same code from the same student**: The student opens the exam in a second tab or device. Only one active session is permitted per student per exam; the later attempt is blocked with a clear message.
 - **Concurrent submission attempts**: Manual submit and window-close auto-submit race. Exactly one submission is recorded; the second attempt is idempotent and returns the existing submission record.
-- **Reference face missing or low-quality**: A student has no stored reference face (first-ever exam) or the stored reference is too low-quality to verify against. The system routes them to a reference-capture flow before allowing the verification attempt to count against their maximum.
+- **Reference embedding missing or low-quality**: A student has no stored reference embedding (first-ever exam) or the stored embedding has a quality score below the acceptable threshold. The system routes them to an inline reference-capture screen (within the join flow) before allowing any verification attempt to count against their retry budget.
 - **False positives in detection**: Lighting, glasses, a passing pet, background movement, or culturally common head coverings cause detections that do not correspond to cheating. The scoring model MUST weight sustained, high-severity signals more than transient, low-severity signals and MUST provide the instructor with raw evidence so they can overturn false positives.
 - **Privacy-restricted classrooms**: Some deployments forbid visual evidence capture. When the exam policy disables visual evidence, the system MUST still record violation events and scores but MUST NOT upload or retain frame snippets.
 - **Student disconnects mid-exam**: The student closes their browser or loses power. On reconnect within a grace period of **10 minutes** (measured from the last server-observed heartbeat / score update), the session resumes from the last saved state; past 10 minutes the session is auto-submitted in its current state with `submit_reason = auto_disconnect`.
@@ -122,8 +128,8 @@ When the student submits the exam (manually or via auto-submit at the end of the
 
 - **FR-006**: Students MUST be able to join an exam by entering a valid access code while authenticated to the platform.
 - **FR-007**: The system MUST reject join attempts when the code is invalid, the exam window is not open, or the student is already in an active session for the same exam.
-- **FR-008**: Before an exam session starts, the system MUST require the student to pass a face-recognition identity check against their stored reference face.
-- **FR-009**: If no reference face is on file for the student, the system MUST route them to a reference-capture flow before counting any verification attempts.
+- **FR-008**: Before an exam session starts, the system MUST require the student to pass a face-recognition identity check by comparing a live-captured face embedding against their stored reference embedding (128-dimensional float vector).
+- **FR-009**: If no reference embedding is on file for the student, the system MUST route them to an inline reference-capture screen — presented within the exam join flow — before counting any verification attempts against the retry budget. There is no separate enrollment step; capture always happens at first exam join. The stored embedding is keyed by `student_id` and reused for all subsequent exams the student takes; no re-capture is required on later joins.
 - **FR-010**: The system MUST allow a bounded number of verification retries per exam join attempt (configurable per exam; **default = 3 total attempts**, i.e., the initial attempt plus two retries) and MUST provide guidance between attempts.
 - **FR-011**: When a student exhausts all verification attempts, the system MUST block entry, record the outcome, and notify the instructor for manual review.
 - **FR-012**: The system MUST record, for every admit decision, a timestamp, the verification outcome, and the confidence score used to make the decision.
@@ -155,7 +161,7 @@ When the student submits the exam (manually or via auto-submit at the end of the
 **Cross-Cutting Security, Privacy, and Integrity**
 
 - **FR-029**: Only the instructor who authored the exam (or users granted explicit co-instructor access) MUST be able to view submissions and evidence for that exam.
-- **FR-030**: Raw camera frames MUST NOT be persisted server-side; only derived signals (violation events) and — when the exam policy explicitly permits — short evidence snippets MAY be stored.
+- **FR-030**: Raw camera frames MUST NOT be persisted server-side. The reference face MUST be stored solely as a mathematical embedding (float vector); no reversible image is retained. Only derived signals (violation events) and — when the exam policy explicitly permits — short evidence snippets MAY be stored.
 - **FR-031**: All admit, submit, and grading actions MUST be timestamped with the server-authoritative clock, not the client's clock, to prevent client-clock tampering from affecting eligibility or ordering.
 - **FR-032**: The system MUST provide students with a plain-language summary, before verification begins, of what data will be collected during the exam and how long it will be retained.
 - **FR-033**: Visual evidence snippets (when captured under a permissive policy) MUST be retained for **14 days by default** from the submission timestamp and MUST be purged automatically thereafter, unless the instructor has attached the snippet to a formal academic-integrity case — in which case the snippet MUST be copied to a case-scoped store whose lifecycle is governed by institutional record-retention rules and is out of scope for the 14-day auto-purge.
@@ -164,7 +170,7 @@ When the student submits the exam (manually or via auto-submit at the end of the
 
 - **Exam**: An instructor-authored assessment. Attributes include title, questions, scheduled window, duration, proctoring policy (visual-evidence-allowed flag, thresholds), status (draft, published, closed), and owning instructor.
 - **Access Code**: A unique, human-enterable identifier associated with exactly one exam; auto-invalidated at window close.
-- **Student Reference Face**: A stored facial representation used as the source of truth for identity verification; captured at enrollment or first exam join.
+- **Student Reference Face**: A stored 128-dimensional float vector (mathematical embedding) derived from the student's face and used as the source of truth for identity verification. The raw camera frame is never persisted; only the embedding is stored. Keyed by `student_id` — one record per student, captured inline during their first ever exam join, and reused for all subsequent exams without re-capture.
 - **Verification Attempt**: A record of each face-recognition attempt — timestamp, confidence score, outcome (pass/fail), and whether it consumed an attempt against the retry budget.
 - **Exam Session**: The live instance of a student taking an exam. Attributes: student, exam, admit timestamp, current status (awaiting-verification, verified, in-progress, submitted, auto-submitted, terminated), live cheating score.
 - **Violation Event**: A single detected integrity deviation. Attributes: session, type (gaze, multiple-persons, focus-loss, camera-loss, etc.), timestamp, severity, optional evidence snippet reference.
@@ -191,7 +197,7 @@ When the student submits the exam (manually or via auto-submit at the end of the
 
 - **Authenticated accounts**: Both instructors and students have pre-existing authenticated accounts on the platform. Account provisioning is out of scope for this feature.
 - **One access code per exam**: A single unique access code is generated per exam and used by the entire cohort. Per-student unique codes are out of scope; student identity is established by login plus face verification.
-- **Reference face capture at first join**: When a student has no stored reference face, the system captures one during their first exam join (or during a separate onboarding flow) before the first verification attempt is counted.
+- **Reference face capture at first join**: When a student has no stored reference embedding, the system captures one inline during their first exam join — there is no separate enrollment flow. The capture screen is presented within the join flow and the captured embedding is stored before the first verification attempt is counted against the retry budget.
 - **Auto-grading where possible**: Objective question types (e.g., multiple choice, short-answer matching) are graded automatically at submission; free-response questions are flagged for the instructor and result in a preliminary grade until manual grading completes.
 - **Delivery channel**: "Sending" grades and evidence to the instructor is fulfilled by the instructor's dashboard being updated with the full record within the stated delivery window. An optional notification (e.g., email) may supplement the dashboard but is not the primary delivery channel.
 - **Graduated intervention model**: The cheating score contributes to instructor-visible alerts and the evidence package. The system surfaces warnings to the student for correctable behaviors and never autonomously terminates on score alone; termination is always an explicit instructor action (see FR-020a).
