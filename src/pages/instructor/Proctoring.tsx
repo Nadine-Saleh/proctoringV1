@@ -214,18 +214,21 @@ export const ProctoringReport = () => {
 
   // Filter violations
   const filteredViolations = violations.filter(v => {
-    if (severityFilter !== 'all' && v.severity !== severityFilter) return false;
+    if (severityFilter !== 'all' && getSeverityLabel(v.severity) !== severityFilter) return false;
     if (typeFilter !== 'all' && v.violation_type !== typeFilter) return false;
     return true;
   });
 
   // Calculate stats
-  const criticalCount = violations.filter(v => v.severity === 'critical').length;
-  const highCount = violations.filter(v => v.severity === 'high').length;
-  const totalUniqueStudents = new Set(violations.map(v => v.student_id)).size;
+  const criticalCount = violations.filter(v => v.severity >= 20).length;
+  const highCount = violations.filter(v => v.severity >= 15 && v.severity < 20).length;
+  const totalUniqueStudents = new Set(violations.map(v => v.session_id)).size;
 
   // Get unique violation types
   const violationTypes = [...new Set(violations.map(v => v.violation_type))];
+
+  const getSeverityLabel = (severity: number): string =>
+    severity >= 20 ? 'critical' : severity >= 15 ? 'high' : severity >= 10 ? 'medium' : 'low';
 
   const getSeverityIcon = (severity: string) => {
     switch (severity) {
@@ -539,7 +542,7 @@ export const ProctoringReport = () => {
                             <span className={`px-3 py-1 rounded-full text-xs font-semibold border ${
                               session.status === 'in_progress' ? 'bg-green-100 text-green-700 border-green-200' :
                               session.status === 'submitted' ? 'bg-blue-100 text-blue-700 border-blue-200' :
-                              session.status === 'flagged' ? 'bg-red-100 text-red-700 border-red-200' :
+                              session.status === 'terminated' ? 'bg-red-100 text-red-700 border-red-200' :
                               'bg-gray-100 text-gray-700 border-gray-200'
                             }`}>
                               {session.status.replace('_', ' ').toUpperCase()}
@@ -557,7 +560,7 @@ export const ProctoringReport = () => {
                               {sessionSummary.map(summary => (
                                 <span
                                   key={summary.violation_type}
-                                  className={`inline-flex items-center px-2 py-1 rounded text-xs font-medium border ${getSeverityColor(summary.severity)}`}
+                                  className={`inline-flex items-center px-2 py-1 rounded text-xs font-medium border ${getSeverityColor(getSeverityLabel(summary.severity as unknown as number))}`}
                                 >
                                   {formatViolationType(summary.violation_type)}: {summary.count}
                                 </span>
@@ -589,7 +592,7 @@ export const ProctoringReport = () => {
                     <div key={violation.id} className="px-6 py-4 hover:bg-gray-50">
                       <div className="flex items-start space-x-4">
                         <div className="flex flex-col items-center space-y-2 mt-1">
-                          {getSeverityIcon(violation.severity)}
+                          {getSeverityIcon(getSeverityLabel(violation.severity))}
                         </div>
 
                         <div className="flex-1">
@@ -597,8 +600,8 @@ export const ProctoringReport = () => {
                             <h3 className="text-sm font-semibold text-gray-900">
                               {formatViolationType(violation.violation_type)}
                             </h3>
-                            <span className={`inline-flex px-2 py-0.5 rounded text-xs font-semibold border ${getSeverityColor(violation.severity)}`}>
-                              {violation.severity}
+                            <span className={`inline-flex px-2 py-0.5 rounded text-xs font-semibold border ${getSeverityColor(getSeverityLabel(violation.severity))}`}>
+                              {getSeverityLabel(violation.severity)}
                             </span>
                             {violation.duration_ms && (
                               <span className="inline-flex items-center px-2 py-0.5 rounded text-xs font-medium bg-gray-100 text-gray-700">
@@ -615,7 +618,7 @@ export const ProctoringReport = () => {
                           <div className="flex items-center space-x-4 text-xs text-gray-500">
                             <div className="flex items-center space-x-1">
                               <User className="w-3 h-3" />
-                              <span>{getStudentName(violation.student_id)}</span>
+                              <span>{getStudentName(violation.student_id ?? '')}</span>
                             </div>
                             <div className="flex items-center space-x-1">
                               <Calendar className="w-3 h-3" />

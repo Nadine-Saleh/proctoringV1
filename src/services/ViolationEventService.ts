@@ -13,35 +13,6 @@ import type {
   ViolationSummary,
 } from '../types/examSession';
 
-// Default weights for violation types
-const DEFAULT_WEIGHTS: Record<string, number> = {
-  // Gaze violations
-  'gaze_looking_away': 2,
-  'gaze_sustained_away': 5,
-  'gaze_prolonged_away': 8,
-  // Eye behavior
-  'eye_closure': 6,
-  'excessive_blinking': 3,
-  'rapid_eye_movement': 4,
-  // Face detection
-  'face_not_detected': 5,
-  'multiple_faces': 10,
-  'face_too_close': 3,
-  'face_too_far': 3,
-  // Tab/Window
-  'tab_switch': 3,
-  'tab_switch_prolonged': 7,
-  'window_minimize': 5,
-  // Head pose
-  'head_pose_extreme': 6,
-  'head_pose_moderate': 3,
-  // Device/Environment
-  'phone_detected': 10,
-  'headphones_detected': 8,
-  // Pattern-based
-  'answer_pattern_suspicious': 7,
-  'ip_address_change': 8,
-};
 
 export class ViolationEventService {
   /**
@@ -49,9 +20,6 @@ export class ViolationEventService {
    */
   static async create(input: CreateViolationEventInput): Promise<{ success: boolean; event?: ViolationEvent; error?: string }> {
     try {
-      const examUuid = ensureUuid(input.exam_id as string, 'exam');
-      const studentUuid = ensureUuid(input.student_id as string, 'student');
-
       const { data, error } = await supabase
         .from('violation_events')
         .insert({
@@ -229,7 +197,7 @@ export class ViolationEventService {
       // Group by violation type
       const typeMap = new Map<string, ViolationSummary>();
 
-      for (const event of data as { violation_type: string; severity: string; occurred_at: string }[]) {
+      for (const event of data as { violation_type: string; severity: number; occurred_at: string }[]) {
         const existing = typeMap.get(event.violation_type);
 
         if (existing) {
@@ -238,8 +206,7 @@ export class ViolationEventService {
             existing.last_occurrence = event.occurred_at;
           }
           // Upgrade severity if this event is more severe
-          const severityOrder = ['low', 'medium', 'high', 'critical'];
-          if (severityOrder.indexOf(event.severity) > severityOrder.indexOf(existing.severity)) {
+          if (event.severity > (existing.severity as unknown as number)) {
             existing.severity = event.severity as any;
           }
         } else {

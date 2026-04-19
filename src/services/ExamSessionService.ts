@@ -22,12 +22,9 @@ export class ExamSessionService {
     try {
       console.log('[ExamSessionService.create] Incoming input:', JSON.stringify(input));
       
-      // Check auth status before insert
-      const { data: { user } } = await supabase.auth.getUser();
-      
       // Convert mock IDs to UUIDs for database compatibility
       const examUuid = ensureUuid(input.exam_id, 'exam');
-      const studentUuid = ensureUuid(input.student_id, 'student');
+      const studentUuid = ensureUuid(input.student_id ?? '', 'student');
       
       console.log('[ExamSessionService.create] UUIDs for database - examUuid:', examUuid, 'studentUuid:', studentUuid);
 
@@ -138,14 +135,14 @@ export class ExamSessionService {
    * Flag a session for review
    */
   static async flag(sessionId: string): Promise<{ success: boolean; error?: string }> {
-    return this.update(sessionId, { status: 'flagged' });
+    return this.update(sessionId, { status: 'terminated' });
   }
 
   /**
    * Invalidate a session
    */
   static async invalidate(sessionId: string): Promise<{ success: boolean; error?: string }> {
-    return this.update(sessionId, { status: 'invalidated' });
+    return this.update(sessionId, { status: 'terminated' });
   }
 
   /**

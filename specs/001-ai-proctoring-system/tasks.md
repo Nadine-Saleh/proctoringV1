@@ -28,12 +28,12 @@ Existing single-project layout (see plan.md §Project Structure): `src/` for the
 
 **Purpose**: Stand up the testing stack (Constitution Principle II prerequisite) and environment scaffolding. This phase has zero behavioral code changes.
 
-- [ ] T001 Add Vitest + Testing Library dev dependencies and wire scripts (`test`, `test:watch`, `test:detection`) in `package.json`
-- [ ] T002 [P] Add Playwright dev dependency, create `playwright.config.ts` at repo root with Chromium + fake-media-stream flags, add `test:e2e` script in `package.json`
-- [ ] T003 [P] Create `vitest.config.ts` at repo root with `jsdom` environment, `tests/setup.ts` preload, and environment-isolation guard (abort if `VITE_SUPABASE_URL` matches dev URL)
-- [ ] T004 [P] Create `tests/setup.ts` with Supabase test-client bootstrap, test-user seeding helpers, and per-test teardown
-- [ ] T005 [P] Create `tests/` directory tree: `tests/unit/`, `tests/integration/`, `tests/e2e/`, `tests/fixtures/gaze-corpus/`, `tests/fixtures/scored-sessions/` (with placeholder `.gitkeep` files)
-- [ ] T006 Document `.env.test` requirements and Supabase test-project setup in `specs/001-ai-proctoring-system/quickstart.md` (already present — verify it matches the finalized setup script names)
+- [X] T001 Add Vitest + Testing Library dev dependencies and wire scripts (`test`, `test:watch`, `test:detection`) in `package.json`
+- [X] T002 [P] Add Playwright dev dependency, create `playwright.config.ts` at repo root with Chromium + fake-media-stream flags, add `test:e2e` script in `package.json`
+- [X] T003 [P] Create `vitest.config.ts` at repo root with `jsdom` environment, `tests/setup.ts` preload, and environment-isolation guard (abort if `VITE_SUPABASE_URL` matches dev URL)
+- [X] T004 [P] Create `tests/setup.ts` with Supabase test-client bootstrap, test-user seeding helpers, and per-test teardown
+- [X] T005 [P] Create `tests/` directory tree: `tests/unit/`, `tests/integration/`, `tests/e2e/`, `tests/fixtures/gaze-corpus/`, `tests/fixtures/scored-sessions/` (with placeholder `.gitkeep` files)
+- [X] T006 Document `.env.test` requirements and Supabase test-project setup in `specs/001-ai-proctoring-system/quickstart.md` (already present — verify it matches the finalized setup script names)
 
 **Checkpoint**: `npm run test` and `npm run test:e2e` execute with zero tests and exit cleanly. No behavior has changed.
 
@@ -45,16 +45,16 @@ Existing single-project layout (see plan.md §Project Structure): `src/` for the
 
 **⚠️ CRITICAL**: No user-story phase may begin until this phase is complete.
 
-- [ ] T007 Create migration `supabase/migrations/006_access_codes_and_submissions.sql` adding columns/tables: `exams.access_code`, `exams.proctoring_policy`, `exams.published_at`, `exams.closed_at`; new tables `student_face_references`, `verification_attempts`, `evidence_artifacts`, `evidence_packages`, `submissions` per `specs/001-ai-proctoring-system/data-model.md`
-- [ ] T008 Add partial unique index on `exams.access_code WHERE status = 'published'` and indexes listed in `specs/001-ai-proctoring-system/data-model.md` §Indexes inside `supabase/migrations/006_access_codes_and_submissions.sql`
-- [ ] T009 Create migration `supabase/migrations/007_rls_policies_proctoring_v2.sql` with RLS policies for the five new tables (student-owned SELECT/INSERT on `student_face_references` and `verification_attempts`; instructor SELECT via `exams.instructor_id = auth.uid()` for `submissions`, `evidence_packages`, `evidence_artifacts`)
-- [ ] T010 [P] Create Crockford Base32 access-code generator as a Postgres function `generate_access_code()` in `supabase/migrations/006_access_codes_and_submissions.sql` (8 chars, excludes `I/L/O/U`, collision-checked against `exams WHERE status='published'`)
-- [ ] T011 [P] Define canonical violation taxonomy (types + severity table) in `src/types/examSession.ts` — single source of truth consumed by `violationScorer.ts`, `record_violation_batch` RPC validator, student UI, and instructor UI
-- [ ] T012 [P] Rewrite `src/utils/violationScorer.ts` to implement severity-weighted exponential decay per `research.md` R4 (half-life = 60 s; clamp `[0, 100]`; thresholds read from per-exam `proctoring_policy`)
-- [ ] T013 [P] Create `src/utils/idempotency.ts` helper for generating and reconciling `client_event_id` values used by offline buffering
-- [ ] T014 Create Supabase Storage bucket `evidence-snippets` (private) and attach storage policies in `supabase/migrations/006_access_codes_and_submissions.sql` or a co-located policy file
-- [ ] T015 Delete `src/services/WebSocketService.ts` and migrate its single caller (`src/pages/instructor/Proctoring.tsx`) to a Supabase Realtime subscription stub — per `research.md` R2; the full Realtime wiring lands in US3
-- [ ] T016 Add typecheck + lint + build CI gate in `.github/workflows/ci.yml` (or the project's existing CI file) running `npm run typecheck`, `npm run lint`, `npm run build` on every PR
+- [X] T007 Create migration `supabase/migrations/006_access_codes_and_submissions.sql` adding columns/tables: `exams.access_code`, `exams.proctoring_policy`, `exams.published_at`, `exams.closed_at`; new tables `student_face_references`, `verification_attempts`, `evidence_artifacts`, `evidence_packages`, `submissions` per `specs/001-ai-proctoring-system/data-model.md`
+- [X] T008 Add partial unique index on `exams.access_code WHERE status = 'published'` and indexes listed in `specs/001-ai-proctoring-system/data-model.md` §Indexes inside `supabase/migrations/006_access_codes_and_submissions.sql`
+- [X] T009 Create migration `supabase/migrations/007_rls_policies_proctoring_v2.sql` with RLS policies for the five new tables (student-owned SELECT/INSERT on `student_face_references` and `verification_attempts`; instructor SELECT via `exams.instructor_id = auth.uid()` for `submissions`, `evidence_packages`, `evidence_artifacts`)
+- [X] T010 [P] Create Crockford Base32 access-code generator as a Postgres function `generate_access_code()` in `supabase/migrations/006_access_codes_and_submissions.sql` (8 chars, excludes `I/L/O/U`, collision-checked against `exams WHERE status='published'`)
+- [X] T011 [P] Define canonical violation taxonomy (types + severity table) in `src/types/examSession.ts` — single source of truth consumed by `violationScorer.ts`, `record_violation_batch` RPC validator, student UI, and instructor UI
+- [X] T012 [P] Rewrite `src/utils/violationScorer.ts` to implement severity-weighted exponential decay per `research.md` R4 (half-life = 60 s; clamp `[0, 100]`; thresholds read from per-exam `proctoring_policy`)
+- [X] T013 [P] Create `src/utils/idempotency.ts` helper for generating and reconciling `client_event_id` values used by offline buffering
+- [X] T014 Create Supabase Storage bucket `evidence-snippets` (private) and attach storage policies in `supabase/migrations/006_access_codes_and_submissions.sql` or a co-located policy file
+- [X] T015 Delete `src/services/WebSocketService.ts` and migrate its single caller (`src/pages/instructor/Proctoring.tsx`) to a Supabase Realtime subscription stub — per `research.md` R2; the full Realtime wiring lands in US3
+- [X] T016 Add typecheck + lint + build CI gate in `.github/workflows/ci.yml` (or the project's existing CI file) running `npm run typecheck`, `npm run lint`, `npm run build` on every PR
 
 **Checkpoint**: Migrations apply cleanly to the test Supabase project; `npm run typecheck && npm run lint && npm run build` pass; violation taxonomy exported from a single module.
 
@@ -70,21 +70,21 @@ Existing single-project layout (see plan.md §Project Structure): `src/` for the
 
 > **Write these tests FIRST and confirm they FAIL before implementation.**
 
-- [ ] T017 [P] [US1] Integration test in `tests/integration/exam-publish-access-code.test.ts`: publish an exam, assert `access_code` is 8 chars, Crockford Base32 alphabet, and unique against concurrently published exams
-- [ ] T018 [P] [US1] Integration test in `tests/integration/exam-publish-guards.test.ts`: attempt to publish without a question → RPC returns error; publish with duration ≤ 0 → error
-- [ ] T019 [P] [US1] Unit test in `tests/unit/access-code-format.test.ts`: assert the Crockford Base32 alphabet generator rejects `I/L/O/U` and has the expected length
-- [ ] T020 [P] [US1] E2E test in `tests/e2e/instructor-publish-exam.spec.ts`: log in as instructor, fill create-exam form, publish, assert code visible on detail page
+- [X] T017 [P] [US1] Integration test in `tests/integration/exam-publish-access-code.test.ts`: publish an exam, assert `access_code` is 8 chars, Crockford Base32 alphabet, and unique against concurrently published exams
+- [X] T018 [P] [US1] Integration test in `tests/integration/exam-publish-guards.test.ts`: attempt to publish without a question → RPC returns error; publish with duration ≤ 0 → error
+- [X] T019 [P] [US1] Unit test in `tests/unit/access-code-format.test.ts`: assert the Crockford Base32 alphabet generator rejects `I/L/O/U` and has the expected length
+- [X] T020 [P] [US1] E2E test in `tests/e2e/instructor-publish-exam.spec.ts`: log in as instructor, fill create-exam form, publish, assert code visible on detail page
 
 ### Implementation for User Story 1
 
-- [ ] T021 [US1] Extend `src/services/ExamService.ts` with `createExam`, `updateExam`, `publishExam`, `closeExam` that map to the Postgres RPCs `create_exam`, `update_exam`, `publish_exam`, `close_exam`
-- [ ] T022 [P] [US1] Add Postgres RPC `publish_exam(exam_id uuid)` in `supabase/migrations/006_access_codes_and_submissions.sql` that validates `≥ 1 question`, calls `generate_access_code()`, sets `status='published'`, `published_at=now()`
-- [ ] T023 [P] [US1] Add Postgres RPC `close_exam(exam_id uuid)` that sets `status='closed'`, `closed_at=now()`, and invalidates `access_code` (sets NULL)
-- [ ] T024 [US1] Wire `src/pages/instructor/CreateExam.tsx` to `ExamService.createExam` / `publishExam`; add the proctoring-policy form fields (`visual_evidence_allowed`, warning/critical thresholds, `critical_sustain_seconds`, `max_verification_attempts`)
-- [ ] T025 [US1] Update `src/pages/instructor/Dashboard.tsx` to list exams with columns: status, access code (when published), joined / in-progress / submitted counts; aggregate counts via a single `list_my_exams()` RPC to avoid N+1 queries
-- [ ] T026 [P] [US1] Add Postgres RPC `list_my_exams()` returning `exams` rows joined with session count aggregates, gated by `instructor_id = auth.uid()`, in `supabase/migrations/006_access_codes_and_submissions.sql`
-- [ ] T027 [US1] Add instructor exam-detail view at `src/pages/instructor/ExamDetail.tsx` (new file) wired to `/instructor/exams/:examId` route — displays title, window, access code, counts; copy-to-clipboard for the code
-- [ ] T028 [US1] Register the new route in `src/App.tsx` behind `ProtectedRoute` with role `instructor`
+- [X] T021 [US1] Extend `src/services/ExamService.ts` with `createExam`, `updateExam`, `publishExam`, `closeExam` that map to the Postgres RPCs `create_exam`, `update_exam`, `publish_exam`, `close_exam`
+- [X] T022 [P] [US1] Add Postgres RPC `publish_exam(exam_id uuid)` in `supabase/migrations/006_access_codes_and_submissions.sql` that validates `≥ 1 question`, calls `generate_access_code()`, sets `status='published'`, `published_at=now()`
+- [X] T023 [P] [US1] Add Postgres RPC `close_exam(exam_id uuid)` that sets `status='closed'`, `closed_at=now()`, and invalidates `access_code` (sets NULL)
+- [X] T024 [US1] Wire `src/pages/instructor/CreateExam.tsx` to `ExamService.createExam` / `publishExam`; add the proctoring-policy form fields (`visual_evidence_allowed`, warning/critical thresholds, `critical_sustain_seconds`, `max_verification_attempts`)
+- [X] T025 [US1] Update `src/pages/instructor/Dashboard.tsx` to list exams with columns: status, access code (when published), joined / in-progress / submitted counts; aggregate counts via a single `list_my_exams()` RPC to avoid N+1 queries
+- [X] T026 [P] [US1] Add Postgres RPC `list_my_exams()` returning `exams` rows joined with session count aggregates, gated by `instructor_id = auth.uid()`, in `supabase/migrations/006_access_codes_and_submissions.sql`
+- [X] T027 [US1] Add instructor exam-detail view at `src/pages/instructor/ExamDetail.tsx` (new file) wired to `/instructor/exams/:examId` route — displays title, window, access code, counts; copy-to-clipboard for the code
+- [X] T028 [US1] Register the new route in `src/App.tsx` behind `ProtectedRoute` with role `instructor`
 
 **Checkpoint**: US1 fully functional independently. Instructor can publish an exam, see the code, and share it. No student-facing code has been touched. All US1 tests pass.
 
@@ -98,26 +98,26 @@ Existing single-project layout (see plan.md §Project Structure): `src/` for the
 
 ### Tests for User Story 2
 
-- [ ] T029 [P] [US2] Integration test in `tests/integration/join-exam-codes.test.ts`: invalid code, expired window, closed exam, and double-active-session all yield distinct error codes per `contracts/rpc-start-session.md`
-- [ ] T030 [P] [US2] Integration test in `tests/integration/verify-identity-happy-path.test.ts`: seed a `student_face_references` row, call `verify_student_identity` with a matching embedding, assert `outcome='pass'`, session moves to `verified`, `verification_attempts` row recorded
-- [ ] T031 [P] [US2] Integration test in `tests/integration/verify-identity-budget.test.ts`: exhaust `max_verification_attempts`, assert status moves to `verification_blocked` and an `instructor_alerts` row with `reason='verification_failed_hard'` is raised
-- [ ] T032 [P] [US2] Integration test in `tests/integration/verify-identity-first-capture-free.test.ts`: first verification after fresh reference capture does NOT count against the retry budget (FR-009 / R11)
-- [ ] T033 [P] [US2] Integration test in `tests/integration/rls-face-references.test.ts`: student A cannot SELECT student B's `student_face_references` row; instructor cannot SELECT any student's embedding
-- [ ] T034 [P] [US2] E2E test in `tests/e2e/student-join-verify.spec.ts`: student enters code → reference capture (three frames) → verification pass → lands on ready screen
+- [X] T029 [P] [US2] Integration test in `tests/integration/join-exam-codes.test.ts`: invalid code, expired window, closed exam, and double-active-session all yield distinct error codes per `contracts/rpc-start-session.md`
+- [X] T030 [P] [US2] Integration test in `tests/integration/verify-identity-happy-path.test.ts`: seed a `student_face_references` row, call `verify_student_identity` with a matching embedding, assert `outcome='pass'`, session moves to `verified`, `verification_attempts` row recorded
+- [X] T031 [P] [US2] Integration test in `tests/integration/verify-identity-budget.test.ts`: exhaust `max_verification_attempts`, assert status moves to `verification_blocked` and an `instructor_alerts` row with `reason='verification_failed_hard'` is raised
+- [X] T032 [P] [US2] Integration test in `tests/integration/verify-identity-first-capture-free.test.ts`: first verification after fresh reference capture does NOT count against the retry budget (FR-009 / R11)
+- [X] T033 [P] [US2] Integration test in `tests/integration/rls-face-references.test.ts`: student A cannot SELECT student B's `student_face_references` row; instructor cannot SELECT any student's embedding
+- [X] T034 [P] [US2] E2E test in `tests/e2e/student-join-verify.spec.ts`: student enters code → reference capture (three frames) → verification pass → lands on ready screen
 
 ### Implementation for User Story 2
 
-- [ ] T035 [P] [US2] Add Postgres RPC `join_exam(access_code text)` in `supabase/migrations/006_access_codes_and_submissions.sql` per `contracts/rpc-start-session.md` §join_exam
-- [ ] T036 [P] [US2] Add Postgres RPC `verify_student_identity(session_id uuid, embedding float4[])` that compares against `student_face_references.embedding` using Euclidean distance, enforces retry budget, writes `verification_attempts` row, transitions session status, and raises `instructor_alerts` on hard block
-- [ ] T037 [P] [US2] Add Postgres RPC `start_exam_session(session_id uuid)` that transitions `verified → in_progress` and returns the question list without `correct_answer` fields
-- [ ] T038 [US2] Create `src/services/IdentityVerificationService.ts` that (a) loads face-api.js models lazily, (b) extracts a 128-dim embedding from a `HTMLVideoElement` frame, (c) calls `verify_student_identity` RPC
-- [ ] T039 [P] [US2] Create `src/hooks/useReferenceCapture.ts` that captures three on-demand frames, extracts embeddings, asserts pairwise similarity, and inserts the median embedding into `student_face_references`
-- [ ] T040 [US2] Refactor `src/hooks/useExamSession.ts` to expose the full state machine (`awaiting_verification → verified → in_progress → submitted`) and wire it to the three join/verify/start RPCs
-- [ ] T041 [US2] Create `src/pages/student/JoinExam.tsx` (new) wired to `/exam/join`: access-code input + join CTA
-- [ ] T042 [US2] Create `src/pages/student/VerifyIdentity.tsx` (new) wired to `/exam/:sessionId/verify`: privacy notice (FR-032) → reference capture (if needed) → live verification → retries with guidance on failure
-- [ ] T043 [US2] Create `src/pages/student/ReadyToStart.tsx` (new) wired to `/exam/:sessionId/ready`: "you are verified — begin?" confirmation; camera inactive on this screen
-- [ ] T044 [US2] Wire `src/pages/student/Home.tsx` to route into `/exam/join` and list the student's active/past sessions via a `list_my_sessions()` RPC
-- [ ] T045 [US2] Register new student routes in `src/App.tsx` behind `ProtectedRoute` with role `student`; ensure session-status mismatch redirects (e.g., `in_progress` → `/exam/:sessionId`, not `/verify`)
+- [X] T035 [P] [US2] Add Postgres RPC `join_exam(access_code text)` in `supabase/migrations/006_access_codes_and_submissions.sql` per `contracts/rpc-start-session.md` §join_exam
+- [X] T036 [P] [US2] Add Postgres RPC `verify_student_identity(session_id uuid, embedding float4[])` that compares against `student_face_references.embedding` using Euclidean distance, enforces retry budget, writes `verification_attempts` row, transitions session status, and raises `instructor_alerts` on hard block
+- [X] T037 [P] [US2] Add Postgres RPC `start_exam_session(session_id uuid)` that transitions `verified → in_progress` and returns the question list without `correct_answer` fields
+- [X] T038 [US2] Create `src/services/IdentityVerificationService.ts` that (a) loads face-api.js models lazily, (b) extracts a 128-dim embedding from a `HTMLVideoElement` frame, (c) calls `verify_student_identity` RPC
+- [X] T039 [P] [US2] Create `src/hooks/useReferenceCapture.ts` that captures three on-demand frames, extracts embeddings, asserts pairwise similarity, and inserts the median embedding into `student_face_references`
+- [X] T040 [US2] Refactor `src/hooks/useExamSession.ts` to expose the full state machine (`awaiting_verification → verified → in_progress → submitted`) and wire it to the three join/verify/start RPCs
+- [X] T041 [US2] Create `src/pages/student/JoinExam.tsx` (new) wired to `/exam/join`: access-code input + join CTA
+- [X] T042 [US2] Create `src/pages/student/VerifyIdentity.tsx` (new) wired to `/exam/:sessionId/verify`: privacy notice (FR-032) → reference capture (if needed) → live verification → retries with guidance on failure
+- [X] T043 [US2] Create `src/pages/student/ReadyToStart.tsx` (new) wired to `/exam/:sessionId/ready`: "you are verified — begin?" confirmation; camera inactive on this screen
+- [X] T044 [US2] Wire `src/pages/student/Home.tsx` to route into `/exam/join` and list the student's active/past sessions via a `list_my_sessions()` RPC
+- [X] T045 [US2] Register new student routes in `src/App.tsx` behind `ProtectedRoute` with role `student`; ensure session-status mismatch redirects (e.g., `in_progress` → `/exam/:sessionId`, not `/verify`)
 
 **Checkpoint**: US2 functional independently on top of US1. A student can join an exam, pass identity verification, and land on the ready screen. No monitoring code yet; no submission code yet. All US2 tests pass.
 

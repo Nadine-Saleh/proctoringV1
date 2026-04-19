@@ -35,7 +35,7 @@ export const InstructorDashboard = () => {
       try {
         const result = await ExamService.listMyExams();
         if (result.success && result.exams) {
-          setExams(result.exams as Exam[]);
+          setExams(result.exams as unknown as Exam[]);
         } else {
           setError(result.error || 'Failed to load exams');
         }

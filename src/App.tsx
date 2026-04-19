@@ -5,6 +5,9 @@ import { ProtectedRoute } from './components/ProtectedRoute';
 import { Login } from './pages/auth/Login';
 import { Signup } from './pages/auth/Signup';
 import { StudentHome } from './pages/student/Home';
+import { JoinExam } from './pages/student/JoinExam';
+import { VerifyIdentity } from './pages/student/VerifyIdentity';
+import { ReadyToStart } from './pages/student/ReadyToStart';
 import { Exam } from './pages/student/Exam';
 import { StudentResults } from './pages/student/Results';
 import { InstructorDashboard } from './pages/instructor/Dashboard';
@@ -52,7 +55,31 @@ function AppContent() {
           }
         />
         <Route
-          path="/exam"
+          path="/exam/join"
+          element={
+            <ProtectedRoute requiredRole="student">
+              <JoinExam />
+            </ProtectedRoute>
+          }
+        />
+        <Route
+          path="/exam/:sessionId/verify"
+          element={
+            <ProtectedRoute requiredRole="student">
+              <VerifyIdentity />
+            </ProtectedRoute>
+          }
+        />
+        <Route
+          path="/exam/:sessionId/ready"
+          element={
+            <ProtectedRoute requiredRole="student">
+              <ReadyToStart />
+            </ProtectedRoute>
+          }
+        />
+        <Route
+          path="/exam/:sessionId"
           element={
             <ProtectedRoute requiredRole="student">
               <Exam />
@@ -60,7 +87,7 @@ function AppContent() {
           }
         />
         <Route
-          path="/results"
+          path="/exam/:sessionId/results"
           element={
             <ProtectedRoute requiredRole="student">
               <StudentResults />

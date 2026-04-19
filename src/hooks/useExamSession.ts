@@ -7,6 +7,7 @@
 import { useState, useCallback, useRef, useEffect } from 'react';
 import { ExamSessionService } from '../services/examSessionService';
 import { ExamSubmissionService } from '../services/ExamSubmissionService';
+import { IdentityVerificationService, type JoinExamResponse, type StartSessionResponse } from '../services/IdentityVerificationService';
 import { SessionHeartbeat } from '../utils/SessionHeartbeat';
 import { supabase } from '../lib/supabase/client';
 import type {
@@ -16,13 +17,32 @@ import type {
   SubmittedAnswer,
 } from '../types/examSession';
 
+type SessionLifecycleStatus =
+  | 'idle'
+  | 'awaiting_verification'
+  | 'verification_blocked'
+  | 'verified'
+  | 'in_progress'
+  | 'submitted'
+  | 'auto_submitted'
+  | 'terminated';
+
 interface UseExamSessionReturn {
   // Session state
   session: ExamSession | null;
+  sessionId: string | null;
+  lifecycleStatus: SessionLifecycleStatus;
+  joinData: JoinExamResponse | null;
+  questions: StartSessionResponse['questions'] | null;
   isLoading: boolean;
   error: string | null;
 
-  // Session actions
+  // US2 state-machine actions
+  joinExam: (accessCode: string, freshCapture?: boolean) => Promise<boolean>;
+  verifyIdentity: (embedding: Float32Array) => Promise<{ passed: boolean; blocked: boolean }>;
+  beginExam: () => Promise<boolean>;
+
+  // Legacy session actions
   startSession: (examId: string, studentId: string, livenessData?: Record<string, unknown>) => Promise<boolean>;
   submitExam: (answers: SubmittedAnswer[], durationSeconds: number) => Promise<ExamSubmissionResult>;
 
@@ -40,6 +60,10 @@ interface UseExamSessionReturn {
 
 export function useExamSession(): UseExamSessionReturn {
   const [session, setSession] = useState<ExamSession | null>(null);
+  const [sessionId, setSessionId] = useState<string | null>(null);
+  const [lifecycleStatus, setLifecycleStatus] = useState<SessionLifecycleStatus>('idle');
+  const [joinData, setJoinData] = useState<JoinExamResponse | null>(null);
+  const [questions, setQuestions] = useState<StartSessionResponse['questions'] | null>(null);
   const [isLoading, setIsLoading] = useState(false);
   const [error, setError] = useState<string | null>(null);
 
@@ -61,6 +85,79 @@ export function useExamSession(): UseExamSessionReturn {
       stopHeartbeat();
     };
   });
+
+  // ── US2 state-machine actions ──────────────────────────────────────────────
+
+  const joinExam = useCallback(async (
+    accessCode: string,
+    freshCapture = false
+  ): Promise<boolean> => {
+    setIsLoading(true);
+    setError(null);
+    try {
+      const result = await IdentityVerificationService.joinExam(accessCode, freshCapture);
+      if (!result.success || !result.data) {
+        setError(result.error ?? 'Failed to join exam');
+        return false;
+      }
+      setSessionId(result.data.session_id);
+      setJoinData(result.data);
+      setLifecycleStatus('awaiting_verification');
+      return true;
+    } catch (err) {
+      setError(err instanceof Error ? err.message : 'Unknown error');
+      return false;
+    } finally {
+      setIsLoading(false);
+    }
+  }, []);
+
+  const verifyIdentity = useCallback(async (
+    embedding: Float32Array
+  ): Promise<{ passed: boolean; blocked: boolean }> => {
+    if (!sessionId) return { passed: false, blocked: false };
+    setIsLoading(true);
+    setError(null);
+    try {
+      const result = await IdentityVerificationService.verifyIdentity(sessionId, embedding);
+      if (!result.success || !result.data) {
+        setError(result.error ?? 'Verification failed');
+        return { passed: false, blocked: false };
+      }
+      const { outcome, blocked, session_status } = result.data;
+      setLifecycleStatus(session_status as SessionLifecycleStatus);
+      return { passed: outcome === 'pass', blocked };
+    } catch (err) {
+      setError(err instanceof Error ? err.message : 'Unknown error');
+      return { passed: false, blocked: false };
+    } finally {
+      setIsLoading(false);
+    }
+  }, [sessionId]);
+
+  const beginExam = useCallback(async (): Promise<boolean> => {
+    if (!sessionId) return false;
+    setIsLoading(true);
+    setError(null);
+    try {
+      const result = await IdentityVerificationService.startSession(sessionId);
+      if (!result.success || !result.data) {
+        setError(result.error ?? 'Failed to start exam');
+        return false;
+      }
+      setQuestions(result.data.questions);
+      setLifecycleStatus('in_progress');
+      startTimer();
+      return true;
+    } catch (err) {
+      setError(err instanceof Error ? err.message : 'Unknown error');
+      return false;
+    } finally {
+      setIsLoading(false);
+    }
+  }, [sessionId]);
+
+  // ── Legacy session actions ─────────────────────────────────────────────────
 
   /**
    * Start a new exam session
@@ -160,7 +257,7 @@ export function useExamSession(): UseExamSessionReturn {
         exam_id: session.exam_id,
         answers,
         duration_taken_seconds: durationSeconds,
-        liveness_check_passed: session.liveness_check_passed,
+        liveness_check_passed: session.liveness_check_passed ?? false,
         violation_count: 0, // Will be populated from violation events
         user_agent: navigator.userAgent,
       };
@@ -269,10 +366,19 @@ export function useExamSession(): UseExamSessionReturn {
   return {
     // Session state
     session,
+    sessionId,
+    lifecycleStatus,
+    joinData,
+    questions,
     isLoading,
     error,
 
-    // Session actions
+    // US2 state-machine actions
+    joinExam,
+    verifyIdentity,
+    beginExam,
+
+    // Legacy session actions
     startSession,
     submitExam,
 

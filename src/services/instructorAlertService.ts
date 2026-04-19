@@ -4,15 +4,6 @@
  * Phase 3: Supabase Realtime subscriptions will deliver alerts to the instructor dashboard.
  */
 
-interface AlertPayload {
-  examId: string;
-  studentId: string;
-  sessionId?: string;
-  violationScore: number;
-  events: Array<{ type: string; severity: number; timestamp: string }>;
-  timestamp: string;
-}
-
 interface AlertResponse {
   success: boolean;
   alertId: string;

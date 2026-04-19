@@ -12,7 +12,7 @@ export const ViolationExplanation: React.FC<ViolationExplanationProps> = ({ even
 
   // Get recent high-severity events (last 10)
   const recentHighSeverity = events
-    .filter((e) => e.severity === 'high' || e.severity === 'medium')
+    .filter((e) => e.severity >= 10)
     .slice(-10);
 
   if (recentHighSeverity.length === 0) return null;
@@ -86,9 +86,9 @@ export const ViolationExplanation: React.FC<ViolationExplanationProps> = ({ even
               <p className="text-gray-800 font-medium">
                 {getEventExplanation(type, count, latest)}
               </p>
-              {latest.duration && (
+              {latest.duration_ms && (
                 <p className="text-xs text-gray-500 mt-0.5">
-                  Latest: {Math.round(latest.duration / 1000)}s
+                  Latest: {Math.round(latest.duration_ms / 1000)}s
                 </p>
               )}
             </div>

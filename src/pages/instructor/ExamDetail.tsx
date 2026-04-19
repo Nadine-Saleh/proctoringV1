@@ -1,4 +1,4 @@
-import { useParams, useNavigate, Link } from 'react-router-dom';
+import { useParams, useNavigate } from 'react-router-dom';
 import { useEffect, useState } from 'react';
 import { ArrowLeft, Copy, Check, Calendar, Clock, Users, FileText } from 'lucide-react';
 import { ExamService } from '../../services/ExamService';

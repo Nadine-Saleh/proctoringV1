@@ -82,10 +82,16 @@ export interface ExamSession {
   submit_reason: 'manual' | 'auto_window_close' | 'auto_disconnect' | null;
   created_at: string;
   updated_at: string;
+  liveness_check_passed?: boolean;
+  duration_taken_seconds?: number | null;
 }
 
 export interface CreateExamSessionInput {
   exam_id: string;
+  student_id?: string;
+  liveness_check_passed?: boolean;
+  liveness_check_data?: Record<string, unknown> | null;
+  user_agent?: string;
 }
 
 export interface UpdateExamSessionInput {
@@ -107,7 +113,7 @@ export interface ViolationEvent {
   evidence_image: null;
   occurred_at: any;
   violation_type: any;
-  duration_ms: undefined;
+  duration_ms: number | null | undefined;
   id: string;
   session_id: string;
   client_event_id: string;
@@ -118,6 +124,8 @@ export interface ViolationEvent {
   evidence_artifact_id: string | null;
   metadata: Record<string, unknown> | null;
   created_at: string;
+  student_id?: string;
+  is_reviewed?: boolean;
 }
 
 export interface CreateViolationEventInput {

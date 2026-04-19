@@ -20,9 +20,9 @@ ADD COLUMN IF NOT EXISTS access_code text,
 ADD COLUMN IF NOT EXISTS starts_at timestamptz,
 ADD COLUMN IF NOT EXISTS proctoring_policy jsonb NOT NULL DEFAULT '{
   "visual_evidence_allowed": true,
-  "warning_threshold": 30,
+  "warning_threshold": 40,
   "critical_threshold": 70,
-  "critical_sustain_seconds": 5,
+  "critical_sustain_seconds": 10,
   "max_verification_attempts": 3
 }'::jsonb,
 ADD COLUMN IF NOT EXISTS published_at timestamptz,
@@ -78,7 +78,17 @@ BEGIN
         ALTER TABLE public.exam_sessions ADD COLUMN IF NOT EXISTS live_cheating_score float DEFAULT 0;
         ALTER TABLE public.exam_sessions ADD COLUMN IF NOT EXISTS last_score_update_at timestamptz;
         ALTER TABLE public.exam_sessions ADD COLUMN IF NOT EXISTS submit_reason text;
-        
+        ALTER TABLE public.exam_sessions ADD COLUMN IF NOT EXISTS updated_at timestamptz NOT NULL DEFAULT now();
+
+        -- Widen status to text and replace the old VARCHAR(20) CHECK constraint
+        ALTER TABLE public.exam_sessions ALTER COLUMN status TYPE text;
+        ALTER TABLE public.exam_sessions DROP CONSTRAINT IF EXISTS exam_sessions_status_check;
+        ALTER TABLE public.exam_sessions ADD CONSTRAINT exam_sessions_status_check
+          CHECK (status IN (
+            'awaiting_verification', 'verification_blocked', 'verified',
+            'in_progress', 'submitted', 'auto_submitted', 'terminated'
+          ));
+
         -- Update existing sessions to a Phase 2 status if they use Phase 1 names
         UPDATE public.exam_sessions SET status = 'in_progress' WHERE status = 'pending';
     END IF;
@@ -177,7 +187,7 @@ CREATE TABLE IF NOT EXISTS public.evidence_artifacts (
   session_id uuid NOT NULL REFERENCES public.exam_sessions(id) ON DELETE CASCADE,
   bucket_path text NOT NULL UNIQUE,
   captured_at timestamptz NOT NULL DEFAULT now(),
-  expires_at timestamptz NOT NULL DEFAULT (now() + interval '30 days'),
+  expires_at timestamptz NOT NULL DEFAULT (now() + interval '14 days'),
   retained_for_case boolean NOT NULL DEFAULT false,
   content_type text NOT NULL,
   byte_length integer NOT NULL,
@@ -463,3 +473,358 @@ $$ LANGUAGE plpgsql SECURITY DEFINER;
 -- Grant execution to roles
 GRANT EXECUTE ON FUNCTION public.list_my_exams() TO authenticated;
 GRANT EXECUTE ON FUNCTION public.list_my_exams() TO service_role;
+
+-- ============================================================================
+-- 14. US2 RPCs: join_exam, verify_student_identity, start_exam_session, list_my_sessions
+-- ============================================================================
+
+-- T035: join_exam RPC
+CREATE OR REPLACE FUNCTION public.join_exam(
+  p_access_code text,
+  p_fresh_capture boolean DEFAULT false
+)
+RETURNS jsonb AS $$
+DECLARE
+  v_exam          public.exams%ROWTYPE;
+  v_session_id    uuid;
+  v_session       public.exam_sessions%ROWTYPE;
+  v_has_reference boolean;
+  v_attempts_used integer;
+  v_max_attempts  integer;
+  v_now           timestamptz := now();
+BEGIN
+  -- Lookup published exam by uppercased code
+  SELECT * INTO v_exam
+  FROM public.exams
+  WHERE access_code = upper(p_access_code)
+    AND status = 'published';
+
+  IF v_exam.id IS NULL THEN
+    RAISE EXCEPTION 'invalid_code';
+  END IF;
+
+  IF v_exam.status = 'closed' THEN
+    RAISE EXCEPTION 'exam_closed';
+  END IF;
+
+  -- Validate exam window is currently open
+  IF v_now < v_exam.starts_at THEN
+    RAISE EXCEPTION 'exam_window_not_open';
+  END IF;
+
+  IF v_now > (v_exam.starts_at + (v_exam.duration_minutes || ' minutes')::interval) THEN
+    RAISE EXCEPTION 'exam_window_not_open';
+  END IF;
+
+  -- Check for existing active session
+  SELECT * INTO v_session
+  FROM public.exam_sessions
+  WHERE exam_id = v_exam.id
+    AND student_id = auth.uid()
+    AND status NOT IN ('terminated', 'verification_blocked', 'submitted', 'auto_submitted');
+
+  IF v_session.id IS NOT NULL THEN
+    RAISE EXCEPTION 'already_active_session';
+  END IF;
+
+  -- Check if previously blocked
+  SELECT id INTO v_session.id
+  FROM public.exam_sessions
+  WHERE exam_id = v_exam.id
+    AND student_id = auth.uid()
+    AND status = 'verification_blocked'
+  LIMIT 1;
+
+  IF v_session.id IS NOT NULL THEN
+    RAISE EXCEPTION 'verification_blocked';
+  END IF;
+
+  -- Create session
+  INSERT INTO public.exam_sessions (exam_id, student_id, status)
+  VALUES (v_exam.id, auth.uid(), 'awaiting_verification')
+  RETURNING id INTO v_session_id;
+
+  -- Check if student has a face reference
+  SELECT EXISTS(
+    SELECT 1 FROM public.student_face_references WHERE student_id = auth.uid()
+  ) INTO v_has_reference;
+
+  -- Calculate remaining verification attempts
+  v_max_attempts := (v_exam.proctoring_policy->>'max_verification_attempts')::integer;
+  SELECT COUNT(*) INTO v_attempts_used
+  FROM public.verification_attempts
+  WHERE student_id = auth.uid()
+    AND exam_id = v_exam.id
+    AND counted_against_budget = true;
+
+  RETURN jsonb_build_object(
+    'session_id', v_session_id,
+    'exam', jsonb_build_object(
+      'id', v_exam.id,
+      'title', v_exam.title,
+      'description', v_exam.description,
+      'starts_at', v_exam.starts_at,
+      'duration_minutes', v_exam.duration_minutes,
+      'proctoring_policy', v_exam.proctoring_policy
+    ),
+    'requires_reference_capture', NOT v_has_reference OR p_fresh_capture,
+    'verification_attempts_remaining', GREATEST(0, v_max_attempts - v_attempts_used)
+  );
+END;
+$$ LANGUAGE plpgsql SECURITY DEFINER;
+
+GRANT EXECUTE ON FUNCTION public.join_exam(text, boolean) TO authenticated;
+
+-- T036: verify_student_identity RPC
+CREATE OR REPLACE FUNCTION public.verify_student_identity(
+  p_session_id uuid,
+  p_embedding  float4[]
+)
+RETURNS jsonb AS $$
+DECLARE
+  v_session          public.exam_sessions%ROWTYPE;
+  v_exam             public.exams%ROWTYPE;
+  v_reference        public.student_face_references%ROWTYPE;
+  v_distance         float;
+  v_threshold        float := 0.6;
+  v_outcome          text;
+  v_max_attempts     integer;
+  v_attempts_used    integer;
+  v_attempts_left    integer;
+  v_count_against    boolean := true;
+  v_is_fresh_capture boolean := false;
+  v_confidence       float;
+BEGIN
+  -- Validate embedding dimension
+  IF array_length(p_embedding, 1) != 128 THEN
+    RAISE EXCEPTION 'capture_invalid';
+  END IF;
+
+  -- Load session, verify ownership and status
+  SELECT * INTO v_session
+  FROM public.exam_sessions
+  WHERE id = p_session_id
+    AND student_id = auth.uid();
+
+  IF v_session.id IS NULL THEN
+    RAISE EXCEPTION 'session_not_found';
+  END IF;
+
+  IF v_session.status = 'verification_blocked' THEN
+    RAISE EXCEPTION 'verification_blocked';
+  END IF;
+
+  IF v_session.status != 'awaiting_verification' THEN
+    RAISE EXCEPTION 'session_not_found';
+  END IF;
+
+  -- Load reference embedding
+  SELECT * INTO v_reference
+  FROM public.student_face_references
+  WHERE student_id = auth.uid();
+
+  IF v_reference.student_id IS NULL THEN
+    RAISE EXCEPTION 'reference_missing';
+  END IF;
+
+  -- Load exam policy
+  SELECT * INTO v_exam FROM public.exams WHERE id = v_session.exam_id;
+  v_max_attempts := (v_exam.proctoring_policy->>'max_verification_attempts')::integer;
+
+  -- Count budget-consuming attempts so far
+  SELECT COUNT(*) INTO v_attempts_used
+  FROM public.verification_attempts
+  WHERE student_id = auth.uid()
+    AND exam_id = v_session.exam_id
+    AND counted_against_budget = true;
+
+  -- If reference was just captured (quality_score set within last 60s), first attempt is free
+  IF v_reference.captured_at > now() - interval '60 seconds' THEN
+    v_count_against := false;
+  END IF;
+
+  -- Compute Euclidean distance between embeddings
+  SELECT sqrt(
+    (SELECT sum((a.val - b.val)^2)
+     FROM unnest(p_embedding) WITH ORDINALITY AS a(val, idx)
+     JOIN unnest(v_reference.embedding) WITH ORDINALITY AS b(val, idx) USING (idx))
+  ) INTO v_distance;
+
+  v_confidence := GREATEST(0.0, 1.0 - (v_distance / 2.0));
+  v_outcome := CASE WHEN v_distance < v_threshold THEN 'pass' ELSE 'fail' END;
+
+  -- Insert attempt record
+  INSERT INTO public.verification_attempts
+    (student_id, exam_id, outcome, confidence, counted_against_budget)
+  VALUES
+    (auth.uid(), v_session.exam_id, v_outcome, v_confidence, v_count_against);
+
+  IF v_count_against THEN
+    v_attempts_used := v_attempts_used + 1;
+  END IF;
+
+  v_attempts_left := GREATEST(0, v_max_attempts - v_attempts_used);
+
+  IF v_outcome = 'pass' THEN
+    -- Transition session to verified
+    UPDATE public.exam_sessions
+    SET status = 'verified', admitted_at = now(), updated_at = now()
+    WHERE id = p_session_id;
+
+    RETURN jsonb_build_object(
+      'outcome', 'pass',
+      'confidence', v_confidence,
+      'attempts_remaining', v_attempts_left,
+      'blocked', false,
+      'session_status', 'verified'
+    );
+  ELSE
+    -- Check if budget exhausted
+    IF v_count_against AND v_attempts_used >= v_max_attempts THEN
+      UPDATE public.exam_sessions
+      SET status = 'verification_blocked', updated_at = now()
+      WHERE id = p_session_id;
+
+      INSERT INTO public.instructor_alerts (exam_id, session_id, reason)
+      VALUES (v_session.exam_id, p_session_id, 'verification_failed_hard');
+
+      RETURN jsonb_build_object(
+        'outcome', 'fail',
+        'confidence', v_confidence,
+        'attempts_remaining', 0,
+        'blocked', true,
+        'session_status', 'verification_blocked'
+      );
+    END IF;
+
+    RETURN jsonb_build_object(
+      'outcome', 'fail',
+      'confidence', v_confidence,
+      'attempts_remaining', v_attempts_left,
+      'blocked', false,
+      'session_status', 'awaiting_verification'
+    );
+  END IF;
+END;
+$$ LANGUAGE plpgsql SECURITY DEFINER;
+
+GRANT EXECUTE ON FUNCTION public.verify_student_identity(uuid, float4[]) TO authenticated;
+
+-- T037: start_exam_session RPC — transitions verified → in_progress, returns questions (no correct_answer)
+CREATE OR REPLACE FUNCTION public.start_exam_session(p_session_id uuid)
+RETURNS jsonb AS $$
+DECLARE
+  v_session public.exam_sessions%ROWTYPE;
+  v_exam    public.exams%ROWTYPE;
+  v_now     timestamptz := now();
+BEGIN
+  SELECT * INTO v_session
+  FROM public.exam_sessions
+  WHERE id = p_session_id
+    AND student_id = auth.uid();
+
+  IF v_session.id IS NULL THEN
+    RAISE EXCEPTION 'session_not_found';
+  END IF;
+
+  -- Idempotent: already started
+  IF v_session.status = 'in_progress' THEN
+    RETURN jsonb_build_object(
+      'session', jsonb_build_object(
+        'id', v_session.id,
+        'started_at', v_session.started_at,
+        'status', 'in_progress'
+      ),
+      'questions', (
+        SELECT jsonb_agg(
+          jsonb_build_object(
+            'id', q.id,
+            'position', q.position,
+            'type', q.question_type,
+            'prompt', q.question_text,
+            'options', q.options,
+            'points', q.points
+          ) ORDER BY q.position
+        )
+        FROM public.exam_questions q
+        WHERE q.exam_id = v_session.exam_id
+      )
+    );
+  END IF;
+
+  IF v_session.status != 'verified' THEN
+    RAISE EXCEPTION 'session_not_verified';
+  END IF;
+
+  SELECT * INTO v_exam FROM public.exams WHERE id = v_session.exam_id;
+
+  IF v_now > (v_exam.starts_at + (v_exam.duration_minutes || ' minutes')::interval) THEN
+    RAISE EXCEPTION 'exam_window_closed';
+  END IF;
+
+  UPDATE public.exam_sessions
+  SET status = 'in_progress', started_at = v_now, updated_at = v_now
+  WHERE id = p_session_id;
+
+  RETURN jsonb_build_object(
+    'session', jsonb_build_object(
+      'id', v_session.id,
+      'started_at', v_now,
+      'status', 'in_progress'
+    ),
+    'questions', (
+      SELECT jsonb_agg(
+        jsonb_build_object(
+          'id', q.id,
+          'position', q.position,
+          'type', q.question_type,
+          'prompt', q.question_text,
+          'options', q.options,
+          'points', q.points
+        ) ORDER BY q.position
+      )
+      FROM public.exam_questions q
+      WHERE q.exam_id = v_session.exam_id
+    )
+  );
+END;
+$$ LANGUAGE plpgsql SECURITY DEFINER;
+
+GRANT EXECUTE ON FUNCTION public.start_exam_session(uuid) TO authenticated;
+
+-- T044 supporting RPC: list_my_sessions
+CREATE OR REPLACE FUNCTION public.list_my_sessions()
+RETURNS TABLE (
+  session_id        uuid,
+  exam_id           uuid,
+  exam_title        text,
+  exam_starts_at    timestamptz,
+  duration_minutes  integer,
+  status            text,
+  started_at        timestamptz,
+  submitted_at      timestamptz,
+  live_cheating_score float,
+  created_at        timestamptz
+) AS $$
+BEGIN
+  RETURN QUERY
+  SELECT
+    es.id             AS session_id,
+    es.exam_id,
+    e.title::text     AS exam_title,
+    e.starts_at       AS exam_starts_at,
+    e.duration_minutes,
+    es.status::text,
+    es.started_at,
+    es.submitted_at,
+    es.live_cheating_score,
+    es.created_at
+  FROM public.exam_sessions es
+  JOIN public.exams e ON e.id = es.exam_id
+  WHERE es.student_id = auth.uid()
+  ORDER BY es.created_at DESC;
+END;
+$$ LANGUAGE plpgsql SECURITY DEFINER;
+
+GRANT EXECUTE ON FUNCTION public.list_my_sessions() TO authenticated;
+GRANT EXECUTE ON FUNCTION public.list_my_sessions() TO service_role;

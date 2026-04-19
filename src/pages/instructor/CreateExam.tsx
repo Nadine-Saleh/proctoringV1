@@ -1,6 +1,6 @@
 import { useState } from 'react';
 import { useNavigate } from 'react-router-dom';
-import { Plus, Trash2, Clock, FileText, Save, Eye, AlertCircle, CheckCircle } from 'lucide-react';
+import { Plus, Trash2, Clock, Save, Eye, AlertCircle, CheckCircle } from 'lucide-react';
 import { ExamService } from '../../services/ExamService';
 
 interface Question {
@@ -32,7 +32,6 @@ export const CreateExam = () => {
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const [success, setSuccess] = useState<string | null>(null);
-  const [examId, setExamId] = useState<string | null>(null);
 
   const addQuestion = () => {
     setQuestions([
@@ -114,7 +113,6 @@ export const CreateExam = () => {
         return;
       }
 
-      setExamId(result.examId);
       setSuccess('Exam created successfully! Saving questions...');
 
       const validQuestions = questions.filter((q) => q.question.trim());

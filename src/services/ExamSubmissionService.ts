@@ -5,7 +5,8 @@
 // Responsibility: Submission workflow, answer grading, score calculation
 
 import { supabase } from '../lib/supabase/client';
-import { ExamSessionService } from './ExamSessionService';
+import { ensureUuid } from '../utils/uuid';
+import { ExamSessionService } from './examSessionService';
 import { StudentAnswerService } from './StudentAnswerService';
 import type {
   ExamSubmission,
@@ -28,6 +29,7 @@ export class ExamSubmissionService {
       const answerInputs = submission.answers.map((answer, index) => ({
         session_id: submission.session_id,
         question_id: answer.question_id,
+        answer: { selected_answer: answer.selected_answer ?? null },
         selected_answer: answer.selected_answer,
         time_spent_seconds: answer.time_spent_seconds,
         answer_order: index + 1,
