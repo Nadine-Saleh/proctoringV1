@@ -48,6 +48,8 @@ export const ProctoringReport = () => {
   const [showLiveMonitoring, setShowLiveMonitoring] = useState(true);
   const [isConnected, setIsConnected] = useState(false);
   const [sessionScores, setSessionScores] = useState<Record<string, number>>({});
+  // FR-020a: instructor-invoked termination confirmation (null = no dialog open)
+  const [confirmTerminateId, setConfirmTerminateId] = useState<string | null>(null);
   const realtimeChannelRef = useRef<ReturnType<typeof supabase.channel> | null>(null);
   const audioRef = useRef<HTMLAudioElement | null>(null);
 
@@ -56,6 +58,16 @@ export const ProctoringReport = () => {
   const [violations, setViolations] = useState<ViolationEvent[]>([]);
   const [summaries, setSummaries] = useState<Record<string, ViolationSummary[]>>({});
   const [sessions, setSessions] = useState<ExamSessionSummary[]>([]);
+  const sessionsRef = useRef<ExamSessionSummary[]>([]);
+  const sessionScoresRef = useRef<Record<string, number>>({});
+
+  useEffect(() => {
+    sessionsRef.current = sessions;
+  }, [sessions]);
+
+  useEffect(() => {
+    sessionScoresRef.current = sessionScores;
+  }, [sessionScores]);
 
   // T063: Subscribe to Supabase Realtime oversight channel for the selected exam
   useEffect(() => {
@@ -90,13 +102,13 @@ export const ProctoringReport = () => {
             raised_at: string;
           };
 
-          const session = sessions.find(s => s.session_id === row.session_id);
+          const session = sessionsRef.current.find(s => s.session_id === row.session_id);
           const alert: LiveAlert = {
             id: row.id,
             examId: examId,
             studentId: session?.student_id ?? '',
             studentName: session?.student_name ?? 'Unknown Student',
-            violationScore: sessionScores[row.session_id] ?? 0,
+            violationScore: sessionScoresRef.current[row.session_id] ?? 0,
             riskLevel: row.reason === 'critical_score_sustained' ? 'critical' : 'high',
             events: [{ type: row.reason, severity: 'high', description: row.reason.replace(/_/g, ' '), timestamp: row.raised_at }],
             timestamp: row.raised_at,
@@ -106,7 +118,7 @@ export const ProctoringReport = () => {
           setLiveAlerts(prev => [alert, ...prev].slice(0, 20));
 
           if (audioRef.current) audioRef.current.play().catch(() => {});
-          if (Notification.permission === 'granted') {
+          if ('Notification' in window && Notification.permission === 'granted') {
             new Notification('Proctoring Alert', {
               body: `${alert.studentName}: ${row.reason.replace(/_/g, ' ')}`,
             });
@@ -120,7 +132,9 @@ export const ProctoringReport = () => {
     realtimeChannelRef.current = channel;
 
     // Request notification permission
-    if (Notification.permission !== 'granted') Notification.requestPermission();
+    if ('Notification' in window && Notification.permission !== 'granted') {
+      Notification.requestPermission();
+    }
 
     // Reconciliation on (re)connect: fetch current session scores
     supabase
@@ -216,21 +230,6 @@ export const ProctoringReport = () => {
     loadData();
   }, [examId]);
 
-  // Filter violations
-  const filteredViolations = violations.filter(v => {
-    if (severityFilter !== 'all' && getSeverityLabel(v.severity) !== severityFilter) return false;
-    if (typeFilter !== 'all' && v.violation_type !== typeFilter) return false;
-    return true;
-  });
-
-  // Calculate stats
-  const criticalCount = violations.filter(v => v.severity >= 20).length;
-  const highCount = violations.filter(v => v.severity >= 15 && v.severity < 20).length;
-  const totalUniqueStudents = new Set(violations.map(v => v.session_id)).size;
-
-  // Get unique violation types
-  const violationTypes = [...new Set(violations.map(v => v.violation_type))];
-
   const getSeverityLabel = (severity: number): string =>
     severity >= 20 ? 'critical' : severity >= 15 ? 'high' : severity >= 10 ? 'medium' : 'low';
 
@@ -289,10 +288,49 @@ export const ProctoringReport = () => {
     return session?.student_name || 'Unknown Student';
   };
 
+  const getViolationType = (violation: ViolationEvent) => violation.violation_type ?? violation.type;
+
+  const getViolationTimestamp = (violation: ViolationEvent) =>
+    violation.occurred_at ?? violation.client_captured_at;
+
+  const getViolationStudentName = (violation: ViolationEvent) => {
+    const session = sessions.find(s => s.session_id === violation.session_id);
+    if (session) return session.student_name;
+    return violation.student_id ? getStudentName(violation.student_id) : 'Unknown Student';
+  };
+
+  // Filter violations
+  const filteredViolations = violations.filter(v => {
+    if (severityFilter !== 'all' && getSeverityLabel(v.severity) !== severityFilter) return false;
+    if (typeFilter !== 'all' && getViolationType(v) !== typeFilter) return false;
+    return true;
+  });
+
+  // Calculate stats
+  const criticalCount = violations.filter(v => v.severity >= 20).length;
+  const highCount = violations.filter(v => v.severity >= 15 && v.severity < 20).length;
+  const totalUniqueStudents = new Set(violations.map(v => v.session_id)).size;
+
+  // Get unique violation types
+  const violationTypes = [...new Set(violations.map(getViolationType))];
+
   const acknowledgeAlert = (alertId: string) => {
-    setLiveAlerts(prev => prev.map(a => 
+    setLiveAlerts(prev => prev.map(a =>
       a.id === alertId ? { ...a, acknowledged: true } : a
     ));
+  };
+
+  // FR-020a: confirm then terminate session via instructor-invoked control
+  const handleTerminateConfirmed = async () => {
+    if (!confirmTerminateId) return;
+    const sessionId = confirmTerminateId;
+    setConfirmTerminateId(null);
+    const result = await ExamSessionService.terminateByInstructor(sessionId);
+    if (result.success) {
+      setSessions(prev =>
+        prev.map(s => s.session_id === sessionId ? { ...s, status: 'terminated' } : s)
+      );
+    }
   };
 
   if (isLoading && examId !== 'all') {
@@ -558,6 +596,17 @@ export const ProctoringReport = () => {
                                 </span>
                               </div>
                             )}
+                            {/* FR-020a: Explicit instructor-invoked termination control */}
+                            {session.status === 'in_progress' && (
+                              <button
+                                onClick={() => setConfirmTerminateId(session.session_id)}
+                                className="flex items-center space-x-1 px-3 py-1 rounded-lg text-xs font-semibold bg-red-600 text-white hover:bg-red-700 border border-red-700"
+                                title="Terminate this session"
+                              >
+                                <XCircle className="w-3.5 h-3.5" />
+                                <span>Terminate</span>
+                              </button>
+                            )}
                             <span className={`px-3 py-1 rounded-full text-xs font-semibold border ${
                               session.status === 'in_progress' ? 'bg-green-100 text-green-700 border-green-200' :
                               session.status === 'submitted' ? 'bg-blue-100 text-blue-700 border-blue-200' :
@@ -617,7 +666,7 @@ export const ProctoringReport = () => {
                         <div className="flex-1">
                           <div className="flex items-center space-x-3 mb-1">
                             <h3 className="text-sm font-semibold text-gray-900">
-                              {formatViolationType(violation.violation_type)}
+                              {formatViolationType(getViolationType(violation))}
                             </h3>
                             <span className={`inline-flex px-2 py-0.5 rounded text-xs font-semibold border ${getSeverityColor(getSeverityLabel(violation.severity))}`}>
                               {getSeverityLabel(violation.severity)}
@@ -637,11 +686,11 @@ export const ProctoringReport = () => {
                           <div className="flex items-center space-x-4 text-xs text-gray-500">
                             <div className="flex items-center space-x-1">
                               <User className="w-3 h-3" />
-                              <span>{getStudentName(violation.student_id ?? '')}</span>
+                              <span>{getViolationStudentName(violation)}</span>
                             </div>
                             <div className="flex items-center space-x-1">
                               <Calendar className="w-3 h-3" />
-                              <span>{formatTimestamp(violation.occurred_at)}</span>
+                              <span>{formatTimestamp(getViolationTimestamp(violation))}</span>
                             </div>
                             {violation.is_reviewed && (
                               <span className="flex items-center space-x-1 text-green-600">
@@ -668,6 +717,36 @@ export const ProctoringReport = () => {
           </>
         )}
       </div>
+
+      {/* FR-020a: Termination confirmation modal */}
+      {confirmTerminateId && (
+        <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/50">
+          <div className="bg-white rounded-xl shadow-xl p-6 max-w-md w-full mx-4">
+            <div className="flex items-center space-x-3 mb-4">
+              <XCircle className="w-7 h-7 text-red-600 flex-shrink-0" />
+              <h2 className="text-lg font-semibold text-gray-900">Terminate Session?</h2>
+            </div>
+            <p className="text-sm text-gray-600 mb-6">
+              This will immediately end the student's exam session. The student will be unable to continue.
+              This action cannot be undone.
+            </p>
+            <div className="flex space-x-3 justify-end">
+              <button
+                onClick={() => setConfirmTerminateId(null)}
+                className="px-4 py-2 rounded-lg font-medium bg-gray-100 text-gray-700 hover:bg-gray-200"
+              >
+                Cancel
+              </button>
+              <button
+                onClick={handleTerminateConfirmed}
+                className="px-4 py-2 rounded-lg font-medium bg-red-600 text-white hover:bg-red-700"
+              >
+                Terminate Session
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
     </div>
   );
 };

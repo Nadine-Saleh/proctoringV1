@@ -91,45 +91,46 @@ export function useViolationTracker(
     const clientEventId = generateClientEventId(sessionId);
     const clientCapturedAt = input.occurred_at || new Date().toISOString();
 
+    const type = input.violation_type ?? input.type;
+    if (!type) {
+      console.warn('[useViolationTracker] Cannot record violation: missing violation type');
+      return;
+    }
+
     const fullInput: CreateViolationEventInput = {
       session_id: sessionId,
       client_event_id: clientEventId,
-      type: (input.violation_type as any) || (input as any).type,
+      type,
       client_captured_at: clientCapturedAt,
       metadata: input.metadata ?? {},
-      evidence_artifact_id: (input as any).evidence_artifact_id ?? null,
+      evidence_artifact_id: input.evidence_artifact_id ?? null,
       evidence_image: input.evidence_image ?? null,
-      ...({
-        exam_id: examId,
-        student_id: studentId,
-        violation_type: input.violation_type,
-        occurred_at: clientCapturedAt,
-        severity: input.severity,
-        weight: input.weight,
-        description: input.description,
-        duration_ms: input.duration_ms,
-      } as any),
+      exam_id: examId,
+      student_id: studentId,
+      violation_type: input.violation_type,
+      occurred_at: clientCapturedAt,
+      severity: input.severity,
+      weight: input.weight,
+      description: input.description,
+      duration_ms: input.duration_ms,
     };
 
     const localEvent: ViolationEvent = {
       id: clientEventId,
       session_id: sessionId,
       client_event_id: clientEventId,
-      type: (input.violation_type as any) || (input as any).type,
+      type,
       severity: typeof input.severity === 'number' ? input.severity : 10,
       client_captured_at: clientCapturedAt,
       server_recorded_at: new Date().toISOString(),
-      evidence_artifact_id: (input as any).evidence_artifact_id ?? null,
+      evidence_artifact_id: input.evidence_artifact_id ?? null,
       metadata: input.metadata ?? {},
       created_at: new Date().toISOString(),
-      ...({
-        violation_type: input.violation_type,
-        occurred_at: clientCapturedAt,
-        description: input.description,
-        duration_ms: input.duration_ms,
-        evidence_image: input.evidence_image,
-        weight: input.weight,
-      } as any),
+      violation_type: type,
+      occurred_at: clientCapturedAt,
+      description: input.description ?? '',
+      duration_ms: input.duration_ms,
+      evidence_image: input.evidence_image ?? null,
     };
 
     setViolations(prev => [...prev, localEvent].slice(-100));
@@ -154,7 +155,6 @@ export function useViolationTracker(
     setSyncError(null);
 
     const batch = pendingRef.current.splice(0, MAX_BATCH_SIZE);
-    pendingRef.current = pendingRef.current.slice(batch.length);
 
     try {
       const result = await ViolationEventService.createBatch(batch);

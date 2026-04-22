@@ -45,7 +45,7 @@ Existing single-project layout (see plan.md §Project Structure): `src/` for the
 
 **⚠️ CRITICAL**: No user-story phase may begin until this phase is complete.
 
-- [X] T007 Create migration `supabase/migrations/006_access_codes_and_submissions.sql` adding columns/tables: `exams.access_code`, `exams.proctoring_policy`, `exams.published_at`, `exams.closed_at`; new tables `student_face_references`, `verification_attempts`, `evidence_artifacts`, `evidence_packages`, `submissions` per `specs/001-ai-proctoring-system/data-model.md`
+- [X] T007 Create migration `supabase/migrations/006_access_codes_and_submissions.sql` adding columns/tables: `exams.access_code`, `exams.proctoring_policy`, `exams.published_at`, `exams.closed_at`; new tables `student_face_references`, `verification_attempts`, `evidence_artifacts`, `evidence_packages`, `submissions` per `specs/001-ai-proctoring-system/data-model.md`. Note: `violation_events` and `instructor_alerts` tables are pre-existing in migrations 004/005 and are extended (new columns) by migration 006; they are not created fresh here.
 - [X] T008 Add partial unique index on `exams.access_code WHERE status = 'published'` and indexes listed in `specs/001-ai-proctoring-system/data-model.md` §Indexes inside `supabase/migrations/006_access_codes_and_submissions.sql`
 - [X] T009 Create migration `supabase/migrations/007_rls_policies_proctoring_v2.sql` with RLS policies for the five new tables (student-owned SELECT/INSERT on `student_face_references` and `verification_attempts`; instructor SELECT via `exams.instructor_id = auth.uid()` for `submissions`, `evidence_packages`, `evidence_artifacts`)
 - [X] T010 [P] Create Crockford Base32 access-code generator as a Postgres function `generate_access_code()` in `supabase/migrations/006_access_codes_and_submissions.sql` (8 chars, excludes `I/L/O/U`, collision-checked against `exams WHERE status='published'`)
@@ -107,12 +107,12 @@ Existing single-project layout (see plan.md §Project Structure): `src/` for the
 
 ### Implementation for User Story 2
 
-- [X] T035 [P] [US2] Add Postgres RPC `join_exam(access_code text)` in `supabase/migrations/006_access_codes_and_submissions.sql` per `contracts/rpc-start-session.md` §join_exam
+- [X] T035 [P] [US2] Add Postgres RPC `join_exam(access_code text)` in `supabase/migrations/006_access_codes_and_submissions.sql` per `contracts/rpc-start-session.md` §join_exam. Note: `list_my_sessions()` RPC (required by T044) is also implemented in this migration at line 796 and tracked here for traceability.
 - [X] T036 [P] [US2] Add Postgres RPC `verify_student_identity(session_id uuid, embedding float4[])` that compares against `student_face_references.embedding` using Euclidean distance, enforces retry budget, writes `verification_attempts` row, transitions session status, and raises `instructor_alerts` on hard block
 - [X] T037 [P] [US2] Add Postgres RPC `start_exam_session(session_id uuid)` that transitions `verified → in_progress` and returns the question list without `correct_answer` fields
 - [X] T038 [US2] Create `src/services/IdentityVerificationService.ts` that (a) loads face-api.js models lazily, (b) extracts a 128-dim embedding from a `HTMLVideoElement` frame, (c) calls `verify_student_identity` RPC
 - [X] T039 [P] [US2] Create `src/hooks/useReferenceCapture.ts` that captures three on-demand frames, extracts embeddings, asserts pairwise similarity, and inserts the median embedding into `student_face_references`
-- [X] T040 [US2] Refactor `src/hooks/useExamSession.ts` to expose the full state machine (`awaiting_verification → verified → in_progress → submitted`) and wire it to the three join/verify/start RPCs
+- [X] T040 [US2] Refactor `src/hooks/useExamSession.ts` to expose the full state machine (`awaiting_verification → verified → in_progress → submitted`) and wire it to the three join/verify/start RPCs. Note: client-side heartbeat mechanism (required by FR-022a for disconnect detection) is implemented here via `src/utils/SessionHeartbeat.ts` — sends `last_heartbeat_at` updates every 30 s; T077 reads this field to detect long-disconnected sessions.
 - [X] T041 [US2] Create `src/pages/student/JoinExam.tsx` (new) wired to `/exam/join`: access-code input + join CTA
 - [X] T042 [US2] Create `src/pages/student/VerifyIdentity.tsx` (new) wired to `/exam/:sessionId/verify`: privacy notice (FR-032) → reference capture (if needed) → live verification → retries with guidance on failure
 - [X] T043 [US2] Create `src/pages/student/ReadyToStart.tsx` (new) wired to `/exam/:sessionId/ready`: "you are verified — begin?" confirmation; camera inactive on this screen
@@ -131,9 +131,10 @@ Existing single-project layout (see plan.md §Project Structure): `src/` for the
 
 ### Tests for User Story 3
 
-- [X] T046 [P] [US3] Unit test in `tests/unit/violationScorer.test.ts`: exponential decay math — a severity-5 event decays to ≈ 2.5 after 60 s, to ≈ 1.25 after 120 s; clamped to `[0, 100]`; simultaneous events additive
+- [X] T046 [P] [US3] Unit test in `tests/unit/violationScorer.test.ts`: canonical enum severity weights map correctly for `low`/`medium`/`high`/`critical`, decay follows the configured half-life, total score clamps to `[0, 100]`, and simultaneous events remain additive
 - [X] T047 [P] [US3] Unit test in `tests/unit/CheatingScoreService.test.ts`: threshold crossings emit the right warning/critical signals only after `critical_sustain_seconds` sustained
 - [X] T048 [P] [US3] Integration test in `tests/integration/record-violation-idempotent.test.ts`: replaying the same `client_event_id` twice inserts exactly one row; `deduplicated` counter in response equals 1
+- [X] T048a [P] [US3] Integration test in `tests/integration/record-violation-session-state-guard.test.ts`: calling `record_violation_batch` for a session not in `in_progress` returns `session_not_in_progress`, inserts no `violation_events` rows, and leaves score/alerts unchanged
 - [X] T049 [P] [US3] Integration test in `tests/integration/record-violation-policy-guard.test.ts`: uploading an evidence-attached event under a `visual_evidence_allowed=false` policy rejects the entire batch with `evidence_policy_violation`
 - [X] T050 [P] [US3] Integration test in `tests/integration/alerts-critical-sustained.test.ts`: score crossing critical for < sustain_seconds does NOT raise alert; crossing for ≥ sustain_seconds DOES raise exactly one alert
 - [X] T051 [P] [US3] Integration test in `tests/integration/alerts-camera-loss.test.ts`: any `camera_unavailable` event raises an `instructor_alerts` row with `reason='camera_lost'` regardless of score
@@ -148,11 +149,12 @@ Existing single-project layout (see plan.md §Project Structure): `src/` for the
 - [X] T057 [P] [US3] Enhance `src/hooks/useGazeTracking.ts` to emit `gaze_off_screen` events when yaw/pitch exceed configured thresholds for the duration gate from the exam's `proctoring_policy`
 - [X] T058 [P] [US3] Enhance `src/hooks/useFaceDetection.ts` to emit `face_not_visible`, `multiple_persons`, and `camera_unavailable` events with correct severities from the canonical taxonomy
 - [X] T059 [P] [US3] Add `src/hooks/useTabFocusTracker.ts` (new) emitting `tab_focus_lost` events on `visibilitychange` / `blur`
-- [X] T060 [US3] Refactor `src/hooks/useProctoring.ts` to orchestrate the above detection hooks and funnel all events through `ViolationEventService`
+- [X] T060 [US3] Refactor `src/hooks/useProctoring.ts` to orchestrate the above detection hooks and funnel all events through `ViolationEventService`. Note: evidence snippet capture during monitoring (FR-014) is implemented here via `captureViolationSnapshot()` — captures a frame at violation time and attaches it to the event when `visual_evidence_allowed=true` in the exam policy. This covers the US3 snippet-capture loop; T080 (US4) provides only the signed-URL service layer.
 - [X] T061 [US3] Refactor `src/hooks/useViolationTracker.ts` to aggregate events and read the authoritative score from `CheatingScoreService`; remove any local scoring logic
 - [X] T062 [US3] Wire `src/pages/student/Exam.tsx` to display graduated non-blocking warnings when `CheatingScoreService` reports `warning_threshold_crossed` or on individual severity ≥ 10 events (FR-016)
 - [X] T063 [US3] Wire `src/pages/instructor/Proctoring.tsx` to subscribe to Supabase Realtime channel `oversight:exam:<examId>` per `contracts/realtime-channels.md`; display per-session score tiles + alert feed; implement reconnection reconciliation query
 - [X] T064 [US3] Ensure camera lifecycle cleanup in `src/pages/student/Exam.tsx` (`useEffect` teardown releases MediaStream tracks on unmount / navigation / submit)
+- [X] T064a [US3] Add instructor-invoked explicit session termination control (FR-020a): implement `ExamSessionService.terminateByInstructor(sessionId)` in `src/services/examSessionService.ts`; add a "Terminate Session" button (shown only on `in_progress` sessions) with a confirmation modal in `src/pages/instructor/Proctoring.tsx`; on confirm, call the service method and reflect `terminated` status in local session state
 - [X] T065 [P] [US3] Populate `tests/fixtures/gaze-corpus/` with a minimum of 30 short recorded-frame clips + annotations covering each violation type (this is the ground-truth corpus Principle II demands)
 - [X] T066 [P] [US3] Populate `tests/fixtures/scored-sessions/` with 10 end-to-end recorded sessions + expected violation timelines for the benchmark in T052
 - [X] T067 [US3] Add Chrome DevTools Performance trace evidence to a new `docs/perf-baseline.md` measuring detection-loop fps and main-thread p95 on a baseline laptop (Constitution Principle IV — measurement, not guessing)
@@ -306,4 +308,3 @@ Integration happens through the Foundational migrations and the canonical taxono
 - Tests MUST fail before implementation in each user-story phase. Commit the failing tests; implement until they pass.
 - Every merge-bound PR MUST pass `npm run typecheck && npm run lint && npm run build && npm run test` (Constitution §Development Workflow).
 - The detection-fixture benchmark in T052 is a hard gate per Constitution Principle II — threshold changes MUST show before/after numbers.
-- Deferred item from spec: auto-termination policy on sustained critical score (left for `/speckit.clarify` to refine before a follow-up feature branch).

@@ -203,7 +203,7 @@ export const useProctoring = (isEnabled: boolean = true): UseProctoringReturn =>
           faceNotDetectedCountRef.current = 0;
         } else {
           faceNotDetectedCountRef.current++;
-          if (faceNotDetectedCountRef.current >= 3 && now - lastFaceAlertRef.current > 30000) {
+          if (faceNotDetectedCountRef.current >= 2 && now - lastFaceAlertRef.current > 10000) {
             setStatus(prev => ({ ...prev, faceDetected: false, faceNotDetected: true }));
             // T058: face_not_visible with canonical severity
             emitCanonical(

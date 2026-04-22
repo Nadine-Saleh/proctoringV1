@@ -113,8 +113,9 @@ const DEFAULT_CONFIG: GazeTrackingConfig = {
   frameSkip: 3, // Process every 3rd frame (~10fps at 30fps input)
   offScreenThreshold: 2000, // 2 seconds
   prolongedAwayThreshold: 5000, // 5 seconds
-  minFaceDistance: 0.15, // Too close
-  maxFaceDistance: 0.6, // Too far
+  // faceDistance is proximity: 0 = very far, 1 = very close.
+  minFaceDistance: 0.15, // Below this → too far from camera
+  maxFaceDistance: 0.6,  // Above this → too close to camera
   blinkThreshold: 0.25,
   enableCalibration: true,
   enableWarnings: true,
@@ -196,6 +197,8 @@ export class GazeTrackingEngine {
   // Violation tracking
   private violationCounter = 0;
   private warningLevel = 0;
+  private lastViolationAt = new Map<string, number>();
+  private static readonly VIOLATION_COOLDOWN_MS = 5000;
   
   // Callbacks
   private onGazeUpdate?: (sample: GazeSample) => void;
@@ -320,14 +323,15 @@ export class GazeTrackingEngine {
   // ==================== Calibration ====================
 
   calibrate(): CalibrationData {
-    // Auto-calibration based on initial face detection
+    // Iris-center offset from eye-center in normalized video coords is tiny
+    // (typically ±0.006 at gaze extremes). ±0.08 was unreachable.
     this.calibration = {
       centerX: 0.5,
       centerY: 0.5,
-      leftThreshold: -0.08,
-      rightThreshold: 0.08,
-      upThreshold: -0.06,
-      downThreshold: 0.06,
+      leftThreshold: -0.007,
+      rightThreshold: 0.007,
+      upThreshold: -0.006,
+      downThreshold: 0.006,
       faceDistanceMin: 0.2,
       faceDistanceMax: 0.5,
       isCalibrated: true,
@@ -500,17 +504,18 @@ export class GazeTrackingEngine {
     const yaw = headPose.yaw;
     const pitch = headPose.pitch;
 
-    // Check if looking off-screen based on head yaw
-    if (yaw < -25) return 'left';
-    if (yaw > 25) return 'right';
-    if (pitch < -20) return 'up';
+    // Head-pose driven zones. Reading normal screen content should stay on-screen;
+    // only real head turns/tilts should cross these thresholds.
+    if (yaw < -20) return 'left';
+    if (yaw > 20) return 'right';
+    if (pitch < -22) return 'up';
     if (pitch > 25) return 'down';
 
-    // Fine-tune with pupil position
-    if (avgX < this.calibration.leftThreshold) return 'left';
-    if (avgX > this.calibration.rightThreshold) return 'right';
-    if (avgY < this.calibration.upThreshold) return 'up';
-    if (avgY > this.calibration.downThreshold) return 'down';
+    // Pupil-based fine-tuning disabled by default: normal left-to-right reading
+    // easily exceeds any realistic iris-offset threshold, producing false positives.
+    // Head pose above is the primary signal for gaze-off-screen.
+    void avgX;
+    void avgY;
 
     return 'on-screen';
   }
@@ -579,39 +584,48 @@ export class GazeTrackingEngine {
       return { pitch: 0, yaw: 0, roll: 0 };
     }
 
-    // Estimate yaw from nose position relative to face center
-    const faceCenterX = (leftEar?.x || 0.2 + rightEar?.x || 0.8) / 2;
-    const noseOffsetX = nose.x - faceCenterX;
-    const yaw = noseOffsetX * 60; // Rough conversion to degrees
+    // Yaw: normalize nose offset by face width so a ~30° turn reliably triggers detection
+    const faceCenterX = leftEar && rightEar
+      ? (leftEar.x + rightEar.x) / 2
+      : 0.5;
+    const faceWidth = leftEar && rightEar
+      ? Math.abs(rightEar.x - leftEar.x)
+      : 0.3;
+    const noseOffsetX = faceWidth > 0 ? (nose.x - faceCenterX) / faceWidth : 0;
+    const yaw = noseOffsetX * 90;
 
     // Estimate pitch from nose-to-chin ratio
     const faceHeight = Math.abs(chin.y - nose.y);
     const pitch = (faceHeight - 0.3) * 100;
 
     // Estimate roll from ear height difference
-    const roll = leftEar && rightEar 
-      ? (leftEar.y - rightEar.y) * 90 
+    const roll = leftEar && rightEar
+      ? (leftEar.y - rightEar.y) * 90
       : 0;
 
     return { pitch, yaw, roll };
   }
 
   private estimateFaceDistance(landmarks: NormalizedLandmark[]): number {
-    const forehead = landmarks[FACE_LANDMARKS.forehead];
-    const chin = landmarks[FACE_LANDMARKS.chin];
+    // Inter-ocular distance is far more robust than forehead-to-chin under head pitch/yaw.
+    const leftEyeCorner = landmarks[33];
+    const rightEyeCorner = landmarks[263];
 
-    if (!forehead || !chin) {
+    if (!leftEyeCorner || !rightEyeCorner) {
       return 0.5;
     }
 
-    const faceHeight = Math.hypot(forehead.x - chin.x, forehead.y - chin.y);
+    const eyeDist = Math.hypot(
+      leftEyeCorner.x - rightEyeCorner.x,
+      leftEyeCorner.y - rightEyeCorner.y
+    );
 
-    // Larger face height = closer to camera
-    // Typical face height in normalized coordinates: 0.15 (far) to 0.35 (close)
-    // Map to 0-1 range where 0 = far, 1 = close
-    const distance = (faceHeight - 0.15) / (0.35 - 0.15);
-    
-    return Math.max(0, Math.min(1, distance));
+    // Typical inter-ocular distance in normalized video coords:
+    //   ~0.06 when the user is very far, ~0.18 when the face fills the frame.
+    // Return a proximity value: 0 = very far, 1 = very close to camera.
+    const proximity = (eyeDist - 0.06) / (0.18 - 0.06);
+
+    return Math.max(0, Math.min(1, proximity));
   }
 
   // ==================== Violation Detection ====================
@@ -625,22 +639,40 @@ export class GazeTrackingEngine {
         this.offScreenStartTime = now;
       } else {
         const duration = now - this.offScreenStartTime;
-        
+
         if (duration >= this.config.offScreenThreshold) {
-          this.createViolation('OFF_SCREEN', 'warning', sample, duration);
+          const lastOff = this.lastViolationAt.get('OFF_SCREEN') ?? 0;
+          if (now - lastOff >= GazeTrackingEngine.VIOLATION_COOLDOWN_MS) {
+            this.lastViolationAt.set('OFF_SCREEN', now);
+            this.createViolation('OFF_SCREEN', 'warning', sample, duration);
+          }
         }
-        
+
         if (duration >= this.config.prolongedAwayThreshold) {
-          this.createViolation('PROLONGED_AWAY', 'critical', sample, duration);
+          const lastProlonged = this.lastViolationAt.get('PROLONGED_AWAY') ?? 0;
+          if (now - lastProlonged >= GazeTrackingEngine.VIOLATION_COOLDOWN_MS) {
+            this.lastViolationAt.set('PROLONGED_AWAY', now);
+            this.createViolation('PROLONGED_AWAY', 'critical', sample, duration);
+          }
         }
       }
     } else {
       this.offScreenStartTime = null;
+      this.lastViolationAt.delete('OFF_SCREEN');
+      this.lastViolationAt.delete('PROLONGED_AWAY');
     }
 
-    // Face distance violations
-    if (sample.faceDistance < this.config.minFaceDistance) {
-      this.createViolation('CLOSE_FACE', 'warning', sample, 0);
+    // Face distance — `faceDistance` is proximity: 0 = very far, 1 = very close.
+    // Fire CLOSE_FACE only when the face is actually too close, with a cooldown
+    // so it does not emit on every processed frame.
+    if (sample.faceDistance > this.config.maxFaceDistance) {
+      const lastClose = this.lastViolationAt.get('CLOSE_FACE') ?? 0;
+      if (now - lastClose >= GazeTrackingEngine.VIOLATION_COOLDOWN_MS) {
+        this.lastViolationAt.set('CLOSE_FACE', now);
+        this.createViolation('CLOSE_FACE', 'warning', sample, 0);
+      }
+    } else {
+      this.lastViolationAt.delete('CLOSE_FACE');
     }
 
     // Warning system
@@ -843,10 +875,10 @@ export class GazeTrackingEngine {
     return {
       centerX: 0.5,
       centerY: 0.5,
-      leftThreshold: -0.08,
-      rightThreshold: 0.08,
-      upThreshold: -0.06,
-      downThreshold: 0.06,
+      leftThreshold: -0.007,
+      rightThreshold: 0.007,
+      upThreshold: -0.006,
+      downThreshold: 0.006,
       faceDistanceMin: 0.2,
       faceDistanceMax: 0.5,
       isCalibrated: false,

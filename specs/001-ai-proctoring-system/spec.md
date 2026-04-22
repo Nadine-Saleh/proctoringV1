@@ -7,6 +7,13 @@
 
 ## Clarifications
 
+### Session 2026-04-20
+
+- Q: Which severity values are allowed for violation events? → A: `low`, `medium`, `high`, `critical`
+- Q: Which session status may call the violation-recording RPC? → A: `in_progress` only
+
+- Q: What should happen if the session pre-check fails before calling the violation-recording RPC? -> A: Return `session_not_in_progress` and do not call the mutating RPC
+
 ### Session 2026-04-19
 
 - Q: What form of data is stored as the student's reference face? → A: Mathematical embedding only — a float vector (128 numbers) derived from the face; cannot be reversed into an image.
@@ -107,6 +114,7 @@ When the student submits the exam (manually or via auto-submit at the end of the
 - **Reference embedding missing or low-quality**: A student has no stored reference embedding (first-ever exam) or the stored embedding has a quality score below the acceptable threshold. The system routes them to an inline reference-capture screen (within the join flow) before allowing any verification attempt to count against their retry budget.
 - **False positives in detection**: Lighting, glasses, a passing pet, background movement, or culturally common head coverings cause detections that do not correspond to cheating. The scoring model MUST weight sustained, high-severity signals more than transient, low-severity signals and MUST provide the instructor with raw evidence so they can overturn false positives.
 - **Privacy-restricted classrooms**: Some deployments forbid visual evidence capture. When the exam policy disables visual evidence, the system MUST still record violation events and scores but MUST NOT upload or retain frame snippets.
+- **Violation event against non-active session**: If monitoring code attempts to record a violation for a session that is not currently `in_progress`, the system MUST return `session_not_in_progress`, MUST NOT call the mutating violation RPC, and MUST leave violation, cheating-score, and alert state unchanged.
 - **Student disconnects mid-exam**: The student closes their browser or loses power. On reconnect within a grace period of **10 minutes** (measured from the last server-observed heartbeat / score update), the session resumes from the last saved state; past 10 minutes the session is auto-submitted in its current state with `submit_reason = auto_disconnect`.
 - **Instructor disables the exam after publication**: Once the exam is disabled, no new joins are accepted; students with active sessions are allowed to finish unless the instructor explicitly terminates them.
 - **Access code sharing outside the cohort**: An unauthorized user enters a leaked code. Because entry requires an authenticated student account and identity verification against a stored reference, a leaked code alone does not grant access.
@@ -137,11 +145,13 @@ When the student submits the exam (manually or via auto-submit at the end of the
 **Real-Time Monitoring & Cheating Score**
 
 - **FR-013**: During an active exam session, the system MUST continuously evaluate the student's behavior across at least these categories: gaze direction, face presence, additional persons in frame, tab/window focus loss, and camera availability.
-- **FR-014**: The system MUST categorize detected deviations as violation events with a type, a timestamp, a severity level, and, when the exam policy permits, a short visual evidence snippet.
+- **FR-014**: The system MUST categorize detected deviations as violation events with a type, a timestamp, and a severity level constrained to the enum `low`, `medium`, `high`, or `critical`; when the exam policy permits, a short visual evidence snippet MAY also be attached.
 - **FR-015**: The system MUST compute a live cheating score that aggregates recent violation events with severity-weighted decay so that sustained violations carry more weight than transient ones.
 - **FR-016**: The system MUST present graduated, non-blocking feedback to the student when correctable behaviors are detected (e.g., face not centered, gaze off-screen) before those behaviors accumulate into higher-severity flags.
 - **FR-017**: The system MUST surface the live cheating score and any critical-threshold alerts to the instructor's oversight dashboard in near real time. The live cheating score is expressed on a 0–100 scale; defaults (configurable per exam) are **warning = 40** (student-visible non-blocking warning) and **critical = 70** (instructor-visible alert raised once the score stays at or above 70 for a sustained duration of **10 seconds**). A score dropping below the critical threshold and crossing it again re-starts the sustained-duration timer; an already-raised alert is not re-raised for the same continuous breach.
 - **FR-018**: The system MUST continue to record violation events locally when the network is intermittently unavailable and MUST transmit buffered events without loss when connectivity resumes.
+- **FR-018a**: The violation-recording RPC MUST verify that the target exam session is currently in `in_progress` state before inserting a violation event or recalculating the cheating score. Calls for sessions in any other state MUST be rejected without mutating violation, score, or alert records.
+- **FR-018b**: When a client-side or service-side pre-check determines that a session is not `in_progress`, the caller MUST return the domain error `session_not_in_progress` and MUST NOT invoke the mutating violation-recording RPC for that session.
 - **FR-019**: The system MUST treat loss of the camera signal (covered, unplugged, or permission revoked) as a high-severity violation and MUST alert the instructor.
 - **FR-020**: When the exam's proctoring policy disallows visual evidence retention, the system MUST still produce violation events and scores but MUST NOT upload or persist frame snippets.
 - **FR-020a**: The system MUST NOT autonomously terminate or auto-submit an exam session based on cheating score alone. On sustained critical-threshold breach the system MUST raise an instructor alert (FR-017) and MUST expose an explicit instructor-invoked termination control; the session remains in `in_progress` until the instructor acts or the exam window closes.
@@ -172,8 +182,8 @@ When the student submits the exam (manually or via auto-submit at the end of the
 - **Access Code**: A unique, human-enterable identifier associated with exactly one exam; auto-invalidated at window close.
 - **Student Reference Face**: A stored 128-dimensional float vector (mathematical embedding) derived from the student's face and used as the source of truth for identity verification. The raw camera frame is never persisted; only the embedding is stored. Keyed by `student_id` — one record per student, captured inline during their first ever exam join, and reused for all subsequent exams without re-capture.
 - **Verification Attempt**: A record of each face-recognition attempt — timestamp, confidence score, outcome (pass/fail), and whether it consumed an attempt against the retry budget.
-- **Exam Session**: The live instance of a student taking an exam. Attributes: student, exam, admit timestamp, current status (awaiting-verification, verified, in-progress, submitted, auto-submitted, terminated), live cheating score.
-- **Violation Event**: A single detected integrity deviation. Attributes: session, type (gaze, multiple-persons, focus-loss, camera-loss, etc.), timestamp, severity, optional evidence snippet reference.
+- **Exam Session**: The live instance of a student taking an exam. Attributes: student, exam, admit timestamp, current status (`awaiting_verification`, `verified`, `in_progress`, `submitted`, `auto_submitted`, `terminated`), live cheating score. Only `in_progress` sessions are eligible to emit new violation events or score updates.
+- **Violation Event**: A single detected integrity deviation. Attributes: session, type (gaze, multiple-persons, focus-loss, camera-loss, etc.), timestamp, severity (`low` | `medium` | `high` | `critical`), optional evidence snippet reference.
 - **Submission**: The final state of a student's answers for an exam. Attributes: session, submitted-at, submit reason (manual, auto-window-close, auto-disconnect), final grade (numeric, with free-response status where applicable).
 - **Evidence Package**: The bundle delivered to the instructor at submission. Attributes: submission reference, ordered violation timeline, category summary, final cheating score, visual-evidence links (if permitted by policy).
 - **Instructor Alert**: A real-time notification raised when a session crosses a critical cheating-score threshold, when verification fails hard, or when camera loss occurs. Attributes: session, reason, timestamp, acknowledged-at.
@@ -212,3 +222,4 @@ When the student submits the exam (manually or via auto-submit at the end of the
 - A persistence layer capable of storing exams, sessions, violation events, submissions, and (optionally) visual evidence with appropriate access controls.
 - A realtime channel between students' in-exam clients and the instructor's oversight dashboard.
 - Browser APIs for camera access and face detection / recognition on the student's device.
+

@@ -142,12 +142,9 @@ export const useGazeTracking = (
       engineRef.current.calibrate();
     }
 
-    await engineRef.current.startCamera();
-    
-    engineRef.current.start(() => {
-      // Real-time sample callback
-      // Additional processing can be done here
-    });
+    // Video element is already provided by the shared proctoring stream via setVideoElement —
+    // calling startCamera() here would overwrite that stream with a second getUserMedia request.
+    engineRef.current.start(() => {});
   }, []);
 
   // Stop tracking

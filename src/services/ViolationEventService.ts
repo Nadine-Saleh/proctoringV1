@@ -15,6 +15,13 @@ export interface RecordViolationBatchResponse extends RpcScoreResponse {
   instructor_alert_raised: boolean;
 }
 
+interface PostgrestErrorLike {
+  message: string;
+  code?: string;
+  details?: string;
+  hint?: string;
+}
+
 interface BatchEvent {
   client_event_id: string;
   type: string;
@@ -91,7 +98,20 @@ async function callRecordBatch(
     p_session_id: sessionId,
     p_events: events,
   });
-  if (error) return { data: null, error: error.message };
+  if (error) {
+    const typedError = error as PostgrestErrorLike;
+    // Surface the full Postgres error (code, details, hint) so 400s are diagnosable.
+    console.error('[ViolationEventService] record_violation_batch failed', {
+      message: typedError.message,
+      code: typedError.code,
+      details: typedError.details,
+      hint: typedError.hint,
+      sessionId,
+      eventCount: events.length,
+      sampleType: events[0]?.type,
+    });
+    return { data: null, error: typedError.message };
+  }
   return { data: data as RecordViolationBatchResponse, error: null };
 }
 
@@ -160,6 +180,10 @@ export class ViolationEventService {
   /**
    * Drain IndexedDB offline queue, grouping by sessionId and replaying via RPC.
    * Call this on reconnect.
+   *
+   * Events that hit a permanent server-side error (session no longer in_progress,
+   * session missing, wrong owner, exam window closed) are dropped from the queue
+   * so they do not replay on every page load.
    */
   static async drainOfflineQueue(
     onSuccess?: (res: RecordViolationBatchResponse) => void
@@ -181,20 +205,38 @@ export class ViolationEventService {
       bySession.set(item.sessionId, arr);
     }
 
+    const PERMANENT_ERRORS = new Set([
+      'session_not_found',
+      'session_not_owned',
+      'session_not_in_progress',
+      'exam_window_closed',
+      'evidence_policy_violation',
+    ]);
+
     for (const [sessionId, entries] of bySession) {
       const events = entries.map(e => e.event);
       const chunks: BatchEvent[][] = [];
       for (let i = 0; i < events.length; i += 50) chunks.push(events.slice(i, i + 50));
 
+      let offset = 0;
       for (const chunk of chunks) {
+        const keysForChunk = entries.slice(offset, offset + chunk.length).map(e => e.key);
+        offset += chunk.length;
+
         const { data, error } = await callRecordBatch(sessionId, chunk);
+
         if (!error && data) {
-          // Delete successfully replayed events from IDB
-          for (const { key } of entries.slice(0, chunk.length)) {
-            await idbDelete(key).catch(() => {});
-          }
+          for (const key of keysForChunk) await idbDelete(key).catch(() => {});
           onSuccess?.(data);
+        } else if (error && PERMANENT_ERRORS.has(error)) {
+          // Orphaned events — the target session will never accept them again.
+          // Drop them so they stop failing on every mount.
+          console.warn(
+            `[ViolationEventService] Dropping ${chunk.length} queued events for session ${sessionId}: ${error}`
+          );
+          for (const key of keysForChunk) await idbDelete(key).catch(() => {});
         }
+        // Transient errors (network, batch_too_large, etc.): leave in queue for next drain.
       }
     }
   }
@@ -208,7 +250,7 @@ export class ViolationEventService {
         .order('client_captured_at', { ascending: true });
 
       if (error) return { success: false, error: error.message };
-      return { success: true, events: data as ViolationEvent[] };
+      return { success: true, events: (data as ViolationEvent[]).map(normalizeViolationEvent) };
     } catch (err) {
       return { success: false, error: err instanceof Error ? err.message : 'Unknown error' };
     }
@@ -217,14 +259,24 @@ export class ViolationEventService {
   static async getByExam(examId: string): Promise<{ success: boolean; events?: ViolationEvent[]; error?: string }> {
     try {
       const examUuid = ensureUuid(examId, 'exam');
+      const { data: sessions, error: sessionError } = await supabase
+        .from('exam_sessions')
+        .select('id')
+        .eq('exam_id', examUuid);
+
+      if (sessionError) return { success: false, error: sessionError.message };
+
+      const sessionIds = (sessions ?? []).map(session => session.id);
+      if (sessionIds.length === 0) return { success: true, events: [] };
+
       const { data, error } = await supabase
         .from('violation_events')
         .select('*')
-        .eq('exam_id', examUuid)
-        .order('occurred_at', { ascending: false });
+        .in('session_id', sessionIds)
+        .order('client_captured_at', { ascending: false });
 
       if (error) return { success: false, error: error.message };
-      return { success: true, events: data as ViolationEvent[] };
+      return { success: true, events: (data as ViolationEvent[]).map(normalizeViolationEvent) };
     } catch (err) {
       return { success: false, error: err instanceof Error ? err.message : 'Unknown error' };
     }
@@ -233,14 +285,24 @@ export class ViolationEventService {
   static async getByStudent(studentId: string): Promise<{ success: boolean; events?: ViolationEvent[]; error?: string }> {
     try {
       const studentUuid = ensureUuid(studentId, 'student');
+      const { data: sessions, error: sessionError } = await supabase
+        .from('exam_sessions')
+        .select('id')
+        .eq('student_id', studentUuid);
+
+      if (sessionError) return { success: false, error: sessionError.message };
+
+      const sessionIds = (sessions ?? []).map(session => session.id);
+      if (sessionIds.length === 0) return { success: true, events: [] };
+
       const { data, error } = await supabase
         .from('violation_events')
         .select('*')
-        .eq('student_id', studentUuid)
-        .order('occurred_at', { ascending: false });
+        .in('session_id', sessionIds)
+        .order('client_captured_at', { ascending: false });
 
       if (error) return { success: false, error: error.message };
-      return { success: true, events: data as ViolationEvent[] };
+      return { success: true, events: (data as ViolationEvent[]).map(normalizeViolationEvent) };
     } catch (err) {
       return { success: false, error: err instanceof Error ? err.message : 'Unknown error' };
     }
@@ -250,7 +312,7 @@ export class ViolationEventService {
     try {
       const { error } = await supabase
         .from('violation_events')
-        .update(input as any)
+        .update(input)
         .eq('id', eventId);
 
       if (error) return { success: false, error: error.message };
@@ -264,29 +326,39 @@ export class ViolationEventService {
     try {
       const { data, error } = await supabase
         .from('violation_events')
-        .select('violation_type, severity, occurred_at')
+        .select('type, violation_type, severity, client_captured_at, occurred_at')
         .eq('session_id', sessionId);
 
       if (error) return { success: false, error: error.message };
 
       const typeMap = new Map<string, ViolationSummary>();
-      for (const event of data as { violation_type: string; severity: number; occurred_at: string }[]) {
-        const existing = typeMap.get(event.violation_type);
+      for (const event of data as Array<{
+        type: string | null;
+        violation_type: string | null;
+        severity: number;
+        client_captured_at: string | null;
+        occurred_at: string | null;
+      }>) {
+        const violationType = event.type ?? event.violation_type;
+        const occurredAt = event.client_captured_at ?? event.occurred_at;
+        if (!violationType || !occurredAt) continue;
+
+        const existing = typeMap.get(violationType);
         if (existing) {
           existing.count++;
-          if (new Date(event.occurred_at) > new Date(existing.last_occurrence)) {
-            existing.last_occurrence = event.occurred_at;
+          if (new Date(occurredAt) > new Date(existing.last_occurrence)) {
+            existing.last_occurrence = occurredAt;
           }
-          if (event.severity > (existing.severity as unknown as number)) {
-            existing.severity = event.severity as any;
+          if (event.severity > existing.severity) {
+            existing.severity = event.severity;
           }
         } else {
-          typeMap.set(event.violation_type, {
-            violation_type: event.violation_type as any,
+          typeMap.set(violationType, {
+            violation_type: violationType as ViolationSummary['violation_type'],
             count: 1,
-            severity: event.severity as any,
-            first_occurrence: event.occurred_at,
-            last_occurrence: event.occurred_at,
+            severity: event.severity,
+            first_occurrence: occurredAt,
+            last_occurrence: occurredAt,
           });
         }
       }
@@ -316,4 +388,16 @@ export class ViolationEventService {
       return { success: false, error: err instanceof Error ? err.message : 'Unknown error' };
     }
   }
+}
+
+function normalizeViolationEvent(event: ViolationEvent): ViolationEvent {
+  return {
+    ...event,
+    type: event.type ?? event.violation_type,
+    violation_type: event.violation_type ?? event.type,
+    client_captured_at: event.client_captured_at ?? event.occurred_at,
+    occurred_at: event.occurred_at ?? event.client_captured_at,
+    evidence_image: event.evidence_image ?? null,
+    description: event.description ?? '',
+  };
 }

@@ -6,6 +6,7 @@
 
 import { supabase } from '../lib/supabase/client';
 import { ensureUuid } from '../utils/uuid';
+import { getRiskLevel } from '../utils/violationScorer';
 import type {
   ExamSession,
   CreateExamSessionInput,
@@ -146,6 +147,14 @@ export class ExamSessionService {
   }
 
   /**
+   * Instructor-invoked explicit session termination (FR-020a).
+   * Sets status to 'terminated'; the student's active session ends immediately.
+   */
+  static async terminateByInstructor(sessionId: string): Promise<{ success: boolean; error?: string }> {
+    return this.update(sessionId, { status: 'terminated' });
+  }
+
+  /**
    * Get all sessions for a student
    */
   static async getByStudent(studentId: string): Promise<{ success: boolean; sessions?: ExamSession[]; error?: string }> {
@@ -184,8 +193,7 @@ export class ExamSessionService {
         .select(`
           *,
           users!exam_sessions_student_id_fkey (full_name, email),
-          exams!exam_sessions_exam_id_fkey (title, duration_minutes),
-          cheating_scores (overall_score, risk_level, total_violations)
+          exams!exam_sessions_exam_id_fkey (title, duration_minutes)
         `)
         .eq('exam_id', examUuid)
         .order('created_at', { ascending: false });
@@ -196,25 +204,40 @@ export class ExamSessionService {
       }
 
       // Transform into summary objects
-      const summaries: ExamSessionSummary[] = (sessions as any[]).map((row) => ({
-        session_id: row.id,
-        student_id: row.student_id,
-        student_name: row.users?.full_name ?? 'Unknown',
-        student_email: row.users?.email ?? '',
-        exam_id: row.exam_id,
-        exam_title: row.exams?.title ?? 'Unknown Exam',
-        status: row.status as ExamSessionStatus,
-        started_at: row.started_at,
-        submitted_at: row.submitted_at,
-        duration_taken_seconds: row.duration_taken_seconds,
-        duration_minutes: row.exams?.duration_minutes ?? 0,
-        exam_score: null, // Will be populated when grading is implemented
-        exam_percentage: null,
-        violation_count: row.cheating_scores?.total_violations ?? 0,
-        cheating_score: row.cheating_scores?.overall_score ?? null,
-        risk_level: row.cheating_scores?.risk_level ?? null,
-        liveness_check_passed: row.liveness_check_passed,
-      }));
+      const summaries: ExamSessionSummary[] = (sessions as Array<{
+        id: string;
+        student_id: string;
+        exam_id: string;
+        status: string;
+        started_at: string;
+        submitted_at: string | null;
+        duration_taken_seconds: number | null;
+        live_cheating_score: number | null;
+        liveness_check_passed: boolean;
+        users?: { full_name?: string | null; email?: string | null } | null;
+        exams?: { title?: string | null; duration_minutes?: number | null } | null;
+      }>).map((row) => {
+        const cheatingScore = row.live_cheating_score ?? 0;
+        return {
+          session_id: row.id,
+          student_id: row.student_id,
+          student_name: row.users?.full_name ?? 'Unknown',
+          student_email: row.users?.email ?? '',
+          exam_id: row.exam_id,
+          exam_title: row.exams?.title ?? 'Unknown Exam',
+          status: row.status as ExamSessionStatus,
+          started_at: row.started_at,
+          submitted_at: row.submitted_at,
+          duration_taken_seconds: row.duration_taken_seconds,
+          duration_minutes: row.exams?.duration_minutes ?? 0,
+          exam_score: null,
+          exam_percentage: null,
+          violation_count: 0,
+          cheating_score: cheatingScore,
+          risk_level: getRiskLevel(cheatingScore).level,
+          liveness_check_passed: row.liveness_check_passed,
+        };
+      });
 
       return { success: true, summaries };
     } catch (err) {

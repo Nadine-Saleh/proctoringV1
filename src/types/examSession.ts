@@ -110,10 +110,10 @@ export interface UpdateExamSessionInput {
 
 export interface ViolationEvent {
   description: string;
-  evidence_image: null;
-  occurred_at: any;
-  violation_type: any;
-  duration_ms: number | null | undefined;
+  evidence_image: string | null;
+  occurred_at: string;
+  violation_type: ViolationType;
+  duration_ms?: number | null;
   id: string;
   session_id: string;
   client_event_id: string;
