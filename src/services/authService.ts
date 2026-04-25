@@ -24,26 +24,6 @@ export interface LoginData {
   password: string;
 }
 
-const AUTH_TIMEOUT_MS = 10000;
-
-function withTimeout<T>(promise: Promise<T>, timeoutMs: number, context: string): Promise<T> {
-  return new Promise<T>((resolve, reject) => {
-    const timer = setTimeout(() => {
-      reject(new Error(`${context} timed out after ${timeoutMs / 1000}s`));
-    }, timeoutMs);
-
-    promise
-      .then((value) => {
-        clearTimeout(timer);
-        resolve(value);
-      })
-      .catch((error) => {
-        clearTimeout(timer);
-        reject(error);
-      });
-  });
-}
-
 export async function signup({ email, password, fullName, role }: SignupData) {
   try {
     if (password.length < 6) {
@@ -124,17 +104,15 @@ export async function logout() {
 
 export async function getUserProfile(): Promise<UserProfile | null> {
   try {
-    const authResult = await withTimeout(
-      supabase.auth.getUser(),
-      AUTH_TIMEOUT_MS,
-      'Auth getUser'
-    );
+    // Use getSession() instead of getUser() for faster initial load
+    // it retrieves the session from local storage without necessarily a network request
+    const { data: { session }, error: sessionError } = await supabase.auth.getSession();
 
-    if (authResult.error || !authResult.data.user) {
+    if (sessionError || !session?.user) {
       return null;
     }
 
-    const user = authResult.data.user;
+    const user = session.user;
 
     // Fetch user profile from database
     const { data: dbData, error: dbError } = await supabase
@@ -148,7 +126,8 @@ export async function getUserProfile(): Promise<UserProfile | null> {
     }
 
     return dbData as UserProfile;
-  } catch {
+  } catch (error) {
+    console.error('[authService] getUserProfile error:', error);
     return null;
   }
 }

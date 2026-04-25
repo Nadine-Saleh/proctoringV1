@@ -1,6 +1,5 @@
 import { ReactNode } from 'react';
 import { Navigate } from 'react-router-dom';
-import { useAuth } from '../hooks/useAuth';
 import { useApp } from '../context/AppContext';
 import { Loader2 } from 'lucide-react';
 
@@ -10,8 +9,7 @@ interface ProtectedRouteProps {
 }
 
 export function ProtectedRoute({ children, requiredRole }: ProtectedRouteProps) {
-  const { user, isLoading, isAuthenticated } = useAuth();
-  const { role: appRole } = useApp();
+  const { user, isLoading, isAuthenticated, role: appRole } = useApp();
 
   // Show loading spinner while checking auth
   if (isLoading) {
