@@ -2,6 +2,7 @@ import { useParams, useNavigate } from 'react-router-dom';
 import { useEffect, useState } from 'react';
 import { ArrowLeft, Copy, Check, Calendar, Clock, Users, FileText } from 'lucide-react';
 import { ExamService } from '../../services/ExamService';
+import type { ProctoringPolicy } from '../../types/examSession';
 
 interface Exam {
   id: string;
@@ -12,7 +13,7 @@ interface Exam {
   duration_minutes: number;
   status: 'draft' | 'published' | 'closed';
   access_code: string | null;
-  proctoring_policy: Record<string, unknown>;
+  proctoring_policy: ProctoringPolicy;
   published_at: string | null;
   closed_at: string | null;
   created_at: string;

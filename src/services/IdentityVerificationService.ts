@@ -1,4 +1,5 @@
 import { supabase } from '../lib/supabase/client';
+import type { ProctoringPolicy } from '../types/examSession';
 
 export interface JoinExamResponse {
   session_id: string;
@@ -8,13 +9,7 @@ export interface JoinExamResponse {
     description: string | null;
     starts_at: string;
     duration_minutes: number;
-    proctoring_policy: {
-      visual_evidence_allowed: boolean;
-      warning_threshold: number;
-      critical_threshold: number;
-      critical_sustain_seconds: number;
-      max_verification_attempts: number;
-    };
+    proctoring_policy: ProctoringPolicy;
   };
   requires_reference_capture: boolean;
   verification_attempts_remaining: number;

@@ -4,6 +4,20 @@
 // Single source of truth for violation types and severity
 // Consumed by: violationScorer.ts, record_violation_batch RPC, student UI, instructor UI
 
+export interface GazeConfig {
+  peripheral_max_cumulative_min: number;
+  away_max_continuous_s: number;
+}
+
+export interface ProctoringPolicy {
+  visual_evidence_allowed: boolean;
+  warning_threshold: number;
+  critical_threshold: number;
+  critical_sustain_seconds: number;
+  max_verification_attempts: number;
+  gaze_config?: GazeConfig;
+}
+
 export const VIOLATION_TAXONOMY = {
 
   // Gaze

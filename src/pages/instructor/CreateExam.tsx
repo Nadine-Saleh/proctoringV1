@@ -2,6 +2,7 @@ import { useState } from 'react';
 import { useNavigate } from 'react-router-dom';
 import { Plus, Trash2, Clock, Save, Eye, AlertCircle, CheckCircle } from 'lucide-react';
 import { ExamService } from '../../services/ExamService';
+import type { ProctoringPolicy } from '../../types/examSession';
 
 interface Question {
   id: string;
@@ -21,6 +22,8 @@ export const CreateExam = () => {
   const [criticalThreshold, setCriticalThreshold] = useState(70);
   const [criticalSustainSeconds, setCriticalSustainSeconds] = useState(5);
   const [maxVerificationAttempts, setMaxVerificationAttempts] = useState(3);
+  const [peripheralMaxCumulativeMin, setPeripheralMaxCumulativeMin] = useState(30);
+  const [awayMaxContinuousSeconds, setAwayMaxContinuousSeconds] = useState(3);
   const [questions, setQuestions] = useState<Question[]>([
     {
       id: '1',
@@ -94,18 +97,24 @@ export const CreateExam = () => {
     setLoading(true);
 
     try {
+      const proctoringPolicy: ProctoringPolicy = {
+        visual_evidence_allowed: visualEvidenceAllowed,
+        warning_threshold: warningThreshold,
+        critical_threshold: criticalThreshold,
+        critical_sustain_seconds: criticalSustainSeconds,
+        max_verification_attempts: maxVerificationAttempts,
+        gaze_config: {
+          peripheral_max_cumulative_min: peripheralMaxCumulativeMin,
+          away_max_continuous_s: awayMaxContinuousSeconds,
+        },
+      };
+
       const result = await ExamService.createExam({
         title: examTitle,
         description: description || undefined,
         starts_at: new Date(startsAt).toISOString(),
         duration_minutes: duration,
-        proctoring_policy: {
-          visual_evidence_allowed: visualEvidenceAllowed,
-          warning_threshold: warningThreshold,
-          critical_threshold: criticalThreshold,
-          critical_sustain_seconds: criticalSustainSeconds,
-          max_verification_attempts: maxVerificationAttempts,
-        },
+        proctoring_policy: proctoringPolicy,
       });
 
       if (!result.success || !result.examId) {
@@ -308,6 +317,33 @@ export const CreateExam = () => {
                     min="1"
                     value={maxVerificationAttempts}
                     onChange={(e) => setMaxVerificationAttempts(parseInt(e.target.value) || 1)}
+                    className="w-full px-4 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500"
+                  />
+                </div>
+              </div>
+
+              <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+                <div>
+                  <label className="block text-sm font-medium text-gray-700 mb-2">
+                    Peripheral Max / Minute (s)
+                  </label>
+                  <input
+                    type="number"
+                    min="1"
+                    value={peripheralMaxCumulativeMin}
+                    onChange={(e) => setPeripheralMaxCumulativeMin(parseInt(e.target.value) || 1)}
+                    className="w-full px-4 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500"
+                  />
+                </div>
+                <div>
+                  <label className="block text-sm font-medium text-gray-700 mb-2">
+                    Away Max Continuous (s)
+                  </label>
+                  <input
+                    type="number"
+                    min="1"
+                    value={awayMaxContinuousSeconds}
+                    onChange={(e) => setAwayMaxContinuousSeconds(parseInt(e.target.value) || 1)}
                     className="w-full px-4 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500"
                   />
                 </div>

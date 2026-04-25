@@ -13,6 +13,7 @@ import { DistanceSetupModal } from '../../components/DistanceSetupModal';
 import { ExamSubmissionModal } from '../../components/ExamSubmissionModal';
 import { IdentityVerificationService, type StartSessionResponse, type JoinExamResponse } from '../../services/IdentityVerificationService';
 import { CheatingScoreTracker } from '../../services/CheatingScoreService';
+import type { ProctoringPolicy } from '../../types/examSession';
 
 interface ExamQuestion {
   id: string;
@@ -33,6 +34,10 @@ const DEFAULT_POLICY = {
   critical_threshold: 70,
   critical_sustain_seconds: 10,
   max_verification_attempts: 3,
+  gaze_config: {
+    peripheral_max_cumulative_min: 30,
+    away_max_continuous_s: 3,
+  },
 };
 
 export const Exam = () => {
@@ -44,6 +49,10 @@ export const Exam = () => {
 
   const currentExamId = currentExam?.id ? String(currentExam.id) : undefined;
   const currentExamDuration = currentExam?.duration ?? 90;
+  const currentPolicy: ProctoringPolicy =
+    (locationState?.joinData?.exam?.proctoring_policy as ProctoringPolicy | undefined) ??
+    (currentExam?.proctoring_policy as ProctoringPolicy | undefined) ??
+    DEFAULT_POLICY;
 
   // Real questions from DB — seeded from navigation state, fetched otherwise
   const [questions, setQuestions] = useState<ExamQuestion[]>(
@@ -118,17 +127,22 @@ export const Exam = () => {
     sensitivity: 'medium',
     enableCalibration: false,
     enableWarnings: true,
+    proctoringPolicy: currentPolicy,
     onCanonicalViolation: (v) => {
       if (!session?.id || !examStarted) return;
+      const persistedType = v.type === 'gaze_peripheral' ? 'gaze_looking_away' : 'gaze_prolonged_away';
       recordViolation({
-        violation_type: v.type,
+        violation_type: persistedType,
         severity: v.severity,
         occurred_at: v.client_captured_at,
         duration_ms: v.duration_ms,
         description: v.description,
-        metadata: v.metadata as Record<string, unknown>,
+        metadata: {
+          ...v.metadata,
+          emitted_type: v.type,
+        } as Record<string, unknown>,
         client_event_id: '',
-        type: v.type,
+        type: persistedType,
         client_captured_at: v.client_captured_at,
       });
     },
@@ -205,8 +219,7 @@ export const Exam = () => {
 
   // ── Gaze status tracking ──
   useEffect(() => {
-    const awayZones = ['left', 'right', 'up', 'down', 'away'];
-    setGazeStatus(awayZones.includes(gazeZone) ? 'looking-away' : 'center');
+    setGazeStatus(gazeZone === 'on_screen' ? 'center' : 'looking-away');
   }, [gazeZone]);
 
   // T062: Graduated non-blocking warnings based on authoritative score

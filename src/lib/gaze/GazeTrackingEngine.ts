@@ -21,7 +21,7 @@ import {
 // ==================== Types ====================
 
 export interface GazeZone {
-  id: 'on-screen' | 'left' | 'right' | 'up' | 'down' | 'away';
+  id: 'on_screen' | 'peripheral' | 'away' | 'no_face';
   label: string;
   severity: 'none' | 'warning' | 'critical';
 }
@@ -29,11 +29,14 @@ export interface GazeZone {
 export interface GazeSample {
   timestamp: number;
   zone: GazeZone['id'];
+  gazeAngle: number; // degrees from screen center
   confidence: number;
   faceDistance: number; // 0-1, normalized distance from camera
   headPitch: number; // degrees
   headYaw: number; // degrees
   headRoll: number; // degrees
+  eyeOffsetX: number; // normalized, relative to eye center
+  eyeOffsetY: number; // normalized, relative to eye center
   leftEyeOpen: number; // 0-1
   rightEyeOpen: number; // 0-1
   isBlinking: boolean;
@@ -188,7 +191,7 @@ export class GazeTrackingEngine {
   private sessionStartTime = 0;
   private onScreenStartTime: number | null = null;
   private offScreenStartTime: number | null = null;
-  private lastGazeZone: GazeZone['id'] = 'on-screen';
+  private lastGazeZone: GazeZone['id'] = 'on_screen';
   private gazeShiftCount = 0;
   private longestOffScreenPeriod = 0;
   private blinkCount = 0;
@@ -432,7 +435,7 @@ export class GazeTrackingEngine {
         } else {
           // No face detected
           const sample = this.createNoFaceSample(now);
-          this.updateState({ currentSample: sample, currentZone: 'away' });
+          this.updateState({ currentSample: sample, currentZone: 'no_face' });
           this.checkViolations(sample);
         }
 
@@ -459,8 +462,9 @@ export class GazeTrackingEngine {
     // Calculate face distance
     const faceDistance = this.estimateFaceDistance(landmarks);
     
-    // Determine gaze zone
-    const zone = this.determineGazeZone(leftPupilPos, rightPupilPos, headPose);
+    const eyeOffset = this.calculateAverageEyeOffset(leftPupilPos, rightPupilPos);
+    const gazeAngle = this.calculateScreenCenterAngle(headPose, eyeOffset);
+    const zone = this.determineGazeZone(gazeAngle, leftPupilPos, rightPupilPos);
     
     // Check blinking
     const isBlinking = leftEyeOpen < this.config.blinkThreshold && 
@@ -469,11 +473,14 @@ export class GazeTrackingEngine {
     const sample: GazeSample = {
       timestamp,
       zone,
+      gazeAngle,
       confidence: 0.95,
       faceDistance,
       headPitch: headPose.pitch,
       headYaw: headPose.yaw,
       headRoll: headPose.roll,
+      eyeOffsetX: eyeOffset.x,
+      eyeOffsetY: eyeOffset.y,
       leftEyeOpen,
       rightEyeOpen,
       isBlinking
@@ -489,35 +496,40 @@ export class GazeTrackingEngine {
   }
 
   private determineGazeZone(
+    gazeAngle: number,
     leftPupil: { x: number; y: number } | null,
-    rightPupil: { x: number; y: number } | null,
-    headPose: { pitch: number; yaw: number; roll: number }
+    rightPupil: { x: number; y: number } | null
   ): GazeZone['id'] {
     if (!leftPupil || !rightPupil) {
-      return 'away';
+      return 'no_face';
     }
 
-    const avgX = (leftPupil.x + rightPupil.x) / 2;
-    const avgY = (leftPupil.y + rightPupil.y) / 2;
+    if (gazeAngle < 15) return 'on_screen';
+    if (gazeAngle <= 45) return 'peripheral';
+    return 'away';
+  }
 
-    // Use head pose as primary indicator
-    const yaw = headPose.yaw;
-    const pitch = headPose.pitch;
+  private calculateAverageEyeOffset(
+    leftPupil: { x: number; y: number } | null,
+    rightPupil: { x: number; y: number } | null
+  ): { x: number; y: number } {
+    if (!leftPupil || !rightPupil) {
+      return { x: 0, y: 0 };
+    }
 
-    // Head-pose driven zones. Reading normal screen content should stay on-screen;
-    // only real head turns/tilts should cross these thresholds.
-    if (yaw < -20) return 'left';
-    if (yaw > 20) return 'right';
-    if (pitch < -22) return 'up';
-    if (pitch > 25) return 'down';
+    return {
+      x: (leftPupil.x + rightPupil.x) / 2,
+      y: (leftPupil.y + rightPupil.y) / 2,
+    };
+  }
 
-    // Pupil-based fine-tuning disabled by default: normal left-to-right reading
-    // easily exceeds any realistic iris-offset threshold, producing false positives.
-    // Head pose above is the primary signal for gaze-off-screen.
-    void avgX;
-    void avgY;
-
-    return 'on-screen';
+  private calculateScreenCenterAngle(
+    headPose: { pitch: number; yaw: number; roll: number },
+    eyeOffset: { x: number; y: number }
+  ): number {
+    const horizontalAngle = headPose.yaw + eyeOffset.x * 1200;
+    const verticalAngle = headPose.pitch + eyeOffset.y * 1000;
+    return Math.hypot(horizontalAngle, verticalAngle);
   }
 
   // ==================== Eye Calculations ====================
@@ -634,7 +646,7 @@ export class GazeTrackingEngine {
     const now = Date.now();
 
     // Off-screen detection
-    if (sample.zone !== 'on-screen') {
+    if (sample.zone !== 'on_screen') {
       if (!this.offScreenStartTime) {
         this.offScreenStartTime = now;
       } else {
@@ -773,14 +785,14 @@ export class GazeTrackingEngine {
 
     // Track gaze shifts
     if (sample.zone !== this.lastGazeZone) {
-      if (this.lastGazeZone === 'on-screen' || sample.zone === 'on-screen') {
+      if (this.lastGazeZone === 'on_screen' || sample.zone === 'on_screen') {
         this.gazeShiftCount++;
       }
       this.lastGazeZone = sample.zone;
     }
 
     // Track on/off screen time
-    if (sample.zone === 'on-screen') {
+    if (sample.zone === 'on_screen') {
       if (!this.onScreenStartTime) {
         this.onScreenStartTime = now;
       }
@@ -848,7 +860,7 @@ export class GazeTrackingEngine {
       isRunning: false,
       isCalibrated: false,
       modelsLoaded: false,
-      currentZone: 'on-screen',
+      currentZone: 'on_screen',
       currentSample: null,
       attentionMetrics: this.createDefaultMetrics(),
       violations: [],
@@ -889,12 +901,15 @@ export class GazeTrackingEngine {
   private createNoFaceSample(timestamp: number): GazeSample {
     return {
       timestamp,
-      zone: 'away',
+      zone: 'no_face',
+      gazeAngle: 90,
       confidence: 0,
       faceDistance: 0,
       headPitch: 0,
       headYaw: 0,
       headRoll: 0,
+      eyeOffsetX: 0,
+      eyeOffsetY: 0,
       leftEyeOpen: 0,
       rightEyeOpen: 0,
       isBlinking: false

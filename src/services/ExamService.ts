@@ -1,4 +1,5 @@
 import { supabase } from '../lib/supabase/client';
+import type { ProctoringPolicy } from '../types/examSession';
 
 interface Exam {
   id: string;
@@ -8,7 +9,7 @@ interface Exam {
   starts_at: string;
   duration_minutes: number;
   status: 'draft' | 'published' | 'closed';
-  proctoring_policy: Record<string, unknown>;
+  proctoring_policy: ProctoringPolicy;
   access_code: string | null;
   published_at: string | null;
   closed_at: string | null;
@@ -21,7 +22,7 @@ interface CreateExamInput {
   starts_at: string;
   duration_minutes: number;
   description?: string;
-  proctoring_policy?: Record<string, unknown>;
+  proctoring_policy?: ProctoringPolicy;
 }
 
 interface UpdateExamInput {
@@ -29,7 +30,7 @@ interface UpdateExamInput {
   description?: string;
   starts_at?: string;
   duration_minutes?: number;
-  proctoring_policy?: Record<string, unknown>;
+  proctoring_policy?: ProctoringPolicy;
 }
 
 export class ExamService {
