@@ -1,5 +1,8 @@
 import { useState } from 'react';
-import { Plus, Trash2, Clock, FileText, Save, Eye } from 'lucide-react';
+import { useNavigate } from 'react-router-dom';
+import { Plus, Trash2, Clock, Save, Eye, AlertCircle, CheckCircle } from 'lucide-react';
+import { ExamService } from '../../services/ExamService';
+import type { ProctoringPolicy } from '../../types/examSession';
 
 interface Question {
   id: string;
@@ -9,9 +12,18 @@ interface Question {
 }
 
 export const CreateExam = () => {
+  const navigate = useNavigate();
   const [examTitle, setExamTitle] = useState('');
-  const [subject, setSubject] = useState('');
+  const [description, setDescription] = useState('');
+  const [startsAt, setStartsAt] = useState(new Date(Date.now() + 3600000).toISOString().slice(0, 16));
   const [duration, setDuration] = useState(60);
+  const [visualEvidenceAllowed, setVisualEvidenceAllowed] = useState(true);
+  const [warningThreshold, setWarningThreshold] = useState(30);
+  const [criticalThreshold, setCriticalThreshold] = useState(70);
+  const [criticalSustainSeconds, setCriticalSustainSeconds] = useState(5);
+  const [maxVerificationAttempts, setMaxVerificationAttempts] = useState(3);
+  const [peripheralMaxCumulativeMin, setPeripheralMaxCumulativeMin] = useState(30);
+  const [awayMaxContinuousSeconds, setAwayMaxContinuousSeconds] = useState(3);
   const [questions, setQuestions] = useState<Question[]>([
     {
       id: '1',
@@ -20,6 +32,9 @@ export const CreateExam = () => {
       correctAnswer: 0
     }
   ]);
+  const [loading, setLoading] = useState(false);
+  const [error, setError] = useState<string | null>(null);
+  const [success, setSuccess] = useState<string | null>(null);
 
   const addQuestion = () => {
     setQuestions([
@@ -65,8 +80,87 @@ export const CreateExam = () => {
     );
   };
 
-  const handleSave = () => {
-    alert('Exam saved successfully!');
+  const handleSave = async () => {
+    setError(null);
+    setSuccess(null);
+
+    if (!examTitle.trim()) {
+      setError('Exam title is required');
+      return;
+    }
+
+    if (duration <= 0) {
+      setError('Duration must be greater than 0');
+      return;
+    }
+
+    setLoading(true);
+
+    try {
+      const proctoringPolicy: ProctoringPolicy = {
+        visual_evidence_allowed: visualEvidenceAllowed,
+        warning_threshold: warningThreshold,
+        critical_threshold: criticalThreshold,
+        critical_sustain_seconds: criticalSustainSeconds,
+        max_verification_attempts: maxVerificationAttempts,
+        gaze_config: {
+          peripheral_max_cumulative_min: peripheralMaxCumulativeMin,
+          away_max_continuous_s: awayMaxContinuousSeconds,
+        },
+      };
+
+      const result = await ExamService.createExam({
+        title: examTitle,
+        description: description || undefined,
+        starts_at: new Date(startsAt).toISOString(),
+        duration_minutes: duration,
+        proctoring_policy: proctoringPolicy,
+      });
+
+      if (!result.success || !result.examId) {
+        setError(result.error || 'Failed to create exam');
+        return;
+      }
+
+      setSuccess('Exam created successfully! Saving questions...');
+
+      const validQuestions = questions.filter((q) => q.question.trim());
+      if (validQuestions.length === 0) {
+        setError('At least one question is required to publish');
+        return;
+      }
+
+      const saveResult = await ExamService.saveQuestions(
+        result.examId,
+        validQuestions.map((q) => ({
+          question_text: q.question,
+          options: q.options,
+          correct_answer_index: q.correctAnswer,
+        }))
+      );
+
+      if (!saveResult.success) {
+        setError('Exam created but failed to save questions: ' + saveResult.error);
+        return;
+      }
+
+      setSuccess('Questions saved! Publishing...');
+
+      const publishResult = await ExamService.publishExam(result.examId);
+      if (publishResult.success) {
+        setSuccess('Exam published with access code: ' + publishResult.accessCode);
+        setTimeout(() => {
+          navigate(`/instructor/exams/${result.examId}`);
+        }, 2000);
+      } else {
+        setError('Exam created but failed to publish: ' + publishResult.error);
+      }
+    } catch (err) {
+      const message = err instanceof Error ? err.message : 'Unknown error';
+      setError(message);
+    } finally {
+      setLoading(false);
+    }
   };
 
   return (
@@ -74,8 +168,28 @@ export const CreateExam = () => {
       <div className="max-w-5xl mx-auto px-4 sm:px-6 lg:px-8 py-12">
         <div className="mb-8">
           <h1 className="text-4xl font-bold text-gray-900 mb-2">Create New Exam</h1>
-          <p className="text-lg text-gray-600">Design your exam with questions and settings</p>
+          <p className="text-lg text-gray-600">Design your exam with questions and proctoring settings</p>
         </div>
+
+        {error && (
+          <div className="mb-6 p-4 bg-red-50 border border-red-200 rounded-lg flex items-start gap-3">
+            <AlertCircle className="w-5 h-5 text-red-600 mt-0.5 flex-shrink-0" />
+            <div>
+              <h3 className="font-medium text-red-900">Error</h3>
+              <p className="text-sm text-red-700">{error}</p>
+            </div>
+          </div>
+        )}
+
+        {success && (
+          <div className="mb-6 p-4 bg-green-50 border border-green-200 rounded-lg flex items-start gap-3">
+            <CheckCircle className="w-5 h-5 text-green-600 mt-0.5 flex-shrink-0" />
+            <div>
+              <h3 className="font-medium text-green-900">Success</h3>
+              <p className="text-sm text-green-700">{success}</p>
+            </div>
+          </div>
+        )}
 
         <div className="bg-white rounded-xl shadow-sm border border-gray-200 p-8 mb-6">
           <h2 className="text-2xl font-semibold text-gray-900 mb-6">Exam Details</h2>
@@ -83,7 +197,7 @@ export const CreateExam = () => {
           <div className="grid grid-cols-1 md:grid-cols-2 gap-6 mb-6">
             <div>
               <label className="block text-sm font-medium text-gray-700 mb-2">
-                Exam Title
+                Exam Title <span className="text-red-500">*</span>
               </label>
               <input
                 type="text"
@@ -95,21 +209,33 @@ export const CreateExam = () => {
             </div>
 
             <div>
-              <label className="block text-sm font-medium text-gray-700 mb-2">Subject</label>
+              <label className="block text-sm font-medium text-gray-700 mb-2">Description</label>
               <input
                 type="text"
-                value={subject}
-                onChange={(e) => setSubject(e.target.value)}
-                placeholder="e.g., Computer Science"
+                value={description}
+                onChange={(e) => setDescription(e.target.value)}
+                placeholder="Optional exam description"
                 className="w-full px-4 py-3 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-transparent transition-all"
               />
             </div>
           </div>
 
-          <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
+          <div className="grid grid-cols-1 md:grid-cols-2 gap-6 mb-6">
             <div>
               <label className="block text-sm font-medium text-gray-700 mb-2">
-                Duration (minutes)
+                Starts At <span className="text-red-500">*</span>
+              </label>
+              <input
+                type="datetime-local"
+                value={startsAt}
+                onChange={(e) => setStartsAt(e.target.value)}
+                className="w-full px-4 py-3 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-transparent transition-all"
+              />
+            </div>
+
+            <div>
+              <label className="block text-sm font-medium text-gray-700 mb-2">
+                Duration (minutes) <span className="text-red-500">*</span>
               </label>
               <div className="relative">
                 <Clock className="absolute left-3 top-1/2 transform -translate-y-1/2 w-5 h-5 text-gray-400" />
@@ -121,19 +247,106 @@ export const CreateExam = () => {
                 />
               </div>
             </div>
+          </div>
 
-            <div>
-              <label className="block text-sm font-medium text-gray-700 mb-2">
-                Total Questions
-              </label>
-              <div className="relative">
-                <FileText className="absolute left-3 top-1/2 transform -translate-y-1/2 w-5 h-5 text-gray-400" />
+          <div className="border-t pt-6">
+            <h3 className="text-lg font-semibold text-gray-900 mb-4">Proctoring Policy</h3>
+
+            <div className="space-y-4">
+              <div className="flex items-center">
                 <input
-                  type="number"
-                  value={questions.length}
-                  readOnly
-                  className="w-full pl-11 pr-4 py-3 border border-gray-300 rounded-lg bg-gray-50 cursor-not-allowed"
+                  type="checkbox"
+                  id="visualEvidence"
+                  checked={visualEvidenceAllowed}
+                  onChange={(e) => setVisualEvidenceAllowed(e.target.checked)}
+                  className="w-4 h-4 text-blue-600 rounded focus:ring-2 focus:ring-blue-500"
                 />
+                <label htmlFor="visualEvidence" className="ml-3 text-sm font-medium text-gray-700">
+                  Allow Visual Evidence Capture
+                </label>
+              </div>
+
+              <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+                <div>
+                  <label className="block text-sm font-medium text-gray-700 mb-2">
+                    Warning Threshold (0-100)
+                  </label>
+                  <input
+                    type="number"
+                    min="0"
+                    max="100"
+                    value={warningThreshold}
+                    onChange={(e) => setWarningThreshold(parseInt(e.target.value) || 0)}
+                    className="w-full px-4 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500"
+                  />
+                </div>
+                <div>
+                  <label className="block text-sm font-medium text-gray-700 mb-2">
+                    Critical Threshold (0-100)
+                  </label>
+                  <input
+                    type="number"
+                    min="0"
+                    max="100"
+                    value={criticalThreshold}
+                    onChange={(e) => setCriticalThreshold(parseInt(e.target.value) || 0)}
+                    className="w-full px-4 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500"
+                  />
+                </div>
+              </div>
+
+              <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+                <div>
+                  <label className="block text-sm font-medium text-gray-700 mb-2">
+                    Critical Sustain Seconds
+                  </label>
+                  <input
+                    type="number"
+                    min="1"
+                    value={criticalSustainSeconds}
+                    onChange={(e) => setCriticalSustainSeconds(parseInt(e.target.value) || 1)}
+                    className="w-full px-4 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500"
+                  />
+                </div>
+                <div>
+                  <label className="block text-sm font-medium text-gray-700 mb-2">
+                    Max Verification Attempts
+                  </label>
+                  <input
+                    type="number"
+                    min="1"
+                    value={maxVerificationAttempts}
+                    onChange={(e) => setMaxVerificationAttempts(parseInt(e.target.value) || 1)}
+                    className="w-full px-4 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500"
+                  />
+                </div>
+              </div>
+
+              <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+                <div>
+                  <label className="block text-sm font-medium text-gray-700 mb-2">
+                    Peripheral Max / Minute (s)
+                  </label>
+                  <input
+                    type="number"
+                    min="1"
+                    value={peripheralMaxCumulativeMin}
+                    onChange={(e) => setPeripheralMaxCumulativeMin(parseInt(e.target.value) || 1)}
+                    className="w-full px-4 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500"
+                  />
+                </div>
+                <div>
+                  <label className="block text-sm font-medium text-gray-700 mb-2">
+                    Away Max Continuous (s)
+                  </label>
+                  <input
+                    type="number"
+                    min="1"
+                    value={awayMaxContinuousSeconds}
+                    onChange={(e) => setAwayMaxContinuousSeconds(parseInt(e.target.value) || 1)}
+                    className="w-full px-4 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500"
+                  />
+                </div>
               </div>
             </div>
           </div>
@@ -203,23 +416,28 @@ export const CreateExam = () => {
         <div className="flex items-center justify-between mt-6">
           <button
             onClick={addQuestion}
-            className="flex items-center space-x-2 px-6 py-3 border-2 border-dashed border-gray-300 rounded-lg text-gray-600 hover:border-blue-500 hover:text-blue-600 transition-colors"
+            disabled={loading}
+            className="flex items-center space-x-2 px-6 py-3 border-2 border-dashed border-gray-300 rounded-lg text-gray-600 hover:border-blue-500 hover:text-blue-600 transition-colors disabled:opacity-50 disabled:cursor-not-allowed"
           >
             <Plus className="w-5 h-5" />
             <span className="font-medium">Add Question</span>
           </button>
 
           <div className="flex items-center space-x-3">
-            <button className="flex items-center space-x-2 px-6 py-3 border border-gray-300 rounded-lg text-gray-700 hover:bg-gray-50 transition-colors">
+            <button
+              disabled={loading}
+              className="flex items-center space-x-2 px-6 py-3 border border-gray-300 rounded-lg text-gray-700 hover:bg-gray-50 transition-colors disabled:opacity-50 disabled:cursor-not-allowed"
+            >
               <Eye className="w-5 h-5" />
               <span className="font-medium">Preview</span>
             </button>
             <button
               onClick={handleSave}
-              className="flex items-center space-x-2 px-8 py-3 bg-blue-600 text-white rounded-lg hover:bg-blue-700 transition-colors"
+              disabled={loading}
+              className="flex items-center space-x-2 px-8 py-3 bg-blue-600 text-white rounded-lg hover:bg-blue-700 transition-colors disabled:bg-blue-400 disabled:cursor-not-allowed"
             >
               <Save className="w-5 h-5" />
-              <span className="font-semibold">Save Exam</span>
+              <span className="font-semibold">{loading ? 'Publishing...' : 'Create & Publish'}</span>
             </button>
           </div>
         </div>

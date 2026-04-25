@@ -1,9 +1,14 @@
 import { Link, useLocation } from 'react-router-dom';
 import { useApp } from '../context/AppContext';
-import { Home, FileText, BarChart3, Users, Shield } from 'lucide-react';
+import { Home, FileText, BarChart3, Shield, LogOut } from 'lucide-react';
 
-export const Navigation = () => {
-  const { role, setRole } = useApp();
+interface NavigationProps {
+  onSignOut?: () => void;
+  userName?: string;
+}
+
+export const Navigation = ({ onSignOut, userName }: NavigationProps) => {
+  const { role } = useApp();
   const location = useLocation();
 
   const studentLinks = [
@@ -19,6 +24,19 @@ export const Navigation = () => {
   ];
 
   const links = role === 'student' ? studentLinks : instructorLinks;
+
+  // Get user initials for avatar
+  const getInitials = () => {
+    if (userName) {
+      return userName
+        .split(' ')
+        .map((n: string) => n[0])
+        .join('')
+        .toUpperCase()
+        .slice(0, 2);
+    }
+    return role === 'student' ? 'S' : 'I';
+  };
 
   return (
     <nav className="bg-white border-b border-gray-200 sticky top-0 z-50">
@@ -53,20 +71,20 @@ export const Navigation = () => {
           </div>
 
           <div className="flex items-center space-x-4">
-            <button
-              onClick={() => setRole(role === 'student' ? 'instructor' : 'student')}
-              className="flex items-center space-x-2 px-4 py-2 bg-gray-100 hover:bg-gray-200 rounded-lg transition-colors"
-            >
-              <Users className="w-4 h-4" />
-              <span className="text-sm font-medium">
-                Switch to {role === 'student' ? 'Instructor' : 'Student'}
-              </span>
-            </button>
-
             <div className="flex items-center space-x-3">
               <div className="w-10 h-10 rounded-full bg-gradient-to-br from-blue-500 to-blue-600 flex items-center justify-center text-white font-semibold">
-                {role === 'student' ? 'S' : 'I'}
+                {getInitials()}
               </div>
+              
+              {onSignOut && (
+                <button
+                  onClick={onSignOut}
+                  className="flex items-center space-x-2 px-3 py-2 text-gray-600 hover:text-red-600 hover:bg-red-50 rounded-lg transition-colors"
+                  title="Sign Out"
+                >
+                  <LogOut className="w-5 h-5" />
+                </button>
+              )}
             </div>
           </div>
         </div>

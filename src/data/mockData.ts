@@ -63,7 +63,8 @@ export const mockProctoringEvents = [
     timestamp: '2026-02-18T14:15:23',
     type: 'face_not_detected',
     severity: 'high',
-    description: 'Student face not detected for 8 seconds'
+    description: 'Student face not detected for 8 seconds',
+    evidenceImage: null
   },
   {
     id: 2,
@@ -73,7 +74,8 @@ export const mockProctoringEvents = [
     timestamp: '2026-02-18T14:22:10',
     type: 'multiple_faces',
     severity: 'critical',
-    description: 'Multiple faces detected in frame'
+    description: 'Multiple faces detected in frame',
+    evidenceImage: 'data:image/jpeg;base64,/9j/4AAQSkZJRgABAQAAAQABAAD/2wBDAAYEBQYFBAYGBQYHBwYIChAKCgkJChQODwwQFxQYGBcUFhYaHSUfGhsjHBYWICwgIyYnKSopGR8tMC0oMCUoKSj/2wBDAQcHBwoIChMKChMoGhYaKCgoKCgoKCgoKCgoKCgoKCgoKCgoKCgoKCgoKCgoKCgoKCgoKCgoKCgoKCgoKCgoKCj/wAARCAAIAAoDASIAAhEBAxEB/8QAFQABAQAAAAAAAAAAAAAAAAAAAAv/xAAUEAEAAAAAAAAAAAAAAAAAAAAA/8QAFQEBAQAAAAAAAAAAAAAAAAAAAAX/xAAUEQEAAAAAAAAAAAAAAAAAAAAA/9oADAMBAAIRAxEAPwCdABmX/9k='
   },
   {
     id: 3,
@@ -83,7 +85,8 @@ export const mockProctoringEvents = [
     timestamp: '2026-02-18T14:18:45',
     type: 'tab_switch',
     severity: 'medium',
-    description: 'Browser tab switched'
+    description: 'Browser tab switched',
+    evidenceImage: null
   },
   {
     id: 4,
@@ -93,7 +96,8 @@ export const mockProctoringEvents = [
     timestamp: '2026-02-18T14:25:33',
     type: 'phone_detected',
     severity: 'high',
-    description: 'Mobile device detected in frame'
+    description: 'Mobile device detected in frame',
+    evidenceImage: 'data:image/jpeg;base64,/9j/4AAQSkZJRgABAQAAAQABAAD/2wBDAAYEBQYFBAYGBQYHBwYIChAKCgkJChQODwwQFxQYGBcUFhYaHSUfGhsjHBYWICwgIyYnKSopGR8tMC0oMCUoKSj/2wBDAQcHBwoIChMKChMoGhYaKCgoKCgoKCgoKCgoKCgoKCgoKCgoKCgoKCgoKCgoKCgoKCgoKCgoKCgoKCgoKCgoKCj/wAARCAAIAAoDASIAAhEBAxEB/8QAFQABAQAAAAAAAAAAAAAAAAAAAAv/xAAUEAEAAAAAAAAAAAAAAAAAAAAA/8QAFQEBAQAAAAAAAAAAAAAAAAAAAAX/xAAUEQEAAAAAAAAAAAAAAAAAAAAA/9oADAMBAAIRAxEAPwCdABmX/9k='
   },
   {
     id: 5,
@@ -103,7 +107,8 @@ export const mockProctoringEvents = [
     timestamp: '2026-02-18T14:30:15',
     type: 'looking_away',
     severity: 'medium',
-    description: 'Student looking away from screen for 3 seconds'
+    description: 'Student looking away from screen for 3 seconds',
+    evidenceImage: null
   },
   {
     id: 6,
@@ -113,7 +118,8 @@ export const mockProctoringEvents = [
     timestamp: '2026-02-18T14:35:42',
     type: 'eye_closure',
     severity: 'high',
-    description: 'Eye closure detected for 1.2 seconds'
+    description: 'Eye closure detected for 1.2 seconds',
+    evidenceImage: null
   },
   {
     id: 7,
@@ -123,7 +129,8 @@ export const mockProctoringEvents = [
     timestamp: '2026-02-18T14:40:18',
     type: 'rapid_eye_movement',
     severity: 'medium',
-    description: 'Detected 7 rapid eye movements in 2 seconds'
+    description: 'Detected 7 rapid eye movements in 2 seconds',
+    evidenceImage: null
   },
   {
     id: 8,
@@ -133,7 +140,8 @@ export const mockProctoringEvents = [
     timestamp: '2026-02-18T14:45:55',
     type: 'looking_away',
     severity: 'high',
-    description: 'Student looking away from screen for 6 seconds'
+    description: 'Student looking away from screen for 6 seconds',
+    evidenceImage: 'data:image/jpeg;base64,/9j/4AAQSkZJRgABAQAAAQABAAD/2wBDAAYEBQYFBAYGBQYHBwYIChAKCgkJChQODwwQFxQYGBcUFhYaHSUfGhsjHBYWICwgIyYnKSopGR8tMC0oMCUoKSj/2wBDAQcHBwoIChMKChMoGhYaKCgoKCgoKCgoKCgoKCgoKCgoKCgoKCgoKCgoKCgoKCgoKCgoKCgoKCgoKCgoKCgoKCj/wAARCAAIAAoDASIAAhEBAxEB/8QAFQABAQAAAAAAAAAAAAAAAAAAAAv/xAAUEAEAAAAAAAAAAAAAAAAAAAAA/8QAFQEBAQAAAAAAAAAAAAAAAAAAAAX/xAAUEQEAAAAAAAAAAAAAAAAAAAAA/9oADAMBAAIRAxEAPwCdABmX/9k='
   },
   {
     id: 9,
@@ -143,7 +151,8 @@ export const mockProctoringEvents = [
     timestamp: '2026-02-18T14:50:30',
     type: 'excessive_blinking',
     severity: 'low',
-    description: 'Excessive blinking detected (15 blinks in 30 seconds)'
+    description: 'Excessive blinking detected (15 blinks in 30 seconds)',
+    evidenceImage: null
   }
 ];
 

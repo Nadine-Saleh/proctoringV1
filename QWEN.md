@@ -22,29 +22,58 @@
 src/
 ├── components/          # Reusable UI components
 │   ├── ui/             # Base UI elements
+│   ├── CalibrationModal.tsx
+│   ├── DistanceSetupModal.tsx
+│   ├── ExamSubmissionModal.tsx
 │   ├── EyeGazeMonitor.tsx
 │   ├── GazeTrackingOverlay.tsx
 │   ├── LivenessCheckModal.tsx
-│   └── Navigation.tsx
+│   ├── Navigation.tsx
+│   ├── ProtectedRoute.tsx
+│   └── ViolationExplanation.tsx
 ├── context/            # React context (AppContext for state management)
+│   └── AppContext.tsx
 ├── data/               # Mock data for development
+│   └── mockData.ts
+├── examSession/        # Exam session management
+│   └── index.ts
 ├── hooks/              # Custom React hooks
-│   ├── useEyeGazeDetection.ts    # Eye gaze tracking with MediaPipe
-│   ├── useFaceDetection.ts       # Face detection hook
-│   ├── useGazeTracking.ts        # New gaze tracking system
-│   ├── useLivenessCheck.ts       # Liveness verification
-│   └── useProctoring.ts          # Main proctoring logic
+│   ├── useAuth.ts               # Authentication hook
+│   ├── useExamAnswers.ts        # Exam answer tracking
+│   ├── useExamSession.ts        # Exam session management
+│   ├── useEyeGazeDetection.ts   # Eye gaze tracking with MediaPipe
+│   ├── useFaceDetection.ts      # Face detection hook
+│   ├── useGazeTracking.ts       # New gaze tracking system
+│   ├── useLivenessCheck.ts      # Liveness verification
+│   ├── useProctoring.ts         # Main proctoring logic
+│   └── useViolationTracker.ts   # Violation tracking and scoring
 ├── lib/                # Framework-agnostic libraries
-│   └── gaze/           # Gaze tracking engine
+│   ├── gaze/           # Gaze tracking engine
+│   │   └── GazeTrackingEngine.ts
+│   └── supabase/       # Supabase client configuration
+│       └── client.ts
 ├── pages/              # Page components
-│   ├── instructor/     # Instructor dashboard, exam creation, results, proctoring
-│   └── student/        # Student home, exam taking, results
+│   ├── auth/           # Login and Signup pages
+│   ├── instructor/     # Dashboard, CreateExam, Results, Proctoring
+│   └── student/        # Home, Exam taking, Results
 ├── services/           # Business logic services
-│   ├── FaceDetectionService.ts
-│   └── LivenessDetectionModule.ts
+│   ├── ExamSessionService.ts     # Exam session lifecycle
+│   ├── ExamSubmissionService.ts  # Exam submission handling
+│   ├── FaceDetectionService.ts   # Face detection wrapper
+│   ├── instructorAlertService.ts # Instructor alert notifications
+│   ├── LivenessDetectionModule.ts # Liveness verification
+│   ├── StudentAnswerService.ts   # Answer tracking and validation
+│   └── ViolationEventService.ts  # Violation event logging
+├── types/              # TypeScript type definitions
+│   └── examSession.ts
+├── utils/              # Utility functions
+│   ├── OfflineQueue.ts      # Offline operation queuing
+│   ├── SessionHeartbeat.ts  # Session keep-alive mechanism
+│   └── violationScorer.ts   # Violation severity scoring
 ├── App.tsx             # Main app with routing
 ├── main.tsx            # Entry point
-└── index.css           # Global styles (Tailwind)
+├── index.css           # Global styles (Tailwind)
+└── vite-env.d.ts       # Vite environment type declarations
 ```
 
 ## Tech Stack
