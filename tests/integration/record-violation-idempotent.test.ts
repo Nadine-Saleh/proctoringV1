@@ -62,7 +62,7 @@ describe('record_violation_batch idempotency', () => {
       p_embedding: mockEmbedding,
     });
 
-    await client.rpc('start_exam_session', { p_session_id: sessionId });
+    await client.rpc('start_exam_session', { p_session_id: sessionId, p_calibration: { calibration_skipped: true } });
   });
 
   it('inserts exactly one row when same client_event_id is sent twice', async () => {

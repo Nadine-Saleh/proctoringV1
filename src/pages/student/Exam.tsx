@@ -12,6 +12,7 @@ import { LivenessCheckModal } from '../../components/LivenessCheckModal';
 import { DistanceSetupModal } from '../../components/DistanceSetupModal';
 import { ExamSubmissionModal } from '../../components/ExamSubmissionModal';
 import { IdentityVerificationService, type StartSessionResponse, type JoinExamResponse } from '../../services/IdentityVerificationService';
+import { DistanceCalibrationService } from '../../services/DistanceCalibrationService';
 import { CheatingScoreTracker } from '../../services/CheatingScoreService';
 import type { ProctoringPolicy } from '../../types/examSession';
 
@@ -67,7 +68,6 @@ export const Exam = () => {
     session,
     isLoading: sessionLoading,
     error: sessionError,
-    startSession,
     submitExam,
     timeElapsed,
     startTimer,
@@ -112,9 +112,17 @@ export const Exam = () => {
     level: 'info' | 'warning' | 'critical';
   } | null>(null);
 
-  const [optimalDistanceCm, setOptimalDistanceCm] = useState<number | null>(null);
+  const [sessionCalibration, setSessionCalibration] = useState<{
+    optimal_distance_cm: number;
+    distance_tolerance_cm: number;
+    calibration_skipped: boolean;
+  } | null>(null);
 
-  const { status, videoRef: proctoringVideoRef, retryCamera, setCanonicalViolationCallback, captureViolationSnapshot } = useProctoring(examStarted);
+  const { status, videoRef: proctoringVideoRef, retryCamera, setCanonicalViolationCallback, captureViolationSnapshot } = useProctoring(
+    examStarted,
+    sessionCalibration?.optimal_distance_cm,
+    sessionCalibration?.distance_tolerance_cm
+  );
 
   const {
     isRunning: gazeRunning,
@@ -294,9 +302,17 @@ export const Exam = () => {
   useEffect(() => {
     const sid = session?.id ?? sessionId;
     if (!examStarted || !sid || questions.length > 0) return;
-    IdentityVerificationService.startSession(sid).then(result => {
+    IdentityVerificationService.startSession(sid, DistanceCalibrationService.asSkipped()).then(result => {
       if (result.success && result.data?.questions?.length) {
         setQuestions(result.data.questions as ExamQuestion[]);
+        if (!sessionCalibration && result.data.session) {
+          const cal = result.data.session;
+          setSessionCalibration({
+            optimal_distance_cm: cal.optimal_distance_cm,
+            distance_tolerance_cm: cal.distance_tolerance_cm,
+            calibration_skipped: cal.calibration_skipped,
+          });
+        }
       }
     });
   }, [examStarted, session?.id, sessionId, questions.length]);
@@ -350,22 +366,37 @@ export const Exam = () => {
 
   const handleCancelSubmit = useCallback(() => setShowSubmissionModal(false), []);
 
-  const handleSetOptimalDistance = useCallback((distance: number) => {
-    setOptimalDistanceCm(distance);
+  const handleSetOptimalDistance = useCallback(async (distance: number) => {
+    const sid = sessionId;
+    if (sid) {
+      const calibPayload = DistanceCalibrationService.fromCalibratedDistance(distance);
+      let result = await DistanceCalibrationService.submitCalibration(sid, calibPayload);
+      if (!result.success) {
+        result = await DistanceCalibrationService.submitCalibration(sid, DistanceCalibrationService.asSkipped());
+      }
+      if (result.success && result.data) {
+        const cal = result.data.session;
+        setSessionCalibration({
+          optimal_distance_cm: cal.optimal_distance_cm,
+          distance_tolerance_cm: cal.distance_tolerance_cm,
+          calibration_skipped: cal.calibration_skipped,
+        });
+        if (result.data.questions?.length) {
+          setQuestions(result.data.questions as ExamQuestion[]);
+        }
+      }
+    }
     setShowDistanceSetup(false);
     setShowLivenessCheck(true);
-  }, []);
+  }, [sessionId]);
 
   const handleLivenessComplete = useCallback(async () => {
-    if (livenessPassed && currentExam && user) {
+    if (livenessPassed) {
       setShowLivenessCheck(false);
       setExamStarted(true);
-
-      const success = await startSession(String(currentExam.id), user.id, { liveness_check_passed: true });
-      if (!success) console.error('[Exam] Failed to start session, continuing with local-only mode');
       startTimer();
     }
-  }, [livenessPassed, currentExam, user, startSession, startTimer]);
+  }, [livenessPassed, startTimer]);
 
   const handleLivenessRetry = useCallback(() => {
     resetCheck();
@@ -651,7 +682,7 @@ export const Exam = () => {
             </div>
 
             {/* Distance Indicator */}
-            {examStarted && faceDistanceCm && optimalDistanceCm && (
+            {examStarted && faceDistanceCm && sessionCalibration?.optimal_distance_cm && (
               <div className="p-2 rounded bg-gray-50 border border-gray-200">
                 <div className="flex items-center justify-between">
                   <div className="flex items-center space-x-1">
@@ -660,14 +691,14 @@ export const Exam = () => {
                   </div>
                   <div className="flex items-center space-x-2">
                     <span className="text-xs font-semibold text-gray-900">~{faceDistanceCm}cm</span>
-                    {Math.abs(faceDistanceCm - optimalDistanceCm) > 15 && (
+                    {Math.abs(faceDistanceCm - sessionCalibration.optimal_distance_cm) > 15 && (
                       <AlertTriangle className="w-3 h-3 text-orange-500 animate-pulse" />
                     )}
                   </div>
                 </div>
                 <div className="mt-1 relative h-1 bg-gray-200 rounded-full overflow-hidden">
                   <div
-                    className={`h-full rounded-full transition-all ${Math.abs(faceDistanceCm - optimalDistanceCm) > 15 ? 'bg-orange-400' : 'bg-green-400'}`}
+                    className={`h-full rounded-full transition-all ${Math.abs(faceDistanceCm - sessionCalibration.optimal_distance_cm) > 15 ? 'bg-orange-400' : 'bg-green-400'}`}
                     style={{ width: `${Math.max(10, Math.min(90, (faceDistanceCm / 100) * 100))}%` }}
                   />
                 </div>

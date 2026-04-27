@@ -1,4 +1,4 @@
-import { describe, it, expect, beforeEach, afterEach } from 'vitest';
+import { describe, it, expect, beforeEach } from 'vitest';
 import { getTestSupabaseClient, seedTestUser } from '../setup';
 
 /**
@@ -8,8 +8,6 @@ import { getTestSupabaseClient, seedTestUser } from '../setup';
 describe('join_exam error codes', () => {
   let client: ReturnType<typeof getTestSupabaseClient>;
   let instructorId: string;
-  let studentId: string;
-  let publishedExamId: string;
 
   const createAndPublishExam = async (overrides: Record<string, unknown> = {}) => {
     const { data: exam, error } = await client
@@ -49,18 +47,10 @@ describe('join_exam error codes', () => {
   beforeEach(async () => {
     client = getTestSupabaseClient();
     const instructor = await seedTestUser('instructor');
-    const student = await seedTestUser('student');
+    await seedTestUser('student');
     instructorId = instructor!.id;
-    studentId = student!.id;
 
-    const { accessCode } = await createAndPublishExam();
-    publishedExamId = (
-      await client
-        .from('exams')
-        .select('id')
-        .eq('access_code', accessCode)
-        .single()
-    ).data!.id;
+    await createAndPublishExam();
   });
 
   it('returns invalid_code for non-existent code', async () => {

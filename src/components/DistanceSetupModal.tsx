@@ -131,7 +131,7 @@ export const DistanceSetupModal = ({ onComplete }: DistanceSetupModalProps) => {
           setStableCount(0);
           stableDistanceRef.current = null;
         }
-      } catch (err) {
+      } catch (_err) {
         // Silent fail
       }
 

@@ -99,15 +99,21 @@ Compares the supplied live embedding against the stored reference and returns pa
 
 ---
 
-## `start_exam_session(session_id uuid) → StartResponse`
+## `start_exam_session(session_id uuid, calibration jsonb) → StartResponse`
 
-Transitions a `verified` session into `in_progress` and returns the question list. Separate from `verify_student_identity` so the client can present a "you are verified — ready to begin?" screen without starting the clock.
+Transitions a `verified` session into `in_progress`, persists the per-session distance-calibration baseline (FR-013a/b), and returns the question list. Separate from `verify_student_identity` so the client can present a "you are verified — ready to begin?" screen without starting the clock.
 
 ### Input
 
-| Field | Type | Required |
-|-------|------|----------|
-| `session_id` | uuid | yes |
+| Field | Type | Required | Notes |
+|-------|------|----------|-------|
+| `session_id` | uuid | yes | |
+| `calibration` | jsonb | yes | `{ "optimal_distance_cm": number?, "distance_tolerance_cm": number?, "calibration_skipped": bool }` — see semantics below |
+
+**Calibration semantics (FR-013a/b)**:
+- When `calibration_skipped = false`: both `optimal_distance_cm` and `distance_tolerance_cm` MUST be present. `optimal_distance_cm` MUST be in `[20, 100]`; `distance_tolerance_cm` MUST be in `[5, 30]`. The RPC writes both verbatim onto `exam_sessions`.
+- When `calibration_skipped = true`: `optimal_distance_cm` and `distance_tolerance_cm` MAY be omitted; the RPC writes the conservative server-side defaults (`50` and `20` respectively) and sets `exam_sessions.calibration_skipped = true`.
+- The three calibration fields on `exam_sessions` are **immutable** after this call — the RPC writes them once and rejects subsequent attempts.
 
 ### Response (`StartResponse`)
 
@@ -116,7 +122,10 @@ Transitions a `verified` session into `in_progress` and returns the question lis
   "session": {
     "id": "uuid",
     "started_at": "ISO-8601 UTC",
-    "status": "in_progress"
+    "status": "in_progress",
+    "optimal_distance_cm": 47,
+    "distance_tolerance_cm": 15,
+    "calibration_skipped": false
   },
   "questions": [
     {
@@ -131,13 +140,14 @@ Transitions a `verified` session into `in_progress` and returns the question lis
 }
 ```
 
-Note: `correct_answer` is **never** returned to students.
+Note: `correct_answer` is **never** returned to students. The three calibration fields are echoed in the response so the client's detection loop (`useProctoring`) can read the persisted baseline back and emit `face_too_close` / `face_too_far` against it without a separate fetch.
 
 ### Error codes
 
 - `session_not_verified` — session is not in `verified` status.
 - `exam_window_closed` — current time ≥ `exam.starts_at + duration_minutes`.
-- `session_already_started` — idempotent: returns existing `started_at`, no state change.
+- `session_already_started` — idempotent: returns existing `started_at` and the previously-written calibration fields, no state change.
+- `calibration_invalid` — when `calibration_skipped = false` but the supplied `optimal_distance_cm` / `distance_tolerance_cm` are out of bounds or missing.
 
 ---
 

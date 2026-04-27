@@ -15,6 +15,7 @@ import { CreateExam } from './pages/instructor/CreateExam';
 import { ExamDetail } from './pages/instructor/ExamDetail';
 import { InstructorResults } from './pages/instructor/Results';
 import { ProctoringReport } from './pages/instructor/Proctoring';
+import { SubmissionDetail } from './pages/instructor/SubmissionDetail';
 
 function AppContent() {
   const { role, isAuthenticated, signOut, user, isLoading } = useApp();
@@ -123,6 +124,14 @@ function AppContent() {
           element={
             <ProtectedRoute requiredRole="instructor">
               <InstructorResults />
+            </ProtectedRoute>
+          }
+        />
+        <Route
+          path="/instructor/exams/:examId/results/:sessionId"
+          element={
+            <ProtectedRoute requiredRole="instructor">
+              <SubmissionDetail />
             </ProtectedRoute>
           }
         />

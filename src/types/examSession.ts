@@ -33,8 +33,8 @@ export const VIOLATION_TAXONOMY = {
   // Face Detection
   face_not_detected: { severity: 20, description: 'No face detected in the camera frame' },
   multiple_faces: { severity: 25, description: 'More than one face detected in the camera frame' },
-  face_too_close: { severity: 10, description: 'Student face is too close to the camera' },
-  face_too_far: { severity: 10, description: 'Student face is too far from the camera' },
+  face_too_close: { severity: 5, description: 'Student face is too close to the camera' },
+  face_too_far: { severity: 5, description: 'Student face is too far from the camera' },
   
   // Tab/Window
   tab_switch: { severity: 15, description: 'Browser tab lost focus' },
@@ -316,6 +316,9 @@ export interface ExamSubmissionResult {
   total_questions?: number;
   correct_answers?: number;
   session_id?: string;
+  submission_id?: string;
+  grade_status?: GradeStatus;
+  idempotent_hit?: boolean;
 }
 
 export interface QuestionForGrading {
@@ -367,4 +370,6 @@ export interface ExamSessionSummary {
   cheating_score: number | null;
   risk_level: string | null;
   liveness_check_passed: boolean;
+  calibration_skipped: boolean;
+  optimal_distance_cm: number | null;
 }

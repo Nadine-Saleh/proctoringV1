@@ -53,7 +53,11 @@ function emitCanonical(
   legacyCb.current?.({ type, severity: severityLabel, description, metadata });
 }
 
-export const useProctoring = (isEnabled: boolean = true): UseProctoringReturn => {
+export const useProctoring = (
+  isEnabled: boolean = true,
+  optimalDistanceCm?: number,
+  distanceToleranceCm?: number
+): UseProctoringReturn => {
   const videoRef = useRef<HTMLVideoElement | null>(null);
   const streamRef = useRef<MediaStream | null>(null);
   const isInitializedRef = useRef(false);
@@ -65,6 +69,13 @@ export const useProctoring = (isEnabled: boolean = true): UseProctoringReturn =>
   const lastFaceAlertRef = useRef(0);
   const canvasRef = useRef<HTMLCanvasElement | null>(null);
   const cameraLostRef = useRef(false);
+  const optimalDistanceCmRef = useRef(optimalDistanceCm);
+  const distanceToleranceCmRef = useRef(distanceToleranceCm);
+
+  useEffect(() => {
+    optimalDistanceCmRef.current = optimalDistanceCm;
+    distanceToleranceCmRef.current = distanceToleranceCm;
+  }, [optimalDistanceCm, distanceToleranceCm]);
 
   const [status, setStatus] = useState<ProctoringStatus>({
     camera: false,
@@ -219,26 +230,45 @@ export const useProctoring = (isEnabled: boolean = true): UseProctoringReturn =>
           }
         }
 
-        // Face distance estimation
+        // Face distance estimation using calibrated baseline (T060b / FR-013a)
         if (faceCount === 1 && detections[0]?.box) {
-          const boxArea = detections[0].box.width * detections[0].box.height;
-          const videoArea = (videoRef.current?.videoWidth ?? 640) * (videoRef.current?.videoHeight ?? 480);
-          const faceRatio = boxArea / videoArea;
+          const optCm = optimalDistanceCmRef.current;
+          const tolCm = distanceToleranceCmRef.current;
 
-          if (faceRatio > 0.15) {
-            setStatus(prev => ({ ...prev, faceTooClose: true, faceTooFar: false }));
-            if (now - lastFaceAlertRef.current > 30000) {
-              emitCanonical('face_too_close', 'Face too close to camera', { faceRatio: Math.round(faceRatio * 100) }, canonicalCallbackRef, violationCallbackRef);
-              lastFaceAlertRef.current = now;
+          if (optCm != null && tolCm != null) {
+            const box = detections[0].box;
+            const boxSize = Math.max(box.width, box.height);
+            const estimatedCm = Math.max(20, Math.min(100, Math.round(15 / (boxSize / 640))));
+            const lowerBound = optCm - tolCm;
+            const upperBound = optCm + tolCm;
+
+            if (estimatedCm < lowerBound) {
+              setStatus(prev => ({ ...prev, faceTooClose: true, faceTooFar: false }));
+              if (now - lastFaceAlertRef.current > 30000) {
+                emitCanonical(
+                  'face_too_close',
+                  'Face too close to camera',
+                  { baseline_cm: optCm, tolerance_cm: tolCm, estimated_distance_cm: estimatedCm },
+                  canonicalCallbackRef,
+                  violationCallbackRef
+                );
+                lastFaceAlertRef.current = now;
+              }
+            } else if (estimatedCm > upperBound) {
+              setStatus(prev => ({ ...prev, faceTooClose: false, faceTooFar: true }));
+              if (now - lastFaceAlertRef.current > 30000) {
+                emitCanonical(
+                  'face_too_far',
+                  'Face too far from camera',
+                  { baseline_cm: optCm, tolerance_cm: tolCm, estimated_distance_cm: estimatedCm },
+                  canonicalCallbackRef,
+                  violationCallbackRef
+                );
+                lastFaceAlertRef.current = now;
+              }
+            } else {
+              setStatus(prev => ({ ...prev, faceTooClose: false, faceTooFar: false }));
             }
-          } else if (faceRatio < 0.03) {
-            setStatus(prev => ({ ...prev, faceTooClose: false, faceTooFar: true }));
-            if (now - lastFaceAlertRef.current > 30000) {
-              emitCanonical('face_too_far', 'Face too far from camera', { faceRatio: Math.round(faceRatio * 100) }, canonicalCallbackRef, violationCallbackRef);
-              lastFaceAlertRef.current = now;
-            }
-          } else {
-            setStatus(prev => ({ ...prev, faceTooClose: false, faceTooFar: false }));
           }
         }
       } catch {

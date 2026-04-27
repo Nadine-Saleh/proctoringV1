@@ -39,7 +39,7 @@ describe('CheatingScorer.computeScore — exponential decay math', () => {
 
   it('score is clamped to 100 regardless of many high-severity simultaneous events', () => {
     const now = Date.now();
-    const events = Array.from({ length: 20 }, (_, i) => ({
+    const events = Array.from({ length: 20 }, (_) => ({
       type: 'multiple_persons' as ViolationType,
       severity: 25,
       server_recorded_at: new Date(now).toISOString(),

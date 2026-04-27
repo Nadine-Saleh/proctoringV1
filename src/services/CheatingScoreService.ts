@@ -59,7 +59,6 @@ export class CheatingScoreTracker {
   private _critCrossed = false;
   private _listeners = new Set<ScoreListener>();
 
-  // eslint-disable-next-line @typescript-eslint/no-unused-vars
   constructor(_policy: { warning_threshold: number; critical_threshold: number; [key: string]: unknown }) {}
 
   get liveScore(): number { return this._score; }

@@ -214,6 +214,8 @@ export class ExamSessionService {
         duration_taken_seconds: number | null;
         live_cheating_score: number | null;
         liveness_check_passed: boolean;
+        calibration_skipped: boolean;
+        optimal_distance_cm: number | null;
         users?: { full_name?: string | null; email?: string | null } | null;
         exams?: { title?: string | null; duration_minutes?: number | null } | null;
       }>).map((row) => {
@@ -236,6 +238,8 @@ export class ExamSessionService {
           cheating_score: cheatingScore,
           risk_level: getRiskLevel(cheatingScore).level,
           liveness_check_passed: row.liveness_check_passed,
+          calibration_skipped: row.calibration_skipped ?? false,
+          optimal_distance_cm: row.optimal_distance_cm ?? null,
         };
       });
 

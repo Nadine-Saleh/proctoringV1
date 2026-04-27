@@ -215,6 +215,27 @@ Only after successful capture does the exam-join verification flow resume, and t
 
 ---
 
+## R12. Distance Calibration as Sole Authoritative Trigger
+
+**Decision**: Per-student distance calibration is **load-bearing** for `face_too_close` / `face_too_far` violations. Before the exam clock starts (after FR-002a's `start_exam_session`), the `DistanceSetupModal` captures the student's `optimal_distance_cm` (range 30–70 cm, holds ≥ 1 s within ±5 cm) and the client passes it to `start_exam_session` as part of the calibration payload. The RPC writes three fields once and immutably onto `exam_sessions`: `optimal_distance_cm`, `distance_tolerance_cm` (default 15), and `calibration_skipped` (boolean). The detection loop in `useProctoring` reads the baseline back from the session and emits `face_too_close` when live distance < `baseline − tolerance`, `face_too_far` when live distance > `baseline + tolerance`. **All hardcoded global `faceRatio` thresholds are removed from the detection loop** — there is exactly one authoritative source for these two violation types per session.
+
+If calibration cannot complete (camera unavailable, no face detected, or distance never stabilizes within the modal's tolerance), the client passes `calibration_skipped = true` to `start_exam_session` and the RPC writes the conservative server-side defaults `optimal_distance_cm = 50`, `distance_tolerance_cm = 20`. The detection loop runs against the fallback band identically; instructor surfaces (oversight tile, evidence package) show a "calibration skipped" badge so reviewers can discount distance-derived events.
+
+`face_too_close` and `face_too_far` are registered in the canonical taxonomy at severity = **`low` (numeric weight 5)** — distance drift is the most ambiguous distance-category signal (often posture/seat shift, not cheating intent) and must not dominate the live cheating score, especially on `calibration_skipped = true` sessions.
+
+**Rationale**:
+- **Single source of truth**: Two parallel triggers (per-student baseline AND hardcoded thresholds) had been coexisting in the codebase, with the calibration path producing UI-only output and the hardcoded path emitting violations independently. Resolving on the calibrated baseline alone eliminates spec-vs-code drift and removes dead UX (Constitution Principle I — no dead code).
+- **Server-persistence is non-negotiable**: Without persistence, an instructor reviewing `face_too_close` events cannot tell whether they were generated against an aggressive 35 cm baseline or a permissive 80 cm one — undermining FR-028 (instructor adjudication) and FR-025 (evidence package completeness).
+- **Soft fallback over hard block**: Hard-blocking the exam on calibration failure would create an availability regression (cameras genuinely fail in the wild). The conservative fallback preserves access while flagging the reduced-confidence state to reviewers.
+- **Severity 5 over 10**: At severity 10 (the existing implementation default), a noisy `calibration_skipped = true` session can saturate the cheating score on posture alone. Severity 5 keeps the signal visible without dominating.
+
+**Alternatives considered**:
+- *Hybrid (calibrated band + hardcoded outer bounds)*: rejected — preserves the dead-code problem and creates two sources of truth that drift over time.
+- *Drop distance violations entirely from v1*: rejected — distance is a real proctoring signal (e.g., student leaning into camera to read offscreen content) and the modal is already implemented.
+- *Per-violation embedded baseline (`metadata.baseline_cm` on each event)*: rejected — bloats every event row, and reviewers want a single answer to "what was the baseline" not 200 of them.
+
+---
+
 ## Open Items Resolved vs. Deferred
 
 | Item | State | Notes |
@@ -230,6 +251,7 @@ Only after successful capture does the exam-join verification flow resume, and t
 | Detection-pipeline placement | Resolved (R9) | Main thread first, Worker on budget miss |
 | Offline event buffering | Resolved (R10) | IndexedDB + idempotent batch RPC |
 | Reference-capture flow | Resolved (R11) | Three-frame consistency capture |
+| Distance calibration (sole authoritative trigger, server-persisted, soft fallback) | Resolved (R12) | Per-session baseline on `exam_sessions`; severity = `low` (5) |
 | Auto-termination policy | **Deferred** | Assumption in spec; expected to be refined in `/speckit.clarify` |
 | Mobile/tablet support | **Deferred** | Out of v1 scope per spec |
 | Institution-provided reference photos | **Deferred** | Integration in later version |

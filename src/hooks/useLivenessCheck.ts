@@ -102,7 +102,7 @@ export const useLivenessCheck = (): UseLivenessCheckReturn => {
           const distance = estimateFaceDistance(detections[0]);
           setFaceDistanceCm(distance);
         }
-      } catch (err) {
+      } catch (_err) {
         // Silent fail - detection loop continues
       }
 

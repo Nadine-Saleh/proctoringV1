@@ -127,10 +127,16 @@ A single student's sitting for one exam.
 | `live_cheating_score` | float NOT NULL DEFAULT 0 | 0..100 |
 | `last_score_update_at` | timestamptz | for decay math |
 | `submit_reason` | text | `manual` \| `auto_window_close` \| `auto_disconnect` \| NULL |
+| `optimal_distance_cm` | numeric | calibrated baseline per FR-013a; written once at `start_exam_session`, immutable thereafter; NULL until then |
+| `distance_tolerance_cm` | numeric | tolerance band around `optimal_distance_cm` per FR-013a; default 15 (or 20 on the FR-013b fallback path); written with `optimal_distance_cm` |
+| `calibration_skipped` | boolean NOT NULL DEFAULT false | true when the FR-013b conservative defaults (50 ± 20) were applied because client-side calibration could not complete |
 
 **Constraints**:
 - `UNIQUE (exam_id, student_id) WHERE status NOT IN ('terminated','verification_blocked')` — one active session per student per exam.
 - `CHECK (live_cheating_score >= 0 AND live_cheating_score <= 100)`
+- `CHECK (optimal_distance_cm IS NULL OR (optimal_distance_cm BETWEEN 20 AND 100))`
+- `CHECK (distance_tolerance_cm IS NULL OR (distance_tolerance_cm BETWEEN 5 AND 30))`
+- `CHECK ((optimal_distance_cm IS NULL AND distance_tolerance_cm IS NULL) OR (optimal_distance_cm IS NOT NULL AND distance_tolerance_cm IS NOT NULL))` — both set together or both NULL.
 
 **State transitions**:
 
@@ -166,6 +172,8 @@ A single detected integrity deviation within a session. Append-only.
 - `multiple_persons`
 - `tab_focus_lost`
 - `camera_unavailable`
+- `face_too_close` — severity `low` (5); fires when live distance < `exam_sessions.optimal_distance_cm − distance_tolerance_cm` (FR-013a/c)
+- `face_too_far` — severity `low` (5); fires when live distance > `exam_sessions.optimal_distance_cm + distance_tolerance_cm` (FR-013a/c)
 - `audio_anomaly` (reserved; not in v1 detection scope)
 
 **Uniqueness**: `UNIQUE (session_id, client_event_id)` — enforces idempotent batch uploads (research R10).

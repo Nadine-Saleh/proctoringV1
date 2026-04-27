@@ -5,7 +5,7 @@
 
 ## Summary
 
-Deliver an end-to-end proctored-exam workflow on top of the existing React + Supabase codebase. Instructors author exams and receive a unique access code; students join by code and pass a browser-side face-recognition check before the exam starts; during the exam, the client continuously derives violation signals (gaze, face presence, extra persons, focus loss, camera availability) and maintains a severity-weighted cheating score that streams to an instructor oversight dashboard in near real time; on submission, the system assembles a grade-plus-evidence package and delivers it to the instructor dashboard idempotently. Raw frames are never persisted server-side; only derived events and — when exam policy permits — short evidence snippets are retained, with all access mediated by Supabase Row Level Security.
+Deliver an end-to-end proctored-exam workflow on top of the existing React + Supabase codebase. Instructors author exams and receive a unique access code; students join by code and pass a browser-side face-recognition check before the exam starts; before the exam clock starts, the student also completes a one-time per-session distance-calibration step that establishes their `optimal_distance_cm` baseline (server-persisted on `exam_sessions`, with a soft `50 cm ± 20 cm` fallback flagged via `calibration_skipped`); during the exam, the client continuously derives violation signals (gaze, face presence, extra persons, focus loss, camera availability, and face-to-camera distance against the calibrated baseline) and maintains a severity-weighted cheating score that streams to an instructor oversight dashboard in near real time; on submission, the system assembles a grade-plus-evidence package — including the calibration baseline so distance violations remain auditable — and delivers it to the instructor dashboard idempotently. Raw frames are never persisted server-side; only derived events and — when exam policy permits — short evidence snippets are retained, with all access mediated by Supabase Row Level Security.
 
 ## Technical Context
 
@@ -32,7 +32,7 @@ The plan commits to `npm run typecheck`, `npm run lint`, `npm run build` gates o
 The repository has no test runner configured today. This feature cannot ship without the mandatory coverage listed in Principle II, so Phase 0 research will finalize the testing stack and add it as the first task cluster in `/speckit.tasks`. Mocking the database is explicitly prohibited on integrity-critical paths — a dedicated Supabase *test* project will be used for integration tests. Detection-engine tuning MUST be validated against a fixed fixture corpus before merge.
 
 **III. User Experience Consistency** — ✅ Pass.
-All new UI uses Tailwind only, `lucide-react` icons only, routing through `react-router-dom`, role-based guards via `ProtectedRoute`. The violation taxonomy (event types + severity tiers) is defined once in `src/types/` and reused across student warnings, instructor alerts, and evidence packages — no surface may silently omit a type.
+All new UI uses Tailwind only, `lucide-react` icons only, routing through `react-router-dom`, role-based guards via `ProtectedRoute`. The violation taxonomy (event types + severity tiers) is defined once in `src/types/` and reused across student warnings, instructor alerts, and evidence packages — no surface may silently omit a type. The `face_too_close` / `face_too_far` types added under FR-013c are registered at severity = `low` (5) in the canonical taxonomy and surfaced on every dependent surface; instructor surfaces additionally show the session's `calibration_skipped` flag (FR-013b) so distance events can be discounted appropriately.
 
 **IV. Performance Requirements** — ✅ Pass (with specific enforcements).
 Detection loop targets ≥ 10 fps; per-frame > 16 ms p95 triggers Web-Worker offload before merge. ML models lazy-loaded (not in initial chunk). Violation uploads batched. Long-session memory bounded (tensor release per frame; instructor dashboard paginates event history). Any PR claiming performance gains MUST include measurement evidence (Chrome DevTools trace or scripted benchmark).
@@ -92,11 +92,12 @@ src/
 │   ├── StudentAnswerService.ts
 │   ├── ViolationEventService.ts         # batched uploads, offline buffer
 │   ├── CheatingScoreService.ts          # aggregate, decay, thresholds
-│   ├── InstructorAlertDatabaseService.ts
-│   ├── instructorAlertService.ts
+│   ├── InstructorAlertDatabaseService.ts   # persistence (insert/select/ack alerts via Supabase)
+│   ├── instructorAlertService.ts           # in-process pub/sub for the live oversight UI
 │   ├── FaceDetectionService.ts
 │   ├── LivenessDetectionModule.ts
-│   └── WebSocketService.ts              # evaluated vs. Supabase Realtime in research
+│   └── DistanceCalibrationService.ts        # new: writes optimal_distance_cm + tolerance + calibration_skipped to exam_sessions via start_exam_session RPC (FR-013a/b)
+│   # NOTE: WebSocketService.ts retired in favor of Supabase Realtime — see research.md R2 and tasks.md T015
 ├── lib/
 │   └── gaze/GazeTrackingEngine.ts
 ├── types/
@@ -153,4 +154,4 @@ No justified violations at this time.
 Notes on items deliberately surfaced but not counted as violations:
 
 - **No test runner exists yet** → this is a *prerequisite*, not a constitutional exemption. Testing will be stood up at the start of `/speckit.tasks` before any integrity-critical code merges.
-- **Two live-channel candidates exist in the codebase** (`src/services/WebSocketService.ts` and Supabase Realtime subscriptions) → Phase 0 research picks one authoritative mechanism; the other is removed before merge to preserve "no dead code" (Principle I).
+- **Live-channel decision (resolved)**: Supabase Realtime is the chosen authoritative mechanism (research.md R2). The legacy `src/services/WebSocketService.ts` has been retired by tasks.md T015 to preserve "no dead code" (Principle I).

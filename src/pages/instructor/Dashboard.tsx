@@ -39,7 +39,7 @@ export const InstructorDashboard = () => {
         } else {
           setError(result.error || 'Failed to load exams');
         }
-      } catch (err) {
+      } catch (_err) {
         setError('Failed to load exams');
       } finally {
         setLoading(false);
