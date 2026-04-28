@@ -1,4 +1,6 @@
-export const mockExams = [
+import { Exam, StudentResult, ProctoringEvent, Question, StudentExamResult } from '../types';
+
+export const mockExams: Exam[] = [
   {
     id: 1,
     title: 'Data Structures Midterm',
@@ -31,7 +33,7 @@ export const mockExams = [
   }
 ];
 
-export const mockResults = [
+export const mockResults: StudentResult[] = [
   {
     id: 1,
     examId: 3,
@@ -54,7 +56,7 @@ export const mockResults = [
   }
 ];
 
-export const mockProctoringEvents = [
+export const mockProctoringEvents: ProctoringEvent[] = [
   {
     id: 1,
     studentId: 101,
@@ -97,7 +99,7 @@ export const mockProctoringEvents = [
   }
 ];
 
-export const mockQuestions = [
+export const mockQuestions: Question[] = [
   {
     id: 1,
     question: 'What is the time complexity of binary search?',
@@ -123,7 +125,7 @@ export const mockQuestions = [
   }
 ];
 
-export const mockStudentResults = [
+export const mockStudentResults: StudentExamResult[] = [
   {
     studentId: 101,
     studentName: 'Alice Johnson',

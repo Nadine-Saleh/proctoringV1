@@ -1,19 +1,11 @@
 import { createContext, useContext, useState, ReactNode } from 'react';
-
-type UserRole = 'student' | 'instructor';
-
-interface AppContextType {
-  role: UserRole;
-  setRole: (role: UserRole) => void;
-  currentExam: any | null;
-  setCurrentExam: (exam: any) => void;
-}
+import { UserRole, Exam, AppContextType } from '../types';
 
 const AppContext = createContext<AppContextType | undefined>(undefined);
 
 export const AppProvider = ({ children }: { children: ReactNode }) => {
   const [role, setRole] = useState<UserRole>('student');
-  const [currentExam, setCurrentExam] = useState<any | null>(null);
+  const [currentExam, setCurrentExam] = useState<Exam | null>(null);
 
   return (
     <AppContext.Provider value={{ role, setRole, currentExam, setCurrentExam }}>

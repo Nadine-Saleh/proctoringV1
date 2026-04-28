@@ -1,18 +1,12 @@
 import { useState } from 'react';
 import { Plus, Trash2, Clock, FileText, Save, Eye } from 'lucide-react';
-
-interface Question {
-  id: string;
-  question: string;
-  options: string[];
-  correctAnswer: number;
-}
+import { QuestionFormData } from '../../types';
 
 export const CreateExam = () => {
   const [examTitle, setExamTitle] = useState('');
   const [subject, setSubject] = useState('');
   const [duration, setDuration] = useState(60);
-  const [questions, setQuestions] = useState<Question[]>([
+  const [questions, setQuestions] = useState<QuestionFormData[]>([
     {
       id: '1',
       question: '',

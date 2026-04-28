@@ -1,17 +1,18 @@
 import { Link, useLocation } from 'react-router-dom';
 import { useApp } from '../context/AppContext';
-import { Home, FileText, BarChart3, ClipboardList, Users, Shield } from 'lucide-react';
+import { NavLink } from '../types';
+import { Home, FileText, BarChart3, Users, Shield } from 'lucide-react';
 
 export const Navigation = () => {
   const { role, setRole } = useApp();
   const location = useLocation();
 
-  const studentLinks = [
+  const studentLinks: NavLink[] = [
     { to: '/', label: 'Home', icon: Home },
     { to: '/results', label: 'Results', icon: BarChart3 }
   ];
 
-  const instructorLinks = [
+  const instructorLinks: NavLink[] = [
     { to: '/instructor', label: 'Dashboard', icon: Home },
     { to: '/instructor/create', label: 'Create Exam', icon: FileText },
     { to: '/instructor/results', label: 'Results', icon: BarChart3 },

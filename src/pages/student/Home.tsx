@@ -2,12 +2,13 @@ import { useNavigate } from 'react-router-dom';
 import { mockExams } from '../../data/mockData';
 import { Clock, FileText, Calendar, ChevronRight, AlertCircle } from 'lucide-react';
 import { useApp } from '../../context/AppContext';
+import { Exam as ExamType } from '../../types';
 
 export const StudentHome = () => {
   const navigate = useNavigate();
   const { setCurrentExam } = useApp();
 
-  const handleStartExam = (exam: any) => {
+  const handleStartExam = (exam: ExamType) => {
     setCurrentExam(exam);
     navigate('/exam');
   };

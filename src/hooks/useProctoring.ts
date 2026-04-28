@@ -1,22 +1,6 @@
 import { useState, useEffect, useRef, useCallback } from 'react';
 import * as faceapi from 'face-api.js';
-
-export interface ProctoringStatus {
-  camera: boolean;
-  faceDetected: boolean;
-  multipleFaces: boolean;
-  tabActive: boolean;
-  modelsLoaded: boolean;
-  loading: boolean;
-  errorMessage: string | null;
-}
-
-export interface UseProctoringReturn {
-  status: ProctoringStatus;
-  videoRef: React.RefCallback<HTMLVideoElement>;
-  retryCamera: () => void;
-  clearError: () => void;
-}
+import { ProctoringStatus, UseProctoringReturn } from '../types';
 
 export const useProctoring = (): UseProctoringReturn => {
   const videoRef = useRef<HTMLVideoElement | null>(null);

@@ -1,4 +1,4 @@
-import { useState, useEffect } from 'react';
+import { useState, useEffect, useCallback } from 'react';
 import { useNavigate } from 'react-router-dom';
 import { useApp } from '../../context/AppContext';
 import { useProctoring } from '../../hooks/useProctoring';
@@ -34,7 +34,7 @@ export const Exam = () => {
       });
     }, 1000);
     return () => clearInterval(timer);
-  }, [currentExam, navigate]);
+  }, [currentExam, navigate, handleSubmit]);
 
   const formatTime = (seconds: number) => {
     const mins = Math.floor(seconds / 60);
@@ -46,7 +46,7 @@ export const Exam = () => {
     setAnswers({ ...answers, [questionId]: answerIndex });
   };
 
-  const handleSubmit = () => navigate('/results');
+  const handleSubmit = useCallback(() => navigate('/results'), [navigate]);
 
   if (!currentExam) return null;
 
