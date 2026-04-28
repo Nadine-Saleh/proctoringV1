@@ -1,6 +1,6 @@
 import { useParams, useNavigate } from 'react-router-dom';
 import { useEffect, useState } from 'react';
-import { ArrowLeft, Copy, Check, Calendar, Clock, Users, FileText } from 'lucide-react';
+import { ArrowLeft, Copy, Check, Calendar, Clock, Users, FileText, RefreshCw } from 'lucide-react';
 import { ExamService } from '../../services/ExamService';
 import type { ProctoringPolicy } from '../../types/examSession';
 
@@ -27,6 +27,8 @@ export const ExamDetail = () => {
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
   const [copied, setCopied] = useState(false);
+  const [resetting, setResetting] = useState(false);
+  const [resetError, setResetError] = useState<string | null>(null);
 
   useEffect(() => {
     if (!examId) return;
@@ -39,7 +41,7 @@ export const ExamDetail = () => {
         } else {
           setError(result.error || 'Failed to load exam');
         }
-      } catch (err) {
+      } catch (_err) {
         setError('Failed to load exam');
       } finally {
         setLoading(false);
@@ -48,6 +50,22 @@ export const ExamDetail = () => {
 
     loadExam();
   }, [examId]);
+
+  const handleResetWindow = async () => {
+    if (!exam) return;
+    setResetting(true);
+    setResetError(null);
+    const result = await ExamService.updateExam(exam.id, {
+      starts_at: new Date().toISOString(),
+    });
+    if (!result.success) {
+      setResetError(result.error || 'Failed to reset window');
+    } else {
+      const refreshed = await ExamService.getExamById(exam.id);
+      if (refreshed.success && refreshed.exam) setExam(refreshed.exam);
+    }
+    setResetting(false);
+  };
 
   const handleCopyAccessCode = () => {
     if (exam?.access_code) {
@@ -134,6 +152,35 @@ export const ExamDetail = () => {
                 <span className="text-sm font-medium">Starts At</span>
               </div>
               <p className="text-lg text-gray-900">{formatDate(exam.starts_at)}</p>
+              {exam.status === 'published' && (() => {
+                const now = Date.now();
+                const start = new Date(exam.starts_at).getTime();
+                const end = start + exam.duration_minutes * 60_000;
+                const isOpen = now >= start && now <= end;
+                const label = now < start
+                  ? <span className="text-amber-600">Window not yet open</span>
+                  : now > end
+                  ? <span className="text-red-600">Window has closed</span>
+                  : <span className="text-green-600">Window is open — students can join</span>;
+                return (
+                  <div className="mt-1">
+                    <div className="flex items-center gap-2">
+                      <p className="text-sm">{label}</p>
+                      {!isOpen && (
+                        <button
+                          onClick={handleResetWindow}
+                          disabled={resetting}
+                          className="flex items-center gap-1 text-xs text-blue-600 hover:text-blue-700 disabled:opacity-50"
+                        >
+                          <RefreshCw className="w-3 h-3" />
+                          {resetting ? 'Resetting…' : 'Reset to now'}
+                        </button>
+                      )}
+                    </div>
+                    {resetError && <p className="text-xs text-red-600 mt-1">{resetError}</p>}
+                  </div>
+                );
+              })()}
             </div>
 
             <div>

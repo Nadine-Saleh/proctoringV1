@@ -11,6 +11,8 @@ interface SubmissionResult {
   total_questions?: number;
   correct_answers?: number;
   session_id?: string;
+  submission_id?: string;
+  grade_status?: 'auto_final' | 'partial_pending_review' | 'fully_pending_review';
 }
 
 export const StudentResults = () => {
@@ -126,10 +128,21 @@ export const StudentResults = () => {
               <span className="text-sm font-medium text-gray-600">Status</span>
               <Award className="w-5 h-5 text-yellow-600" />
             </div>
-            <div className="flex items-baseline">
+            <div className="flex flex-col gap-1">
               <span className={`text-2xl font-bold ${getScoreColor(displayScore)}`}>
                 {displayScore >= 70 ? 'Passed' : 'Needs Review'}
               </span>
+              {submissionResult?.grade_status === 'partial_pending_review' && (
+                <span className="text-xs text-amber-600 font-medium">Some answers pending instructor review</span>
+              )}
+              {submissionResult?.grade_status === 'fully_pending_review' && (
+                <span className="text-xs text-amber-600 font-medium">Grade pending instructor review</span>
+              )}
+              {submissionResult?.submission_id && (
+                <span className="text-xs text-gray-400 font-mono truncate" title={submissionResult.submission_id}>
+                  ID: {submissionResult.submission_id.slice(0, 8)}…
+                </span>
+              )}
             </div>
           </div>
         </div>

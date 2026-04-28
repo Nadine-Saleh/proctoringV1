@@ -7,7 +7,6 @@ import { getTestSupabaseClient, seedTestUser } from '../setup';
  * Instructor cannot SELECT any student's embedding.
  */
 describe('student_face_references RLS', () => {
-  let client: ReturnType<typeof getTestSupabaseClient>;
   let studentAId: string;
   let studentBId: string;
   let instructorId: string;
@@ -15,7 +14,6 @@ describe('student_face_references RLS', () => {
   const embeddingB = Array.from({ length: 128 }, () => 0.9);
 
   beforeEach(async () => {
-    client = getTestSupabaseClient();
     const studentA = await seedTestUser('student');
     const studentB = await seedTestUser('student');
     const instructor = await seedTestUser('instructor');

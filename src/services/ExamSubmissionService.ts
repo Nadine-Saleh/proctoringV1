@@ -6,26 +6,36 @@
 
 import { supabase } from '../lib/supabase/client';
 import { ensureUuid } from '../utils/uuid';
-import { ExamSessionService } from './examSessionService';
 import { StudentAnswerService } from './StudentAnswerService';
 import type {
   ExamSubmission,
   ExamSubmissionResult,
+  GradeStatus,
   QuestionForGrading,
   GradedAnswer,
   ExamGrade,
 } from '../types/examSession';
 
+export interface EdgeSubmissionResult {
+  submission_id: string;
+  idempotent_hit: boolean;
+  grade_status: string;
+  auto_graded_score: number;
+  auto_graded_max: number;
+  final_grade: number | null;
+  final_cheating_score: number;
+  evidence_package_id: string | null;
+  submitted_at: string;
+}
+
 export class ExamSubmissionService {
   /**
-   * Submit an exam with all answers
-   * This is the main submission entry point
+   * Submit an exam. Persists answers first, then delegates to the submit-exam
+   * Edge Function for atomic grading + evidence assembly (T079).
    */
-  static async submit(submission: ExamSubmission): Promise<ExamSubmissionResult> {
+  static async submit(submission: ExamSubmission): Promise<ExamSubmissionResult & { edgeResult?: EdgeSubmissionResult }> {
     try {
-      console.log('[ExamSubmissionService] Starting submission for session:', submission.session_id);
-
-      // Step 1: Save all answers in batch
+      // Step 1: Persist answers so the Edge Function can read them
       const answerInputs = submission.answers.map((answer, index) => ({
         session_id: submission.session_id,
         question_id: answer.question_id,
@@ -37,45 +47,51 @@ export class ExamSubmissionService {
 
       const batchResult = await StudentAnswerService.upsertBatch(answerInputs);
       if (!batchResult.success) {
-        return {
-          success: false,
-          error: `Failed to save answers: ${batchResult.error}`,
-        };
+        return { success: false, error: `Failed to save answers: ${batchResult.error}` };
       }
 
-      // Step 2: Grade the exam
-      const gradeResult = await this.gradeExam(
-        submission.session_id,
-        submission.exam_id,
-        submission.answers
-      );
+      // Step 2: Call Edge Function
+      const supabaseUrl = import.meta.env.VITE_SUPABASE_URL as string;
+      const { data: { session: authSession } } = await supabase.auth.getSession();
+      const token = authSession?.access_token;
 
-      if (!gradeResult.success) {
-        return {
-          success: false,
-          error: `Failed to grade exam: ${gradeResult.error}`,
-        };
+      const resp = await fetch(`${supabaseUrl}/functions/v1/submit-exam`, {
+        method: 'POST',
+        headers: {
+          'Content-Type': 'application/json',
+          ...(token ? { Authorization: `Bearer ${token}` } : {}),
+        },
+        body: JSON.stringify({
+          session_id: submission.session_id,
+          submit_reason: 'manual',
+          client_submitted_at: new Date().toISOString(),
+        }),
+      });
+
+      if (!resp.ok) {
+        const body = await resp.json().catch(() => ({}));
+        const code = body?.error ?? 'submission_failed';
+        if (code === 'session_not_eligible') {
+          return { success: false, error: 'This session cannot be submitted right now.' };
+        }
+        return { success: false, error: `Submission failed: ${code}` };
       }
 
-      // Step 3: Mark session as submitted
-      const submitResult = await ExamSessionService.submit(
-        submission.session_id,
-        submission.duration_taken_seconds
-      );
+      const edgeResult: EdgeSubmissionResult = await resp.json();
 
-      if (!submitResult.success) {
-        console.error('[ExamSubmissionService] Failed to update session status:', submitResult.error);
-        // Continue anyway - answers are saved
-      }
-
-      console.log('[ExamSubmissionService] Submission complete');
       return {
         success: true,
-        exam_score: gradeResult.grade?.total_score ?? 0,
-        exam_percentage: gradeResult.grade?.percentage ?? 0,
-        total_questions: gradeResult.grade?.total_questions ?? 0,
-        correct_answers: gradeResult.grade?.correct_answers ?? 0,
+        exam_score: edgeResult.auto_graded_score,
+        exam_percentage: edgeResult.auto_graded_max > 0
+          ? Math.round((edgeResult.auto_graded_score / edgeResult.auto_graded_max) * 100)
+          : 0,
+        total_questions: edgeResult.auto_graded_max,
+        correct_answers: edgeResult.auto_graded_score,
         session_id: submission.session_id,
+        submission_id: edgeResult.submission_id,
+        grade_status: edgeResult.grade_status as GradeStatus,
+        idempotent_hit: edgeResult.idempotent_hit,
+        edgeResult,
       };
     } catch (err) {
       const message = err instanceof Error ? err.message : 'Unknown error';

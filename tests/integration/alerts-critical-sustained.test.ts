@@ -8,7 +8,6 @@ import { getTestSupabaseClient, seedTestUser } from '../setup';
 describe('instructor_alerts: critical_score_sustained', () => {
   let client: ReturnType<typeof getTestSupabaseClient>;
   let sessionId: string;
-  let examId: string;
 
   beforeEach(async () => {
     client = getTestSupabaseClient();
@@ -34,7 +33,6 @@ describe('instructor_alerts: critical_score_sustained', () => {
       .select()
       .single();
     if (!exam) throw new Error('Failed to create exam');
-    examId = exam.id;
 
     await client.from('exam_questions').insert({
       exam_id: exam.id,
@@ -62,7 +60,7 @@ describe('instructor_alerts: critical_score_sustained', () => {
       p_embedding: mockEmbedding,
     });
 
-    await client.rpc('start_exam_session', { p_session_id: sessionId });
+    await client.rpc('start_exam_session', { p_session_id: sessionId, p_calibration: { calibration_skipped: true } });
   });
 
   it('does NOT raise alert when score first crosses critical threshold', async () => {

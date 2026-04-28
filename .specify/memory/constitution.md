@@ -1,9 +1,12 @@
 <!--
 SYNC IMPACT REPORT
 ==================
-Version change: TEMPLATE (uninitialized) → 1.0.0
-Bump rationale: Initial ratification. Promoting placeholder template to a concrete,
-binding constitution constitutes a MAJOR establishment event (0.0.0 → 1.0.0).
+Version change: 1.0.0 → 1.0.1
+Bump rationale: PATCH — wording correction to align Principle II's filename
+references with the actual on-disk casing (`examSessionService.ts`,
+camelCase). No semantic change to mandatory-coverage scope.
+
+Prior change: TEMPLATE (uninitialized) → 1.0.0 — Initial ratification.
 
 Principles defined (4, per user input):
   - I. Code Quality (NON-NEGOTIABLE)
@@ -85,7 +88,7 @@ exam integrity**. Concretely:
 
 - **Mandatory coverage** for: violation scoring (`src/utils/violationScorer.ts`),
   cheating-score aggregation (`src/services/CheatingScoreService.ts`), exam
-  session lifecycle (`src/services/ExamSessionService.ts`,
+  session lifecycle (`src/services/examSessionService.ts`,
   `src/hooks/useExamSession.ts`), submission integrity
   (`src/services/ExamSubmissionService.ts`,
   `src/services/StudentAnswerService.ts`), and any persistence layer touching
@@ -253,4 +256,4 @@ how-tos, quickstarts) lives outside this document. This constitution
 defines the *non-negotiable rules*; operational know-how belongs in
 `README.md`, in-repo docs, or agent-guidance files when those exist.
 
-**Version**: 1.0.0 | **Ratified**: 2026-04-17 | **Last Amended**: 2026-04-17
+**Version**: 1.0.1 | **Ratified**: 2026-04-17 | **Last Amended**: 2026-04-25

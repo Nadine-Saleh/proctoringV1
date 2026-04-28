@@ -23,11 +23,20 @@ export interface VerificationResponse {
   session_status: 'verified' | 'awaiting_verification' | 'verification_blocked';
 }
 
+export interface StartSessionCalibration {
+  calibration_skipped: boolean;
+  optimal_distance_cm?: number;
+  distance_tolerance_cm?: number;
+}
+
 export interface StartSessionResponse {
   session: {
     id: string;
     started_at: string;
     status: 'in_progress';
+    optimal_distance_cm: number;
+    distance_tolerance_cm: number;
+    calibration_skipped: boolean;
   };
   questions: Array<{
     id: string;
@@ -129,11 +138,13 @@ export class IdentityVerificationService {
   }
 
   static async startSession(
-    sessionId: string
+    sessionId: string,
+    calibration: StartSessionCalibration
   ): Promise<{ success: boolean; data?: StartSessionResponse; error?: string }> {
     try {
       const { data, error } = await supabase.rpc('start_exam_session', {
         p_session_id: sessionId,
+        p_calibration: calibration,
       });
 
       if (error) return { success: false, error: error.message };

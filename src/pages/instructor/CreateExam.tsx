@@ -11,11 +11,21 @@ interface Question {
   correctAnswer: number;
 }
 
+// `<input type="datetime-local">` reads/writes its value as **local time**
+// (no timezone). `.toISOString()` returns UTC, so using it for the default
+// would silently shift the stored `starts_at` by the user's UTC offset —
+// e.g. for a UTC+3 user it lands ~3h in the past, immediately closing the
+// exam window. This helper formats the local wall-clock components instead.
+const toLocalDateTimeString = (date: Date) => {
+  const pad = (n: number) => String(n).padStart(2, '0');
+  return `${date.getFullYear()}-${pad(date.getMonth() + 1)}-${pad(date.getDate())}T${pad(date.getHours())}:${pad(date.getMinutes())}`;
+};
+
 export const CreateExam = () => {
   const navigate = useNavigate();
   const [examTitle, setExamTitle] = useState('');
   const [description, setDescription] = useState('');
-  const [startsAt, setStartsAt] = useState(new Date(Date.now() + 3600000).toISOString().slice(0, 16));
+  const [startsAt, setStartsAt] = useState(() => toLocalDateTimeString(new Date()));
   const [duration, setDuration] = useState(60);
   const [visualEvidenceAllowed, setVisualEvidenceAllowed] = useState(true);
   const [warningThreshold, setWarningThreshold] = useState(30);

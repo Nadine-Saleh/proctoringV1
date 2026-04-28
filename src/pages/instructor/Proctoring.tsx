@@ -16,7 +16,8 @@ import {
   Clock,
   Bell,
   Zap,
-  Activity
+  Activity,
+  ArrowLeftRight
 } from 'lucide-react';
 
 interface LiveAlert {
@@ -154,7 +155,7 @@ export const ProctoringReport = () => {
       realtimeChannelRef.current = null;
       setIsConnected(false);
     };
-  }, [user, examId]); // eslint-disable-line react-hooks/exhaustive-deps
+  }, [user, examId]);
 
   // Load instructor's exams
   useEffect(() => {
@@ -576,8 +577,26 @@ export const ProctoringReport = () => {
                               {session.student_name?.charAt(0) || '?'}
                             </div>
                             <div>
-                              <h3 className="font-semibold text-gray-900">{session.student_name}</h3>
-                              <p className="text-sm text-gray-500">{session.student_email}</p>
+                              <div className="flex items-center gap-2">
+                                <h3 className="font-semibold text-gray-900">{session.student_name}</h3>
+                                {session.calibration_skipped && (
+                                  <span
+                                    className="inline-flex items-center gap-1 px-2 py-0.5 rounded text-xs font-medium bg-orange-100 text-orange-700 border border-orange-200"
+                                    title="Distance calibration was skipped — violations measured against 50 cm ± 20 cm default"
+                                  >
+                                    <ArrowLeftRight className="w-3 h-3" />
+                                    Calibration skipped
+                                  </span>
+                                )}
+                              </div>
+                              <p className="text-sm text-gray-500">
+                                {session.student_email}
+                                {!session.calibration_skipped && session.optimal_distance_cm != null && (
+                                  <span className="ml-2 text-xs text-gray-400">
+                                    Baseline: {session.optimal_distance_cm} cm
+                                  </span>
+                                )}
+                              </p>
                             </div>
                           </div>
                           <div className="flex items-center space-x-4">

@@ -140,7 +140,7 @@ export function useExamSession(): UseExamSessionReturn {
     setIsLoading(true);
     setError(null);
     try {
-      const result = await IdentityVerificationService.startSession(sessionId);
+      const result = await IdentityVerificationService.startSession(sessionId, { calibration_skipped: true });
       if (!result.success || !result.data) {
         setError(result.error ?? 'Failed to start exam');
         return false;

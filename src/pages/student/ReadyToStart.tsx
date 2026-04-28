@@ -1,7 +1,7 @@
 import { useEffect, useState } from 'react';
 import { useNavigate, useParams, useLocation } from 'react-router-dom';
 import { PlayCircle, Clock, FileText, ShieldCheck, AlertCircle, Loader2 } from 'lucide-react';
-import { IdentityVerificationService, type JoinExamResponse } from '../../services/IdentityVerificationService';
+import type { JoinExamResponse } from '../../services/IdentityVerificationService';
 import { useApp } from '../../context/AppContext';
 import { supabase } from '../../lib/supabase/client';
 
@@ -36,19 +36,6 @@ export const ReadyToStart = () => {
     setLoading(true);
     setError(null);
 
-    const result = await IdentityVerificationService.startSession(sessionId);
-
-    if (!result.success || !result.data) {
-      setLoading(false);
-      const msg = result.error ?? 'Failed to start the exam';
-      if (msg.includes('exam_window_closed')) {
-        setError('The exam window has closed. Please contact your instructor.');
-      } else {
-        setError(msg);
-      }
-      return;
-    }
-
     if (joinData?.exam) {
       setCurrentExam({
         id: joinData.exam.id,
@@ -59,8 +46,9 @@ export const ReadyToStart = () => {
       });
     }
 
+    // start_exam_session is called inside Exam.tsx after distance calibration (T040a / FR-013a).
     navigate(`/exam/${sessionId}`, {
-      state: { sessionData: result.data, joinData },
+      state: { joinData },
     });
   };
 
