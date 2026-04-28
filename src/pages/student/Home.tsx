@@ -3,6 +3,7 @@ import { useNavigate, Link } from 'react-router-dom';
 import { Clock, FileText, Calendar, ChevronRight, AlertCircle, KeyRound, Loader2 } from 'lucide-react';
 import { IdentityVerificationService } from '../../services/IdentityVerificationService';
 import { useApp } from '../../context/AppContext';
+import { Exam as ExamType } from '../../types';
 
 interface SessionRow {
   session_id: string;

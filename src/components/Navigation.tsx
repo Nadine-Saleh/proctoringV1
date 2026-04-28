@@ -11,12 +11,12 @@ export const Navigation = ({ onSignOut, userName }: NavigationProps) => {
   const { role } = useApp();
   const location = useLocation();
 
-  const studentLinks = [
+  const studentLinks: NavLink[] = [
     { to: '/', label: 'Home', icon: Home },
     { to: '/results', label: 'Results', icon: BarChart3 }
   ];
 
-  const instructorLinks = [
+  const instructorLinks: NavLink[] = [
     { to: '/instructor', label: 'Dashboard', icon: Home },
     { to: '/instructor/create', label: 'Create Exam', icon: FileText },
     { to: '/instructor/results', label: 'Results', icon: BarChart3 },
