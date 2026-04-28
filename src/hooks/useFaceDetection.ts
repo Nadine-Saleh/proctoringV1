@@ -10,8 +10,8 @@ import {
 interface UseFaceDetectionProps {
   faceDetectionConfig?: FaceDetectionConfig;
   livenessConfig?: LivenessConfig;
-  onLivenessEvent?: (event: LivenessEvent, data?: any) => void;
-  onDetection?: (faces: any[]) => void;
+  onLivenessEvent?: (event: LivenessEvent, data?: unknown) => void;
+  onDetection?: (faces: unknown[]) => void;
 }
 
 interface UseFaceDetectionResult {
@@ -46,7 +46,7 @@ export const useFaceDetection = (props: UseFaceDetectionProps = {}): UseFaceDete
   const [currentStepIndex, setCurrentStepIndex] = useState<number>(0);
   const [totalSteps, setTotalSteps] = useState<number>(0);
   const [stepProgress, setStepProgress] = useState<number>(0);
-  const [detectedFaces, setDetectedFaces] = useState<any[]>([]);
+  const [detectedFaces, setDetectedFaces] = useState<unknown[]>([]);
   const [ageGender, setAgeGender] = useState<{ age: number; gender: string; probability: number } | null>(null);
   const [errorMessage, setErrorMessage] = useState<string | null>(null);
 
@@ -64,30 +64,32 @@ export const useFaceDetection = (props: UseFaceDetectionProps = {}): UseFaceDete
 
     // Setup event listeners for liveness module
     if (livenessModuleRef.current) {
-      const stepStartedHandler = (event: LivenessEvent, data: any) => {
-        setCurrentStep(data.step);
-        setCurrentStepIndex(data.index);
-        setTotalSteps(data.total);
+      const stepStartedHandler = (event: LivenessEvent, data: unknown) => {
+        setCurrentStep((data as { step: LivenessStep }).step);
+        setCurrentStepIndex((data as { index: number }).index);
+        setTotalSteps((data as { total: number }).total);
         onLivenessEvent?.(event, data);
       };
 
-      const stepPassedHandler = (event: LivenessEvent, data: any) => {
-        setCurrentStepIndex(data.index);
+      const stepPassedHandler = (event: LivenessEvent, data: unknown) => {
+        setCurrentStepIndex((data as { index: number }).index);
         onLivenessEvent?.(event, data);
       };
 
-      const progressUpdatedHandler = (event: LivenessEvent, data: any) => {
-        setStepProgress(data.progress);
+      const progressUpdatedHandler = (event: LivenessEvent, data: unknown) => {
+        setStepProgress((data as { progress: number }).progress);
         onLivenessEvent?.(event, data);
       };
 
-      const timeoutOccurredHandler = (event: LivenessEvent, data: any) => {
-        setErrorMessage(`Timeout: ${data.step?.name || 'Step'} not completed in time`);
+      const timeoutOccurredHandler = (event: LivenessEvent, data: unknown) => {
+        const stepName = (data as { step?: { name?: string } }).step?.name || 'Step';
+        setErrorMessage(`Timeout: ${stepName} not completed in time`);
         onLivenessEvent?.(event, data);
       };
 
-      const verificationCompleteHandler = (event: LivenessEvent, data: any) => {
-        setCurrentStepIndex(data.totalSteps); // Set to total to trigger completion
+      const verificationCompleteHandler = (event: LivenessEvent, data: unknown) => {
+        const totalStepsCount = (data as { totalSteps: number }).totalSteps;
+        setCurrentStepIndex(totalStepsCount);
         setStepProgress(1);
         onLivenessEvent?.(event, data);
       };
@@ -99,7 +101,7 @@ export const useFaceDetection = (props: UseFaceDetectionProps = {}): UseFaceDete
       livenessModuleRef.current.on(LivenessEvent.VERIFICATION_COMPLETE, verificationCompleteHandler);
 
       // Store handlers for cleanup
-      (livenessModuleRef.current as any)._handlers = {
+      (livenessModuleRef.current as Record<string, unknown>)._handlers = {
         stepStartedHandler,
         stepPassedHandler,
         progressUpdatedHandler,
@@ -110,7 +112,7 @@ export const useFaceDetection = (props: UseFaceDetectionProps = {}): UseFaceDete
 
     return () => {
       // Cleanup event listeners
-      if (livenessModuleRef.current && (livenessModuleRef.current as any)._handlers) {
+      if (livenessModuleRef.current && (livenessModuleRef.current as Record<string, unknown>)._handlers) {
         // We don't have a way to remove handlers without storing them separately, 
         // so we'll skip removal in this simplified implementation
       }

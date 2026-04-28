@@ -47,7 +47,7 @@ export function useAuth(): UseAuthReturn {
 
     const { error } = await supabase
       .from('users')
-      .update({ role } as any)
+      .update({ role })
       .eq('id', user.id);
 
     if (!error) {

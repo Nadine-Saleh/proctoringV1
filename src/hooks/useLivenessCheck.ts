@@ -51,15 +51,16 @@ export const useLivenessCheck = (): UseLivenessCheckReturn => {
   const [result, setResult] = useState<LivenessCheckResult | null>(null);
   const [modelsLoaded, setModelsLoaded] = useState(false);
   const [faceDistanceCm, setFaceDistanceCm] = useState<number | null>(null);
-  const distanceDetectionRef = useRef<any>(null);
+  const distanceDetectionRef = useRef<ReturnType<typeof setTimeout> | null>(null);
 
   // Estimate face distance from detection box size
-  const estimateFaceDistance = useCallback((detection: any): number => {
-    if (!detection || !detection.detection || !detection.detection.box) return 50;
+  const estimateFaceDistance = useCallback((detection: unknown): number => {
+    const det = detection as Record<string, unknown>;
+    if (!det || !det.detection || !(det.detection as Record<string, unknown>).box) return 50;
     
-    const box = detection.detection.box;
-    const boxWidth = box.width || 0;
-    const boxHeight = box.height || 0;
+    const box = (det.detection as Record<string, unknown>).box as Record<string, unknown>;
+    const boxWidth = (box.width as number) || 0;
+    const boxHeight = (box.height as number) || 0;
     
     // Use the larger dimension for more stable estimation
     const boxSize = Math.max(boxWidth, boxHeight);
@@ -288,16 +289,16 @@ export const useLivenessCheck = (): UseLivenessCheckReturn => {
               expressions: d.expressions
             }));
 
-            livenessModuleRef.current.processFrame(mappedDetections as any);
+            livenessModuleRef.current.processFrame(mappedDetections as unknown[]);
           }
         }
-      } catch (err: any) {
+      } catch (err) {
         console.error('[LivenessCheck] Detection error:', err);
       }
 
       // Schedule next frame - 100ms for faster detection response
       if (hasStartedCheckRef.current && !verificationCompleted) {
-        detectionTimerRef.current = window.setTimeout(detectionLoop, 100) as any;
+        detectionTimerRef.current = window.setTimeout(detectionLoop, 100);
       }
     };
 
@@ -311,8 +312,9 @@ export const useLivenessCheck = (): UseLivenessCheckReturn => {
         cleanupModuleListeners();
       };
 
-      const onTimeout = (data?: any) => {
-        handleCompletion(false, `Step "${data?.step?.name || 'current'}" timed out. Please try again.`);
+      const onTimeout = (data?: unknown) => {
+        const stepName = (data as Record<string, unknown>)?.step ? ((data as Record<string, { step?: { name?: string } }>).step?.name || 'current') : 'current';
+        handleCompletion(false, `Step "${stepName}" timed out. Please try again.`);
         cleanupModuleListeners();
       };
 
@@ -326,7 +328,7 @@ export const useLivenessCheck = (): UseLivenessCheckReturn => {
       livenessModuleRef.current.on(LivenessEvent.VERIFICATION_COMPLETE, onComplete);
       livenessModuleRef.current.on(LivenessEvent.TIMEOUT_OCCURRED, onTimeout);
     }
-  }, [clearIntervals]);
+  }, [clearIntervals, estimateFaceDistance]);
 
   // Start the liveness check
   const startCheck = useCallback(async () => {
@@ -370,9 +372,10 @@ export const useLivenessCheck = (): UseLivenessCheckReturn => {
       } else {
         performLivenessCheck();
       }
-    } catch (err: any) {
+    } catch (err) {
+      const message = err instanceof Error ? err.message : 'Unknown error';
       setIsFailed(true);
-      setInstruction(`Error: ${err.message}`);
+      setInstruction(`Error: ${message}`);
     }
   }, [modelsLoaded, performLivenessCheck]);
 
