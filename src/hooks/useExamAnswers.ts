@@ -95,7 +95,7 @@ export function useExamAnswers(totalQuestions: number): UseExamAnswersReturn {
 
     // Auto-sync after answer (debounced)
     scheduleSync();
-  }, []);
+  }, [scheduleSync]);
 
   /**
    * Clear an answer for a question
@@ -169,7 +169,7 @@ export function useExamAnswers(totalQuestions: number): UseExamAnswersReturn {
         });
       }
 
-      const result = await StudentAnswerService.upsertBatch(answersToSync as any);
+      const result = await StudentAnswerService.upsertBatch(answersToSync);
 
       if (!result.success) {
         setSyncError(result.error ?? 'Failed to sync answers');

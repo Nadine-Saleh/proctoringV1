@@ -27,7 +27,7 @@ export class StudentAnswerService {
           selected_answer: input.selected_answer ?? null,
           time_spent_seconds: input.time_spent_seconds ?? null,
           answer_order: input.answer_order ?? null,
-        } as any, {
+        }, {
           onConflict: 'session_id,question_id',
         })
         .select()
@@ -61,7 +61,7 @@ export class StudentAnswerService {
 
       const { data, error } = await supabase
         .from('student_answers')
-        .upsert(records as any, {
+        .upsert(records, {
           onConflict: 'session_id,question_id',
         })
         .select();
