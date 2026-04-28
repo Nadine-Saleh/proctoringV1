@@ -1,12 +1,18 @@
 import { useState, useCallback, useRef, useEffect } from 'react';
 import { Target, CheckCircle, ArrowRight } from 'lucide-react';
 
+interface FaceLandmarker {
+  detectForVideo: (video: HTMLVideoElement, timestamp: number) => {
+    faceLandmarks?: Array<Array<{ x: number; y: number; z: number }>>;
+  };
+}
+
 interface CalibrationModalProps {
   isOpen: boolean;
   onComplete: (offsets: { x: number; y: number }) => void;
   onCancel: () => void;
   videoElement: HTMLVideoElement | null;
-  faceLandmarker: any; // FaceLandmarker instance
+  faceLandmarker: FaceLandmarker;
 }
 
 interface CalibrationPoint {
@@ -57,12 +63,12 @@ export const CalibrationModal: React.FC<CalibrationModalProps> = ({
     } else if (countdown === 0 && !isCollecting) {
       startCollection();
     }
-  }, [countdown, isCollecting, isComplete, isOpen]);
+  }, [countdown, isCollecting, isComplete, isOpen, startCollection]);
 
   const startCollection = useCallback(() => {
     setIsCollecting(true);
     collectGazeSamples();
-  }, []);
+  }, [collectGazeSamples]);
 
   const collectGazeSamples = useCallback(() => {
     if (!videoElement || !faceLandmarker) {
@@ -133,7 +139,7 @@ export const CalibrationModal: React.FC<CalibrationModalProps> = ({
     if (countdown <= 0) {
       collectionTimeoutRef.current = setTimeout(collectSample, SAMPLE_INTERVAL);
     }
-  }, [videoElement, faceLandmarker, currentPointIndex, isCollecting, countdown]);
+  }, [videoElement, faceLandmarker, currentPointIndex, isCollecting, countdown, finishCalibration]);
 
   const finishCalibration = useCallback(() => {
     if (collectionTimeoutRef.current) {

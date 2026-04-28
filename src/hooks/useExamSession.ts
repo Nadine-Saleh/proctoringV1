@@ -155,7 +155,7 @@ export function useExamSession(): UseExamSessionReturn {
     } finally {
       setIsLoading(false);
     }
-  }, [sessionId]);
+  }, [sessionId, startTimer]);
 
   // ── Legacy session actions ─────────────────────────────────────────────────
 
@@ -230,7 +230,7 @@ export function useExamSession(): UseExamSessionReturn {
     } finally {
       setIsLoading(false);
     }
-  }, []);
+  }, [startHeartbeat, startTimer]);
 
   /**
    * Submit the exam

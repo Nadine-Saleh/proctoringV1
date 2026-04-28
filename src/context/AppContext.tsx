@@ -1,14 +1,15 @@
 import { createContext, useContext, useState, useEffect, useMemo, ReactNode } from 'react';
 import { useAuth } from '../hooks/useAuth';
 import type { UserRole } from '../services/authService';
+import type { Exam } from '../services/ExamService';
 
 type AppUserRole = 'student' | 'instructor';
 
 interface AppContextType {
   role: AppUserRole;
   setRole: (role: AppUserRole) => void;
-  currentExam: any | null;
-  setCurrentExam: (exam: any) => void;
+  currentExam: Exam | null;
+  setCurrentExam: (exam: Exam) => void;
   user: ReturnType<typeof useAuth>['user'];
   isLoading: boolean;
   isAuthenticated: boolean;
@@ -27,7 +28,7 @@ export const AppProvider = ({ children }: { children: ReactNode }) => {
   };
 
   const [role, setRole] = useState<AppUserRole>(getAppRole(auth.user?.role));
-  const [currentExam, setCurrentExam] = useState<any | null>(null);
+  const [currentExam, setCurrentExam] = useState<Exam | null>(null);
 
   useEffect(() => {
     if (auth.user) {
