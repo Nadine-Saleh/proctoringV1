@@ -22,7 +22,6 @@ export const MicrophonePermissionModal = ({
   const {
     status,
     startMicrophone,
-    stopMicrophone,
     retryMicrophone
   } = useMicrophoneContext();
 
