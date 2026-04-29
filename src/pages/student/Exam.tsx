@@ -4,10 +4,12 @@ import { useApp } from '../../context/AppContext';
 import { useProctoring } from '../../hooks/useProctoring';
 import { useEyeGazeDetection } from '../../hooks/useEyeGazeDetection';
 import { useLivenessCheck } from '../../hooks/useLivenessCheck';
+import { usePoseDetection } from '../../hooks/usePoseDetection';
 import { useMicrophoneContext } from '../../context/MicrophoneContext';
 import { LivenessCheckModal } from '../../components/LivenessCheckModal';
 import { DistanceSetupModal } from '../../components/DistanceSetupModal';
 import { MicrophonePermissionModal } from '../../components/MicrophonePermissionModal';
+import { PoseDetectionOverlay } from '../../components/PoseDetectionOverlay';
 import { mockQuestions } from '../../data/mockData';
 import { calculateViolationScore, getRiskLevel, ViolationEvent } from '../../utils/violationScorer';
 import { sendCriticalAlert } from '../../services/instructorAlertService';
@@ -109,6 +111,16 @@ export const Exam = () => {
     faceDistanceCm: livenessFaceDistanceCm
   } = useLivenessCheck();
 
+  const {
+    isModelLoaded: poseModelLoaded,
+    isDetecting: poseDetecting,
+    frameStatus: poseFrameStatus,
+    statusMessage: poseStatusMessage,
+    startDetection: startPoseDetection,
+    stopDetection: stopPoseDetection,
+    loadingProgress: poseLoadingProgress
+  } = usePoseDetection();
+
   const combinedVideoRef = useRef<HTMLVideoElement | null>(null);
 
   // Use liveness face distance before exam starts, then gaze distance after
@@ -120,6 +132,13 @@ export const Exam = () => {
       startDetection();
     }
   }, [examStarted, gazeModelsLoaded, status.camera, isDetecting, startDetection]);
+
+  // Start pose detection when exam starts and models are loaded
+  useEffect(() => {
+    if (examStarted && poseModelLoaded && status.camera && !poseDetecting && combinedVideoRef.current) {
+      startPoseDetection(combinedVideoRef.current);
+    }
+  }, [examStarted, poseModelLoaded, status.camera, poseDetecting, startPoseDetection]);
 
   // Show subtle status change when looking away (no distracting overlays)
   useEffect(() => {
@@ -285,8 +304,9 @@ export const Exam = () => {
   useEffect(() => {
     return () => {
       stopDetection();
+      stopPoseDetection();
     };
-  }, [stopDetection]);
+  }, [stopDetection, stopPoseDetection]);
 
   // Combined video ref for both proctoring and eye gaze
   const setCombinedVideoRef = useCallback((element: HTMLVideoElement | null) => {
@@ -609,6 +629,17 @@ export const Exam = () => {
               }`}
             />
 
+            {/* Pose Detection Overlay */}
+            <div className="absolute inset-0 z-10">
+              <PoseDetectionOverlay
+                videoElement={combinedVideoRef.current}
+                isDetecting={poseDetecting}
+                frameStatus={poseFrameStatus}
+                statusMessage={poseStatusMessage}
+                isModelLoaded={poseModelLoaded}
+              />
+            </div>
+
             {status.loading && !status.errorMessage && (
               <div className="absolute inset-0 flex items-center justify-center bg-black/50">
                 <div className="text-center text-white">
@@ -773,6 +804,43 @@ export const Exam = () => {
                 )
               ) : (
                 <div className="w-4 h-4 border-2 border-gray-400 border-t-transparent rounded-full animate-spin" />
+              )}
+            </div>
+
+            {/* Pose Detection Status */}
+            <div
+              className={`flex items-center justify-between p-3 rounded-lg ${
+                poseDetecting
+                  ? poseFrameStatus === 'valid'
+                    ? 'bg-green-50'
+                    : 'bg-red-50'
+                  : 'bg-gray-50'
+              }`}
+            >
+              <div className="flex-1">
+                <span
+                  className={`text-sm font-medium ${
+                    poseDetecting
+                      ? poseFrameStatus === 'valid'
+                        ? 'text-green-700'
+                        : 'text-red-700'
+                      : 'text-gray-500'
+                  }`}
+                >
+                  {poseDetecting ? 'Pose Detection' : poseLoadingProgress || 'Loading Pose...'}
+                </span>
+                {poseLoadingProgress && !poseDetecting && (
+                  <p className="text-xs text-gray-600 mt-1">{poseLoadingProgress}</p>
+                )}
+              </div>
+              {poseDetecting ? (
+                poseFrameStatus === 'valid' ? (
+                  <CheckCircle className="w-4 h-4 text-green-600 flex-shrink-0" />
+                ) : (
+                  <AlertTriangle className="w-4 h-4 text-red-600 flex-shrink-0" />
+                )
+              ) : (
+                <div className="w-4 h-4 border-2 border-gray-400 border-t-transparent rounded-full animate-spin flex-shrink-0" />
               )}
             </div>
 
