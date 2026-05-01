@@ -44,7 +44,6 @@ export class LivenessDetectionModule {
   private stepProgress = 0;
   private eventHandlers: Map<LivenessEvent, LivenessEventHandler[]> = new Map();
   private baselineY: number | null = null;  // Track baseline Y at step start
-  private baselineX: number | null = null;  // Track baseline X at step start
 
   constructor(config: LivenessConfig = {}) {
     this.config = {
@@ -73,7 +72,6 @@ export class LivenessDetectionModule {
     this.noseHistory = [];
     this.stepProgress = 0;
     this.baselineY = null;
-    this.baselineX = null;
     
     // Trigger the first step
     this.emit(LivenessEvent.STEP_STARTED, {
@@ -204,7 +202,6 @@ export class LivenessDetectionModule {
     this.currentStepIndex++;
     this.noseHistory = []; // Clear nose history after successful completion
     this.baselineY = null;
-    this.baselineX = null;
     this.stepStartTime = Date.now();
     this.stepProgress = 0;
 
@@ -286,7 +283,6 @@ export class LivenessDetectionModule {
     if (currentStep && (currentStep.type === 'nod' || currentStep.type === 'lookUp')) {
       if (this.baselineY === null) {
         this.baselineY = y;
-        this.baselineX = x;
         console.log('[LivenessModule] Baseline captured:', { x: x.toFixed(1), y: y.toFixed(1) });
       }
     }
