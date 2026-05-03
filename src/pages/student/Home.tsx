@@ -1,5 +1,5 @@
-import { useEffect, useState } from 'react';
-import { useNavigate, Link } from 'react-router-dom';
+import { useCallback, useEffect, useState } from 'react';
+import { useNavigate, Link, useLocation } from 'react-router-dom';
 import { Clock, FileText, Calendar, ChevronRight, AlertCircle, KeyRound, Loader2 } from 'lucide-react';
 import { IdentityVerificationService } from '../../services/IdentityVerificationService';
 import { useApp } from '../../context/AppContext';
@@ -72,23 +72,34 @@ const getSessionRoute = (session: SessionRow): string => {
 
 export const StudentHome = () => {
   const navigate = useNavigate();
+  const location = useLocation();
   const { setCurrentExam } = useApp();
   const [sessions, setSessions] = useState<SessionRow[]>([]);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
 
-  useEffect(() => {
-    const load = async () => {
-      const result = await IdentityVerificationService.listMySessions();
-      if (result.success && result.sessions) {
-        setSessions(result.sessions);
-      } else if (!result.success) {
-        setError(result.error ?? 'Failed to load sessions');
-      }
-      setLoading(false);
-    };
-    load();
+  const loadSessions = useCallback(async () => {
+    const result = await IdentityVerificationService.listMySessions();
+    if (result.success && result.sessions) {
+      setSessions(result.sessions);
+      setError(null);
+    } else if (!result.success) {
+      setError(result.error ?? 'Failed to load sessions');
+    }
+    setLoading(false);
   }, []);
+
+  // Refresh whenever Home is re-navigated to (e.g. returning from /results
+  // after submission) so a just-finished session no longer appears active.
+  useEffect(() => {
+    loadSessions();
+  }, [loadSessions, location.key]);
+
+  useEffect(() => {
+    const onFocus = () => loadSessions();
+    window.addEventListener('focus', onFocus);
+    return () => window.removeEventListener('focus', onFocus);
+  }, [loadSessions]);
 
   const activeSessions = sessions.filter(
     (s) => !['submitted', 'auto_submitted', 'terminated'].includes(s.status)
@@ -142,43 +153,50 @@ export const StudentHome = () => {
           <section className="mb-8">
             <h2 className="text-xl font-semibold text-gray-900 mb-4">Active Exams</h2>
             <div className="grid grid-cols-1 md:grid-cols-2 gap-5">
-              {activeSessions.map((session) => (
-                <div
-                  key={session.session_id}
-                  className="bg-white rounded-xl shadow-sm border border-gray-200 overflow-hidden hover:shadow-md transition-all"
-                >
-                  <div className="p-6">
-                    <span className={`inline-flex px-3 py-1 rounded-full text-xs font-semibold border mb-3 ${getStatusColor(session.status)}`}>
-                      {SESSION_STATUS_LABELS[session.status] ?? session.status}
-                    </span>
-                    <h3 className="text-lg font-bold text-gray-900 mb-3">{session.exam_title}</h3>
-                    <div className="space-y-2 mb-5">
-                      <div className="flex items-center text-sm text-gray-600">
-                        <Calendar className="w-4 h-4 mr-2 text-gray-400" />
-                        {formatDate(session.exam_starts_at)}
+              {activeSessions.map((session) => {
+                const isClosed = ['submitted', 'auto_submitted', 'terminated'].includes(session.status);
+                return (
+                  <div
+                    key={session.session_id}
+                    className="bg-white rounded-xl shadow-sm border border-gray-200 overflow-hidden hover:shadow-md transition-all"
+                  >
+                    <div className="p-6">
+                      <span className={`inline-flex px-3 py-1 rounded-full text-xs font-semibold border mb-3 ${getStatusColor(session.status)}`}>
+                        {SESSION_STATUS_LABELS[session.status] ?? session.status}
+                      </span>
+                      <h3 className="text-lg font-bold text-gray-900 mb-3">{session.exam_title}</h3>
+                      <div className="space-y-2 mb-5">
+                        <div className="flex items-center text-sm text-gray-600">
+                          <Calendar className="w-4 h-4 mr-2 text-gray-400" />
+                          {formatDate(session.exam_starts_at)}
+                        </div>
+                        <div className="flex items-center text-sm text-gray-600">
+                          <Clock className="w-4 h-4 mr-2 text-gray-400" />
+                          {session.duration_minutes} minutes
+                        </div>
                       </div>
-                      <div className="flex items-center text-sm text-gray-600">
-                        <Clock className="w-4 h-4 mr-2 text-gray-400" />
-                        {session.duration_minutes} minutes
-                      </div>
+                      <button
+                        disabled={isClosed}
+                        onClick={() => {
+                          if (isClosed) return;
+                          setCurrentExam({
+                            id: session.exam_id,
+                            title: session.exam_title,
+                            duration: session.duration_minutes,
+                          });
+                          navigate(getSessionRoute(session));
+                        }}
+                        className="w-full py-2.5 px-4 bg-blue-600 text-white rounded-lg font-semibold hover:bg-blue-700 transition-colors flex items-center justify-center gap-2 disabled:bg-gray-300 disabled:cursor-not-allowed disabled:hover:bg-gray-300"
+                      >
+                        {isClosed
+                          ? 'Already Submitted'
+                          : session.status === 'in_progress' ? 'Continue Exam' : 'Continue'}
+                        <ChevronRight className="w-4 h-4" />
+                      </button>
                     </div>
-                    <button
-                      onClick={() => {
-                        setCurrentExam({
-                          id: session.exam_id,
-                          title: session.exam_title,
-                          duration: session.duration_minutes,
-                        });
-                        navigate(getSessionRoute(session));
-                      }}
-                      className="w-full py-2.5 px-4 bg-blue-600 text-white rounded-lg font-semibold hover:bg-blue-700 transition-colors flex items-center justify-center gap-2"
-                    >
-                      {session.status === 'in_progress' ? 'Continue Exam' : 'Continue'}
-                      <ChevronRight className="w-4 h-4" />
-                    </button>
                   </div>
-                </div>
-              ))}
+                );
+              })}
             </div>
           </section>
         )}

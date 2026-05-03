@@ -42,9 +42,17 @@ interface UseExamSessionReturn {
   verifyIdentity: (embedding: Float32Array) => Promise<{ passed: boolean; blocked: boolean }>;
   beginExam: () => Promise<boolean>;
 
+  // Continue-exam flow: hydrate `session` from a URL `sessionId` param so the
+  // submission path has the fields it needs without going through startSession.
+  loadSession: (sessionId: string) => Promise<boolean>;
+
   // Legacy session actions
   startSession: (examId: string, studentId: string, livenessData?: Record<string, unknown>) => Promise<boolean>;
-  submitExam: (answers: SubmittedAnswer[], durationSeconds: number) => Promise<ExamSubmissionResult>;
+  submitExam: (
+    answers: SubmittedAnswer[],
+    durationSeconds: number,
+    overrides?: { sessionId?: string; examId?: string },
+  ) => Promise<ExamSubmissionResult>;
 
   // Timer state
   timeElapsed: number;
@@ -78,13 +86,115 @@ export function useExamSession(): UseExamSessionReturn {
   const [isHeartbeatActive, setIsHeartbeatActive] = useState(false);
   const [heartbeatMissedBeats, setHeartbeatMissedBeats] = useState(0);
 
+  // ── Timer ──────────────────────────────────────────────────────────────────
+
+  /**
+   * Start the exam timer
+   */
+  const startTimer = useCallback(() => {
+    if (timerRef.current) return; // Already running
+
+    startTimeRef.current = Date.now() - (timeElapsed * 1000);
+    setIsTimerRunning(true);
+
+    timerRef.current = setInterval(() => {
+      const elapsed = Math.floor((Date.now() - startTimeRef.current) / 1000);
+      setTimeElapsed(elapsed);
+    }, 1000);
+  }, [timeElapsed]);
+
+  /**
+   * Stop the exam timer
+   */
+  const stopTimer = useCallback(() => {
+    if (timerRef.current) {
+      clearInterval(timerRef.current);
+      timerRef.current = null;
+    }
+    setIsTimerRunning(false);
+  }, []);
+
+  /**
+   * Reset the exam timer
+   */
+  const resetTimer = useCallback(() => {
+    stopTimer();
+    setTimeElapsed(0);
+    startTimeRef.current = 0;
+  }, [stopTimer]);
+
+  // ── Heartbeat ──────────────────────────────────────────────────────────────
+
+  /**
+   * Start heartbeat for session
+   */
+  const startHeartbeat = useCallback((sessionIdArg: string) => {
+    if (heartbeatRef.current) {
+      heartbeatRef.current.stop();
+    }
+
+    const heartbeat = new SessionHeartbeat(30000); // 30 second interval
+    heartbeat.start(sessionIdArg, {
+      onSuccess: () => {
+        // Heartbeat succeeded (no UI update needed)
+      },
+      onFailure: (error) => {
+        console.warn('[useExamSession] Heartbeat failed:', error);
+        setHeartbeatMissedBeats(heartbeat.missedBeatCount);
+      },
+      onTimeout: () => {
+        console.error('[useExamSession] Session heartbeat timeout');
+        setError('Connection lost. Please check your internet connection.');
+      },
+    });
+
+    heartbeatRef.current = heartbeat;
+    setIsHeartbeatActive(true);
+    setHeartbeatMissedBeats(0);
+  }, []);
+
+  /**
+   * Stop heartbeat
+   */
+  const stopHeartbeat = useCallback(() => {
+    if (heartbeatRef.current) {
+      heartbeatRef.current.stop();
+      heartbeatRef.current = null;
+    }
+    setIsHeartbeatActive(false);
+    setHeartbeatMissedBeats(0);
+  }, []);
+
   // Cleanup on unmount
   useEffect(() => {
     return () => {
       stopTimer();
       stopHeartbeat();
     };
-  });
+  }, [stopTimer, stopHeartbeat]);
+
+  // ── Hydrate session from URL sessionId (continue-exam flow) ────────────────
+
+  const loadSession = useCallback(async (sid: string): Promise<boolean> => {
+    setIsLoading(true);
+    setError(null);
+    try {
+      const result = await ExamSessionService.getById(sid);
+      if (!result.success || !result.session) {
+        setError(result.error ?? 'Failed to load session');
+        return false;
+      }
+      setSession(result.session);
+      setSessionId(result.session.id);
+      setLifecycleStatus(result.session.status as SessionLifecycleStatus);
+      return true;
+    } catch (err) {
+      setError(err instanceof Error ? err.message : 'Unknown error');
+      return false;
+    } finally {
+      setIsLoading(false);
+    }
+  }, []);
 
   // ── US2 state-machine actions ──────────────────────────────────────────────
 
@@ -237,9 +347,15 @@ export function useExamSession(): UseExamSessionReturn {
    */
   const submitExam = useCallback(async (
     answers: SubmittedAnswer[],
-    durationSeconds: number
+    durationSeconds: number,
+    overrides?: { sessionId?: string; examId?: string },
   ): Promise<ExamSubmissionResult> => {
-    if (!session) {
+    // The US2 flow never populates `session`, only `sessionId`. Accept overrides
+    // so submission works with either path. We fall back to a fresh DB read if
+    // we don't have an in-memory session — the Edge Function and the direct
+    // submit path both load fields from the DB anyway.
+    const targetSessionId = session?.id ?? overrides?.sessionId;
+    if (!targetSessionId) {
       return { success: false, error: 'No active session' };
     }
 
@@ -247,32 +363,36 @@ export function useExamSession(): UseExamSessionReturn {
     setError(null);
 
     try {
-      // Stop timer and heartbeat
       stopTimer();
       stopHeartbeat();
 
-      // Build submission object
       const submission: ExamSubmission = {
-        session_id: session.id,
-        exam_id: session.exam_id,
+        session_id: targetSessionId,
+        exam_id: session?.exam_id ?? overrides?.examId ?? '',
         answers,
         duration_taken_seconds: durationSeconds,
-        liveness_check_passed: session.liveness_check_passed ?? false,
-        violation_count: 0, // Will be populated from violation events
+        liveness_check_passed: session?.liveness_check_passed ?? false,
+        violation_count: 0,
         user_agent: navigator.userAgent,
       };
 
-      // Submit
       const result = await ExamSubmissionService.submit(submission);
 
       if (result.success) {
-        // Update local session state
+        // Defensive: ensure exam_sessions.status flips even if the path that
+        // succeeded didn't update it (e.g. an idempotent edge hit on a stale row).
+        const persisted = await ExamSessionService.submit(targetSessionId, durationSeconds);
+        if (!persisted.success) {
+          console.warn('[useExamSession] Fallback session.submit failed:', persisted.error);
+        }
+
         setSession(prev => prev ? {
           ...prev,
           status: 'submitted',
           submitted_at: new Date().toISOString(),
           duration_taken_seconds: durationSeconds,
         } : null);
+        setLifecycleStatus('submitted');
       } else {
         setError(result.error ?? 'Submission failed');
       }
@@ -286,82 +406,7 @@ export function useExamSession(): UseExamSessionReturn {
     } finally {
       setIsLoading(false);
     }
-  }, [session]);
-
-  /**
-   * Start the exam timer
-   */
-  const startTimer = useCallback(() => {
-    if (timerRef.current) return; // Already running
-
-    startTimeRef.current = Date.now() - (timeElapsed * 1000);
-    setIsTimerRunning(true);
-
-    timerRef.current = setInterval(() => {
-      const elapsed = Math.floor((Date.now() - startTimeRef.current) / 1000);
-      setTimeElapsed(elapsed);
-    }, 1000);
-  }, [timeElapsed]);
-
-  /**
-   * Stop the exam timer
-   */
-  const stopTimer = useCallback(() => {
-    if (timerRef.current) {
-      clearInterval(timerRef.current);
-      timerRef.current = null;
-    }
-    setIsTimerRunning(false);
-  }, []);
-
-  /**
-   * Reset the exam timer
-   */
-  const resetTimer = useCallback(() => {
-    stopTimer();
-    setTimeElapsed(0);
-    startTimeRef.current = 0;
-  }, [stopTimer]);
-
-  /**
-   * Start heartbeat for session
-   */
-  const startHeartbeat = useCallback((sessionId: string) => {
-    if (heartbeatRef.current) {
-      heartbeatRef.current.stop();
-    }
-
-    const heartbeat = new SessionHeartbeat(30000); // 30 second interval
-    heartbeat.start(sessionId, {
-      onSuccess: () => {
-        // Heartbeat succeeded (no UI update needed)
-      },
-      onFailure: (error) => {
-        console.warn('[useExamSession] Heartbeat failed:', error);
-        setHeartbeatMissedBeats(heartbeat.missedBeatCount);
-      },
-      onTimeout: () => {
-        console.error('[useExamSession] Session heartbeat timeout');
-        setError('Connection lost. Please check your internet connection.');
-      },
-    });
-
-    heartbeatRef.current = heartbeat;
-    setIsHeartbeatActive(true);
-    setHeartbeatMissedBeats(0);
-  }, []);
-
-  /**
-   * Stop heartbeat
-   */
-  const stopHeartbeat = useCallback(() => {
-    if (heartbeatRef.current) {
-      heartbeatRef.current.stop();
-      heartbeatRef.current = null;
-    }
-    setIsHeartbeatActive(false);
-    setHeartbeatMissedBeats(0);
-  }, []);
+  }, [session, stopTimer, stopHeartbeat]);
 
   return {
     // Session state
@@ -377,6 +422,9 @@ export function useExamSession(): UseExamSessionReturn {
     joinExam,
     verifyIdentity,
     beginExam,
+
+    // Continue-exam hydration
+    loadSession,
 
     // Legacy session actions
     startSession,

@@ -208,15 +208,16 @@ Deno.serve(async (req) => {
       return acc;
     }, {});
 
+    // evidence_packages is keyed by submission_id (see 006:250-257) and only
+    // has columns: id, submission_id, assembled_at, violation_summary,
+    // timeline_version, created_at. Inserting session_id / exam_id / student_id /
+    // expires_at fails with "column does not exist".
     const { data: ep } = await adminClient
       .from('evidence_packages')
       .insert({
-        session_id,
-        exam_id: session.exam_id,
-        student_id: session.student_id,
+        submission_id: submission!.id,
         violation_summary: violationSummary,
         assembled_at: now,
-        expires_at: new Date(Date.now() + 30 * 24 * 60 * 60 * 1000).toISOString(),
       })
       .select('id')
       .single();

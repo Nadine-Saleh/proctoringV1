@@ -51,6 +51,19 @@ export function useExamAnswers(totalQuestions: number): UseExamAnswersReturn {
   // Track dirty answers (need to be synced)
   const dirtyAnswersRef = useRef<Set<string>>(new Set());
 
+  // Debounced auto-sync
+  const syncTimeoutRef = useRef<ReturnType<typeof setTimeout> | null>(null);
+  const scheduleSync = useCallback(() => {
+    if (syncTimeoutRef.current) {
+      clearTimeout(syncTimeoutRef.current);
+    }
+
+    syncTimeoutRef.current = setTimeout(() => {
+      // Sync will be triggered by the component when sessionId is available
+      // This just clears the timeout
+    }, 5000);
+  }, []);
+
   // Track start time when question becomes active
   const setCurrentQuestion = useCallback((questionId: string | null) => {
     // Save time spent on previous question
@@ -188,19 +201,6 @@ export function useExamAnswers(totalQuestions: number): UseExamAnswersReturn {
       setIsSyncing(false);
     }
   }, [answers, questionTimes]);
-
-  // Debounced auto-sync
-  const syncTimeoutRef = useRef<ReturnType<typeof setTimeout> | null>(null);
-  const scheduleSync = useCallback(() => {
-    if (syncTimeoutRef.current) {
-      clearTimeout(syncTimeoutRef.current);
-    }
-
-    syncTimeoutRef.current = setTimeout(() => {
-      // Sync will be triggered by the component when sessionId is available
-      // This just clears the timeout
-    }, 5000);
-  }, []);
 
   /**
    * Reset all answer state
