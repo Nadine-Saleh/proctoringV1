@@ -60,7 +60,7 @@ export const useExamFlow = () => {
     () => (locationState?.sessionData?.questions as ExamQuestion[]) ?? []
   );
 
-  // const scoreTracker = useMemo(() => new CheatingScoreTracker(DEFAULT_POLICY), []);
+  const scoreTracker = useMemo(() => new CheatingScoreTracker(currentPolicy), [currentPolicy]);
 
   const {
     session,
@@ -98,7 +98,7 @@ export const useExamFlow = () => {
     liveScore,
     warningThresholdCrossed,
     criticalThresholdCrossed,
-  } = useViolationTracker(session?.id, currentExamId, user?.id, );
+  } = useViolationTracker(session?.id ?? sessionId, currentExamId, user?.id, scoreTracker);
 
   const [showSubmissionModal, setShowSubmissionModal] = useState(false);
   const [isSubmitting, setIsSubmitting] = useState(false);
@@ -138,7 +138,7 @@ export const useExamFlow = () => {
     enableWarnings: true,
     proctoringPolicy: currentPolicy,
     onCanonicalViolation: (v) => {
-      if (!session?.id || !examStarted) return;
+      if (!(session?.id ?? sessionId) || !examStarted) return;
       const persistedType = v.type === 'gaze_peripheral' ? 'gaze_looking_away' : 'gaze_prolonged_away';
       recordViolation({
         violation_type: persistedType,
@@ -165,7 +165,7 @@ export const useExamFlow = () => {
   useTabFocusTracker({
     enabled: examStarted,
     onViolation: (v) => {
-      if (!session?.id) return;
+      if (!(session?.id ?? sessionId)) return;
       recordViolation({
         violation_type: v.type,
         severity: v.severity,
@@ -181,7 +181,7 @@ export const useExamFlow = () => {
   });
 
   useEffect(() => {
-    if (!examStarted || !session?.id) return;
+    if (!examStarted || !(session?.id ?? sessionId)) return;
 
     setCanonicalViolationCallback(async (v) => {
       let evidenceImage: string | null = null;
@@ -200,7 +200,7 @@ export const useExamFlow = () => {
         client_captured_at: v.client_captured_at,
       });
     });
-  }, [examStarted, session?.id, setCanonicalViolationCallback, captureViolationSnapshot, recordViolation]);
+  }, [examStarted, session?.id, sessionId, setCanonicalViolationCallback, captureViolationSnapshot, recordViolation]);
 
   useEffect(() => {
     if (examStarted && gazeModelsLoaded && status.camera && !gazeRunning) {

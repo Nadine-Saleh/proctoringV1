@@ -187,13 +187,14 @@ export class ExamSessionService {
       const examUuid = ensureUuid(examId, 'exam');
       console.log('[ExamSessionService.getByExam] Fetching sessions for examUuid:', examUuid);
 
-      // Fetch sessions with joined data
+      // Fetch sessions with joined data (including policy thresholds so the
+      // risk band matches the server's warning_threshold / critical_threshold)
       const { data: sessions, error: sessionError } = await supabase
         .from('exam_sessions')
         .select(`
           *,
           users!exam_sessions_student_id_fkey (full_name, email),
-          exams!exam_sessions_exam_id_fkey (title, duration_minutes)
+          exams!exam_sessions_exam_id_fkey (title, duration_minutes, proctoring_policy)
         `)
         .eq('exam_id', examUuid)
         .order('created_at', { ascending: false });
@@ -217,9 +218,14 @@ export class ExamSessionService {
         calibration_skipped: boolean;
         optimal_distance_cm: number | null;
         users?: { full_name?: string | null; email?: string | null } | null;
-        exams?: { title?: string | null; duration_minutes?: number | null } | null;
+        exams?: {
+          title?: string | null;
+          duration_minutes?: number | null;
+          proctoring_policy?: { warning_threshold?: number; critical_threshold?: number } | null;
+        } | null;
       }>).map((row) => {
         const cheatingScore = row.live_cheating_score ?? 0;
+        const policy = row.exams?.proctoring_policy ?? undefined;
         return {
           session_id: row.id,
           student_id: row.student_id,
@@ -236,7 +242,10 @@ export class ExamSessionService {
           exam_percentage: null,
           violation_count: 0,
           cheating_score: cheatingScore,
-          risk_level: getRiskLevel(cheatingScore).level,
+          risk_level: getRiskLevel(cheatingScore, policy && {
+            warning_threshold: policy.warning_threshold ?? 40,
+            critical_threshold: policy.critical_threshold ?? 70,
+          }).level,
           liveness_check_passed: row.liveness_check_passed,
           calibration_skipped: row.calibration_skipped ?? false,
           optimal_distance_cm: row.optimal_distance_cm ?? null,

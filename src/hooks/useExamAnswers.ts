@@ -163,6 +163,7 @@ export function useExamAnswers(totalQuestions: number): UseExamAnswersReturn {
       const answersToSync: Array<{
         session_id: string;
         question_id: string;
+        answer: { selected_answer: string | null };
         selected_answer: string | null;
         time_spent_seconds: number | null;
         answer_order: number;
@@ -172,11 +173,13 @@ export function useExamAnswers(totalQuestions: number): UseExamAnswersReturn {
       for (const questionId of dirtyAnswersRef.current) {
         const optionIndex = answers.get(questionId);
         const timeSpent = questionTimes.get(questionId) ?? null;
+        const selectedAnswer = optionIndex !== undefined ? String(optionIndex) : null;
 
         answersToSync.push({
           session_id: sessionId,
           question_id: questionId,
-          selected_answer: optionIndex !== undefined ? String(optionIndex) : null,
+          answer: { selected_answer: selectedAnswer },
+          selected_answer: selectedAnswer,
           time_spent_seconds: timeSpent,
           answer_order: order++,
         });

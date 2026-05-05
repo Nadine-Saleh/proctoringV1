@@ -84,7 +84,9 @@ export function useViolationTracker(
     input: Omit<CreateViolationEventInput, 'session_id' | 'exam_id' | 'student_id'>
   ) => {
     if (!sessionId || !examId || !studentId) {
-      console.warn('[useViolationTracker] Cannot record violation: missing session/exam/student ID');
+      console.warn('[useViolationTracker] Cannot record violation: missing session/exam/student ID', {
+        sessionId, examId, studentId, type: input.violation_type ?? input.type,
+      });
       return;
     }
 
