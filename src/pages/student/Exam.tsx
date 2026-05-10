@@ -1,6 +1,9 @@
+import { MicOff } from 'lucide-react';
 import { LivenessCheckModal } from '../../components/LivenessCheckModal';
 import { DistanceSetupModal } from '../../components/DistanceSetupModal';
 import { ExamSubmissionModal } from '../../components/ExamSubmissionModal';
+import { MicrophonePermissionModal } from '../../components/MicrophonePermissionModal';
+import { PoseDetectionOverlay } from '../../components/PoseDetectionOverlay';
 import { ExamHeader } from '../../components/layout/ExamHeader';
 import { WarningBanner } from '../../components/layout/WarningBanner';
 import { QuestionPanel } from '../../components/questions/QuestionPanel';
@@ -66,10 +69,21 @@ export const Exam = () => {
     );
   }
 
+  if (flow.showMicrophonePermission) {
+    return (
+      <MicrophonePermissionModal
+        isOpen={flow.showMicrophonePermission}
+        onComplete={flow.handleMicrophoneComplete}
+      />
+    );
+  }
+
   const question = flow.questions[flow.currentQuestion];
   const progress = flow.questions.length > 0
     ? ((flow.currentQuestion + 1) / flow.questions.length) * 100
     : 0;
+
+  const showMicWarning = flow.examStarted && !flow.micActive;
 
   return (
     <div className="min-h-screen bg-gray-50 flex">
@@ -85,6 +99,17 @@ export const Exam = () => {
           timeRemaining={flow.timeRemaining}
           answeredCount={flow.answeredCount}
         />
+
+        {showMicWarning && (
+          <div className="bg-red-50 border-l-4 border-red-400 p-4 mx-6 my-4">
+            <div className="flex items-center">
+              <MicOff className="w-5 h-5 text-red-600 mr-2 flex-shrink-0" />
+              <p className="text-sm font-medium text-red-800">
+                Microphone connection lost. Please check your microphone and refresh the page.
+              </p>
+            </div>
+          </div>
+        )}
 
         {question && (
           <QuestionPanel
@@ -118,6 +143,20 @@ export const Exam = () => {
         currentQuestion={flow.currentQuestion}
         answers={flow.answers}
         onSelectQuestion={flow.setCurrentQuestion}
+        cameraOverlay={
+          <PoseDetectionOverlay
+            videoElement={flow.combinedVideoElement}
+            isDetecting={flow.poseDetecting}
+            frameStatus={flow.poseFrameStatus}
+            statusMessage={flow.poseStatusMessage}
+            isModelLoaded={flow.poseModelLoaded}
+          />
+        }
+        poseDetecting={flow.poseDetecting}
+        poseFrameValid={flow.poseFrameStatus === 'valid'}
+        poseLoadingProgress={flow.poseLoadingProgress}
+        micActive={flow.micActive}
+        micStreamHealthy={flow.micStreamHealthy}
       />
 
       {flow.sessionError && (

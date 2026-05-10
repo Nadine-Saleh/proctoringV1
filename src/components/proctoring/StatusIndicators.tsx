@@ -1,10 +1,15 @@
-import { AlertTriangle, CheckCircle } from 'lucide-react';
+import { AlertTriangle, CheckCircle, MicOff } from 'lucide-react';
 import type { ProctoringStatus } from '../../hooks/useProctoring';
 
 interface StatusIndicatorsProps {
   status: ProctoringStatus;
   gazeRunning: boolean;
   gazeLookingAway: boolean;
+  poseDetecting?: boolean;
+  poseFrameValid?: boolean;
+  poseLoadingProgress?: string;
+  micActive?: boolean;
+  micStreamHealthy?: boolean;
 }
 
 const Spinner = () => (
@@ -14,9 +19,11 @@ const Spinner = () => (
 const Row = ({
   label,
   state,
+  icon,
 }: {
   label: string;
   state: 'good' | 'warn' | 'bad' | 'idle' | 'loading';
+  icon?: React.ReactNode;
 }) => {
   const styles = {
     good: { bg: 'bg-green-50', text: 'text-green-700' },
@@ -26,7 +33,7 @@ const Row = ({
     loading: { bg: 'bg-gray-50', text: 'text-gray-500' },
   }[state];
 
-  const icon =
+  const defaultIcon =
     state === 'good' ? <CheckCircle className="w-4 h-4 text-green-600" />
     : state === 'warn' ? <AlertTriangle className="w-4 h-4 text-yellow-600" />
     : state === 'bad' ? <AlertTriangle className="w-4 h-4 text-red-600" />
@@ -35,12 +42,21 @@ const Row = ({
   return (
     <div className={`flex items-center justify-between p-3 rounded-lg ${styles.bg}`}>
       <span className={`text-sm font-medium ${styles.text}`}>{label}</span>
-      {icon}
+      {icon ?? defaultIcon}
     </div>
   );
 };
 
-export const StatusIndicators = ({ status, gazeRunning, gazeLookingAway }: StatusIndicatorsProps) => (
+export const StatusIndicators = ({
+  status,
+  gazeRunning,
+  gazeLookingAway,
+  poseDetecting,
+  poseFrameValid,
+  poseLoadingProgress,
+  micActive,
+  micStreamHealthy,
+}: StatusIndicatorsProps) => (
   <>
     <Row label="Camera" state={status.camera ? 'good' : 'bad'} />
     <Row
@@ -52,5 +68,20 @@ export const StatusIndicators = ({ status, gazeRunning, gazeLookingAway }: Statu
       label={gazeRunning ? 'Eye Gaze' : 'Gaze Detection'}
       state={!gazeRunning ? 'loading' : gazeLookingAway ? 'bad' : 'good'}
     />
+    {poseDetecting !== undefined && (
+      <Row
+        label={poseDetecting ? 'Pose Detection' : poseLoadingProgress || 'Loading Pose...'}
+        state={!poseDetecting ? 'loading' : poseFrameValid ? 'good' : 'bad'}
+      />
+    )}
+    {micActive !== undefined && (
+      <Row
+        label={`Microphone ${micStreamHealthy ? '✓' : '⚠️'}`}
+        state={micActive && micStreamHealthy ? 'good' : 'bad'}
+        icon={micActive && micStreamHealthy
+          ? <CheckCircle className="w-4 h-4 text-green-600" />
+          : <MicOff className="w-4 h-4 text-red-600" />}
+      />
+    )}
   </>
 );

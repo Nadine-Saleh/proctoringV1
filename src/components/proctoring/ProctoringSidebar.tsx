@@ -1,5 +1,5 @@
 import { CheckCircle } from 'lucide-react';
-import type { RefCallback } from 'react';
+import type { ReactNode, RefCallback } from 'react';
 import type { ProctoringStatus } from '../../hooks/useProctoring';
 import type { ExamQuestion, SessionCalibration } from '../../types/exam';
 import { CameraFeed } from './CameraFeed';
@@ -30,6 +30,13 @@ interface ProctoringSidebarProps {
   currentQuestion: number;
   answers: Map<string, number>;
   onSelectQuestion: (index: number) => void;
+
+  cameraOverlay?: ReactNode;
+  poseDetecting?: boolean;
+  poseFrameValid?: boolean;
+  poseLoadingProgress?: string;
+  micActive?: boolean;
+  micStreamHealthy?: boolean;
 }
 
 export const ProctoringSidebar = ({
@@ -49,12 +56,23 @@ export const ProctoringSidebar = ({
   currentQuestion,
   answers,
   onSelectQuestion,
+  cameraOverlay,
+  poseDetecting,
+  poseFrameValid,
+  poseLoadingProgress,
+  micActive,
+  micStreamHealthy,
 }: ProctoringSidebarProps) => (
   <div className="w-96 bg-white border-l border-gray-200 flex flex-col">
     <div className="p-6 border-b border-gray-200">
       <h3 className="text-lg font-semibold text-gray-900 mb-4">Proctoring Monitor</h3>
 
-      <CameraFeed status={status} videoRef={videoRef} onRetry={onRetryCamera} />
+      <CameraFeed
+        status={status}
+        videoRef={videoRef}
+        onRetry={onRetryCamera}
+        overlay={cameraOverlay}
+      />
 
       {examStarted && liveScore > 0 && (
         <ScoreBadge
@@ -65,7 +83,16 @@ export const ProctoringSidebar = ({
       )}
 
       <div className="space-y-3">
-        <StatusIndicators status={status} gazeRunning={gazeRunning} gazeLookingAway={gazeLookingAway} />
+        <StatusIndicators
+          status={status}
+          gazeRunning={gazeRunning}
+          gazeLookingAway={gazeLookingAway}
+          poseDetecting={poseDetecting}
+          poseFrameValid={poseFrameValid}
+          poseLoadingProgress={poseLoadingProgress}
+          micActive={micActive}
+          micStreamHealthy={micStreamHealthy}
+        />
 
         {examStarted && faceDistanceCm && sessionCalibration?.optimal_distance_cm && (
           <DistanceIndicator
