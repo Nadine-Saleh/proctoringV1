@@ -111,9 +111,7 @@ export function useViolationTracker(
       student_id: studentId,
       violation_type: input.violation_type,
       occurred_at: clientCapturedAt,
-      severity: input.severity,
-      weight: input.weight,
-      description: input.description,
+severity: typeof input.severity === 'number' ? input.severity : 5,      description: input.description,
       duration_ms: input.duration_ms,
     };
 

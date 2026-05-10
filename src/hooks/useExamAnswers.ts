@@ -17,7 +17,6 @@ interface UseExamAnswersReturn {
 
   // Time tracking per question
   questionTimes: Map<string, number>; // questionId -> seconds spent
-  currentQuestionStartTime: number;
 
   // Actions
   selectAnswer: (questionId: string, optionIndex: number) => void;
@@ -41,7 +40,10 @@ export function useExamAnswers(totalQuestions: number): UseExamAnswersReturn {
 
   // Time tracking
   const [questionTimes, setQuestionTimes] = useState<Map<string, number>>(new Map());
-  const [currentQuestionStartTime, setCurrentQuestionStartTime] = useState(0);
+  // Held in a ref (not state) because nothing renders from it and storing it as
+  // state previously made setCurrentQuestion's identity flip every call, which
+  // looped the useEffect in useExamFlow that calls it.
+  const currentQuestionStartTimeRef = useRef(0);
   const currentQuestionIdRef = useRef<string | null>(null);
 
   // Sync state
@@ -67,8 +69,8 @@ export function useExamAnswers(totalQuestions: number): UseExamAnswersReturn {
   // Track start time when question becomes active
   const setCurrentQuestion = useCallback((questionId: string | null) => {
     // Save time spent on previous question
-    if (currentQuestionIdRef.current && currentQuestionStartTime > 0) {
-      const timeSpent = Math.floor((Date.now() - currentQuestionStartTime) / 1000);
+    if (currentQuestionIdRef.current && currentQuestionStartTimeRef.current > 0) {
+      const timeSpent = Math.floor((Date.now() - currentQuestionStartTimeRef.current) / 1000);
       setQuestionTimes(prev => {
         const updated = new Map(prev);
         const prevTime = updated.get(currentQuestionIdRef.current!) ?? 0;
@@ -79,12 +81,8 @@ export function useExamAnswers(totalQuestions: number): UseExamAnswersReturn {
 
     // Set new question start time
     currentQuestionIdRef.current = questionId;
-    if (questionId) {
-      setCurrentQuestionStartTime(Date.now());
-    } else {
-      setCurrentQuestionStartTime(0);
-    }
-  }, [currentQuestionStartTime]);
+    currentQuestionStartTimeRef.current = questionId ? Date.now() : 0;
+  }, []);
 
   /**
    * Select an answer for a question
@@ -212,7 +210,7 @@ export function useExamAnswers(totalQuestions: number): UseExamAnswersReturn {
     setAnswers(new Map());
     setAnsweredCount(0);
     setQuestionTimes(new Map());
-    setCurrentQuestionStartTime(0);
+    currentQuestionStartTimeRef.current = 0;
     currentQuestionIdRef.current = null;
     dirtyAnswersRef.current.clear();
     setSyncError(null);
@@ -237,7 +235,6 @@ export function useExamAnswers(totalQuestions: number): UseExamAnswersReturn {
 
     // Time tracking
     questionTimes,
-    currentQuestionStartTime,
 
     // Actions
     selectAnswer,

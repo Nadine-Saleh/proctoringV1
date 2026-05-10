@@ -86,10 +86,11 @@ Deno.serve(async (req) => {
       .maybeSingle();
 
     if (existing) {
+      // evidence_packages is keyed by submission_id, not session_id (006:250-257)
       const { data: ep } = await adminClient
         .from('evidence_packages')
         .select('id')
-        .eq('session_id', session_id)
+        .eq('submission_id', existing.id)
         .maybeSingle();
 
       return new Response(JSON.stringify({
@@ -151,8 +152,10 @@ Deno.serve(async (req) => {
     const gradeStatus = allAutoGradable ? 'auto_final' : (autoGradedMax > 0 ? 'partial_pending_review' : 'fully_pending_review');
     const finalGrade = allAutoGradable ? autoGradedScore : null;
 
-    // Snapshot cheating score
-    const finalCheatingScore = session.live_cheating_score ?? 0;
+    // Snapshot cheating score: prefer peak (never decays) so the instructor sees
+    // the worst point of the exam, not the decayed live value at submit time.
+    // Falls back to live_cheating_score if migration 012 hasn't been applied yet.
+    const finalCheatingScore = session.peak_cheating_score ?? session.live_cheating_score ?? 0;
 
     // Insert submission
     const { data: submission, error: subErr } = await adminClient

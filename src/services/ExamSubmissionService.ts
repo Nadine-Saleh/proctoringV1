@@ -87,6 +87,9 @@ export class ExamSubmissionService {
     | { outcome: 'fatal'; error: string }
     | { outcome: 'fallback'; detail: unknown }
   > {
+    const controller = new AbortController();
+    const timeoutId = setTimeout(() => controller.abort(), 30_000);
+
     try {
       const supabaseUrl = import.meta.env.VITE_SUPABASE_URL as string;
       const { data: { session: authSession } } = await supabase.auth.getSession();
@@ -103,6 +106,7 @@ export class ExamSubmissionService {
           submit_reason: 'manual',
           client_submitted_at: new Date().toISOString(),
         }),
+        signal: controller.signal,
       });
 
       if (!resp.ok) {
@@ -126,6 +130,7 @@ export class ExamSubmissionService {
       }
 
       const edgeResult: EdgeSubmissionResult = await resp.json();
+      clearTimeout(timeoutId);
       return {
         outcome: 'success',
         result: {
@@ -144,7 +149,8 @@ export class ExamSubmissionService {
         },
       };
     } catch (err) {
-      // Network failure / DNS / CORS — fall back rather than surface a raw error.
+      clearTimeout(timeoutId);
+      // Network failure / DNS / CORS / timeout (AbortError) — fall back.
       return { outcome: 'fallback', detail: err };
     }
   }
@@ -172,11 +178,22 @@ export class ExamSubmissionService {
     }
 
     // Load session for exam_id / student_id.
-    const { data: sessionRow, error: sessionErr } = await supabase
+    let { data: sessionRow, error: sessionErr } = await supabase
       .from('exam_sessions')
-      .select('id, exam_id, student_id, status, live_cheating_score')
+      .select('id, exam_id, student_id, status, live_cheating_score, peak_cheating_score')
       .eq('id', session_id)
       .single();
+
+    // peak_cheating_score column may not exist yet (migration 012 not applied) — retry without it
+    if (sessionErr) {
+      const fallback = await supabase
+        .from('exam_sessions')
+        .select('id, exam_id, student_id, status, live_cheating_score')
+        .eq('id', session_id)
+        .single();
+      sessionErr = fallback.error;
+      sessionRow = fallback.data;
+    }
 
     if (sessionErr || !sessionRow) {
       return { success: false, error: 'Could not load session for direct submission' };
@@ -188,6 +205,7 @@ export class ExamSubmissionService {
       student_id: string;
       status: string;
       live_cheating_score: number | null;
+      peak_cheating_score?: number | null;
     };
 
     // Grade against the database (auto-gradable types only).
@@ -229,7 +247,8 @@ export class ExamSubmissionService {
       ? 'auto_final'
       : (autoGradedMax > 0 ? 'partial_pending_review' : 'fully_pending_review');
     const finalGrade = allAutoGradable ? autoGradedScore : null;
-    const finalCheatingScore = sessionData.live_cheating_score ?? 0;
+    // Use peak score (worst point during exam) — live score decays after violations stop
+    const finalCheatingScore = sessionData.peak_cheating_score ?? sessionData.live_cheating_score ?? 0;
     const now = new Date().toISOString();
 
     // Freeze answers (RLS lets the student update their own).

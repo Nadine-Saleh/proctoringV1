@@ -95,6 +95,7 @@ export const useExamFlow = () => {
     violations: trackedViolations,
     violationCount,
     recordViolation,
+    syncViolations,
     liveScore,
     warningThresholdCrossed,
     criticalThresholdCrossed,
@@ -330,27 +331,51 @@ export const useExamFlow = () => {
 
     setIsSubmitting(true);
     setSubmissionError(null);
-    setShowSubmissionModal(false);
+    // Keep modal open during submit so its spinner stays visible.
+
+    // Hard safety timeout — if any await hangs indefinitely, surface an error
+    // and let the user retry instead of leaving the button locked forever.
+    const watchdog = setTimeout(() => {
+      console.error('[handleFinalSubmit] Watchdog: submission still pending after 45s');
+      setSubmissionError('Submission is taking too long. Please check your connection and try again.');
+      setIsSubmitting(false);
+      setShowSubmissionModal(false);
+    }, 45_000);
 
     try {
+      console.log('[handleFinalSubmit] step 1/4: syncViolations');
+      await syncViolations();
+      console.log('[handleFinalSubmit] step 2/4: syncToServer');
       await syncToServer(targetSessionId);
+      console.log('[handleFinalSubmit] step 3/4: getSubmittedAnswers');
       const submittedAnswers = getSubmittedAnswers();
+      console.log('[handleFinalSubmit] step 4/4: submitExam', { targetSessionId, count: submittedAnswers.length });
       const result = await submitExam(submittedAnswers, timeElapsed, {
         sessionId: targetSessionId,
         examId: currentExamId,
       });
+      console.log('[handleFinalSubmit] submitExam returned', result);
+
+      clearTimeout(watchdog);
 
       if (result.success) {
-        navigate('/results', { state: { submissionResult: result } });
+        setShowSubmissionModal(false);
+        setIsSubmitting(false);
+        navigate(`/exam/${targetSessionId}/results`, {
+          replace: true,
+          state: { submissionResult: result },
+        });
       } else {
         setSubmissionError(result.error ?? 'Submission failed. Please try again.');
         setIsSubmitting(false);
       }
     } catch (err) {
+      clearTimeout(watchdog);
+      console.error('[handleFinalSubmit] threw', err);
       setSubmissionError(err instanceof Error ? err.message : 'Unknown error');
       setIsSubmitting(false);
     }
-  }, [session, sessionId, currentExamId, syncToServer, getSubmittedAnswers, submitExam, timeElapsed, navigate]);
+  }, [session, sessionId, currentExamId, syncViolations, syncToServer, getSubmittedAnswers, submitExam, timeElapsed, navigate]);
 
   const handleSetOptimalDistance = useCallback(
     async (distance: number) => {
