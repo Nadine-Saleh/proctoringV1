@@ -16,7 +16,7 @@ import {
   type JoinExamResponse,
 } from '../services/IdentityVerificationService';
 import { DistanceCalibrationService } from '../services/DistanceCalibrationService';
-import { ExamSessionService } from '../services/examSessionService';
+import { ExamSessionService } from '../services/ExamSessionService';
 import { CheatingScoreTracker } from '../services/CheatingScoreService';
 import type { ProctoringPolicy } from '../types/examSession';
 import type { ExamQuestion, SessionCalibration, WarningBannerState } from '../types/exam';
