@@ -1,44 +1,11 @@
-export type ViolationType =
-  | 'gaze_looking_away'
-  | 'gaze_sustained_away'
-  | 'multiple_faces'
-  | 'tab_switch'
-  | 'excessive_blinking'
-  | 'phone_detection'
-  | 'head_pose_extreme'
-  | 'face_too_close'
-  | 'face_too_far';
+import { ViolationType, VIOLATION_TAXONOMY, type ProctoringPolicy } from '../types/examSession';
 
-export type ViolationSeverity = 'low' | 'medium' | 'high';
+export type { ViolationEvent } from '../types/examSession';
 
-export interface ViolationEvent {
-  id: string;
-  type: ViolationType;
-  severity: ViolationSeverity;
-  timestamp: string; // ISO string
-  duration?: number;
-  description: string;
-  metadata?: Record<string, unknown>;
-}
-
-export const WEIGHTS: Record<ViolationType, number> = {
-  gaze_looking_away: 2,
-  gaze_sustained_away: 5,
-  multiple_faces: 10,
-  tab_switch: 3,
-  excessive_blinking: 1,
-  phone_detection: 8,
-  head_pose_extreme: 4,
-  face_too_close: 3,
-  face_too_far: 3
-};
-
-export interface ViolationScoreResult {
-  score: number;
-  level: 'low' | 'medium' | 'high' | 'critical';
-  recentEvents: ViolationEvent[];
-}
-
+/**
+ * Risk band derived from a numeric cheating score plus the exam's policy
+ * thresholds. The band drives UI coloring on instructor surfaces.
+ */
 export interface RiskLevelInfo {
   level: 'low' | 'medium' | 'high' | 'critical';
   color: 'green' | 'yellow' | 'orange' | 'red';
@@ -46,78 +13,70 @@ export interface RiskLevelInfo {
 }
 
 /**
- * Calculates a weighted violation score based on recent events.
- * @param events - Array of violation events
- * @param timeWindowMs - Time window in milliseconds (default: 5 minutes)
- * @returns Normalized score (0-100), risk level, and recent events
+ * Severity-weighted exponential decay scorer.
+ *
+ * MUST mirror the formula used by the record_violation_batch RPC
+ * (supabase/migrations/006_access_codes_and_submissions.sql) so client-side
+ * replays match server-recorded live_cheating_score.
+ *
+ *   score = sum(severity_i * 2^(-elapsed_seconds_i / HALF_LIFE_SECONDS))
+ *
+ * The server is always authoritative — this class is only for offline
+ * replay (tests, evidence package assembly).
  */
-export function calculateViolationScore(
-  events: ViolationEvent[],
-  timeWindowMs: number = 300000 // 5 mins
-): ViolationScoreResult {
-  const now = Date.now();
-  const windowStart = now - timeWindowMs;
+export class CheatingScorer {
+  private static readonly HALF_LIFE_SECONDS = 60;
+  private static readonly MAX_SCORE = 100;
 
-  // Filter events within the time window
-  const recentEvents = events.filter(
-    (event) => new Date(event.timestamp).getTime() >= windowStart
-  );
-
-  // Sum weights of recent events
-  const totalWeight = recentEvents.reduce((sum, event) => {
-    return sum + (WEIGHTS[event.type] || 0);
-  }, 0);
-
-  // Calculate maximum possible weight for normalization
-  // Estimate: max reasonable events in window is ~20, with average weight ~5
-  // So max raw score would be ~100, we normalize accordingly
-  const maxExpectedWeight = 100;
-  const normalizedScore = Math.min(100, Math.round((totalWeight / maxExpectedWeight) * 100));
-
-  // Determine high-severity events in last 2 minutes
-  const twoMinutesAgo = now - 120000;
-  const highSeverityRecent = recentEvents.filter(
-    (event) =>
-      event.severity === 'high' &&
-      new Date(event.timestamp).getTime() >= twoMinutesAgo
-  );
-
-  // Determine risk level
-  let level: 'low' | 'medium' | 'high' | 'critical';
-
-  if (normalizedScore >= 80 && highSeverityRecent.length >= 3) {
-    level = 'critical';
-  } else if (normalizedScore >= 60) {
-    level = 'high';
-  } else if (normalizedScore >= 30) {
-    level = 'medium';
-  } else {
-    level = 'low';
+  static computeScore(
+    events: Array<{
+      type: ViolationType;
+      severity: number;
+      server_recorded_at: string;
+    }>,
+    nowMs: number = Date.now()
+  ): number {
+    let totalScore = 0;
+    for (const event of events) {
+      const elapsedSeconds = (nowMs - new Date(event.server_recorded_at).getTime()) / 1000;
+      totalScore += event.severity * Math.pow(2, -elapsedSeconds / this.HALF_LIFE_SECONDS);
+    }
+    return Math.min(Math.max(totalScore, 0), this.MAX_SCORE);
   }
 
-  return {
-    score: normalizedScore,
-    level,
-    recentEvents
-  };
+  static isWarningThresholdCrossed(score: number, policy: ProctoringPolicy): boolean {
+    return score >= policy.warning_threshold;
+  }
+
+  static isCriticalThresholdCrossed(score: number, policy: ProctoringPolicy): boolean {
+    return score >= policy.critical_threshold;
+  }
 }
 
 /**
- * Gets the risk level information with color and alert flag.
- * @param score - The violation score (0-100)
- * @returns Risk level info with color and alert recommendation
+ * Map a numeric score to a risk band using policy thresholds where
+ * available. Falls back to the canonical defaults (warning=40,
+ * critical=70) so legacy callers without a policy still get UI parity
+ * with the instructor dashboard.
  */
-export function getRiskLevel(score: number): RiskLevelInfo {
-  let level: 'low' | 'medium' | 'high' | 'critical';
-  let color: 'green' | 'yellow' | 'orange' | 'red';
+export function getRiskLevel(
+  score: number,
+  policy?: Pick<ProctoringPolicy, 'warning_threshold' | 'critical_threshold'>
+): RiskLevelInfo {
+  const warn = policy?.warning_threshold ?? 40;
+  const crit = policy?.critical_threshold ?? 70;
+  const mediumFloor = Math.max(0, warn / 2);
 
-  if (score >= 80) {
+  let level: RiskLevelInfo['level'];
+  let color: RiskLevelInfo['color'];
+
+  if (score >= crit) {
     level = 'critical';
     color = 'red';
-  } else if (score >= 60) {
+  } else if (score >= warn) {
     level = 'high';
     color = 'orange';
-  } else if (score >= 30) {
+  } else if (score >= mediumFloor) {
     level = 'medium';
     color = 'yellow';
   } else {
@@ -125,12 +84,9 @@ export function getRiskLevel(score: number): RiskLevelInfo {
     color = 'green';
   }
 
-  // Should alert only if critical AND pattern detected (score is very high)
-  const shouldAlert = level === 'critical' && score >= 85;
+  return { level, color, shouldAlert: level === 'critical' };
+}
 
-  return {
-    level,
-    color,
-    shouldAlert
-  };
+export function validateViolationType(type: string): boolean {
+  return type in VIOLATION_TAXONOMY;
 }

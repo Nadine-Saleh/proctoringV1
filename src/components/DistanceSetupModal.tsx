@@ -2,6 +2,19 @@ import { ArrowLeftRight, CheckCircle, AlertTriangle } from 'lucide-react';
 import { useEffect, useRef, useState, useCallback } from 'react';
 import * as faceapi from 'face-api.js';
 
+interface DetectionBox {
+  x: number;
+  y: number;
+  width: number;
+  height: number;
+}
+
+interface DetectionResult {
+  detection?: {
+    box?: DetectionBox;
+  };
+}
+
 interface DistanceSetupModalProps {
   onComplete: (optimalDistance: number) => void;
 }
@@ -9,7 +22,7 @@ interface DistanceSetupModalProps {
 export const DistanceSetupModal = ({ onComplete }: DistanceSetupModalProps) => {
   const videoRef = useRef<HTMLVideoElement | null>(null);
   const streamRef = useRef<MediaStream | null>(null);
-  const detectionRef = useRef<any>(null);
+  const detectionRef = useRef<number | ReturnType<typeof setTimeout> | null>(null);
   
   const [currentDistance, setCurrentDistance] = useState<number | null>(null);
   const [cameraReady, setCameraReady] = useState(false);
@@ -21,7 +34,7 @@ export const DistanceSetupModal = ({ onComplete }: DistanceSetupModalProps) => {
   const log = (msg: string) => console.log('[DistanceSetup]', msg);
 
   // Estimate face distance from detection box
-  const estimateFaceDistance = useCallback((detection: any): number => {
+  const estimateFaceDistance = useCallback((detection: DetectionResult): number => {
     if (!detection || !detection.detection || !detection.detection.box) return 50;
     
     const box = detection.detection.box;
@@ -41,8 +54,9 @@ export const DistanceSetupModal = ({ onComplete }: DistanceSetupModalProps) => {
         await faceapi.nets.tinyFaceDetector.loadFromUri(MODEL_URL);
         setModelsLoaded(true);
         log('✓ Models loaded');
-      } catch (err: any) {
-        log('✗ Model loading error: ' + err.message);
+      } catch (err) {
+        const error = err as Error;
+        log('✗ Model loading error: ' + error.message);
         setCameraError('Failed to load face detection models');
       }
     };
@@ -72,10 +86,11 @@ export const DistanceSetupModal = ({ onComplete }: DistanceSetupModalProps) => {
           setCameraReady(true);
           log('✓ Camera ready');
         }
-      } catch (err: any) {
-        console.error('[DistanceSetup] Camera error:', err);
+      } catch (err) {
+        const error = err as Error;
+        console.error('[DistanceSetup] Camera error:', error);
         if (isMounted) {
-          setCameraError(err.message || 'Failed to access camera');
+          setCameraError(error.message || 'Failed to access camera');
         }
       }
     };
@@ -131,7 +146,7 @@ export const DistanceSetupModal = ({ onComplete }: DistanceSetupModalProps) => {
           setStableCount(0);
           stableDistanceRef.current = null;
         }
-      } catch (err) {
+      } catch (_err) {
         // Silent fail
       }
 

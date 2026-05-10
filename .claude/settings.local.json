@@ -1,0 +1,15 @@
+{
+  "permissions": {
+    "allow": [
+      "Bash(powershell *)",
+      "Bash(npm run *)",
+      "Bash(git add *)",
+      "Bash(git commit -m ' *)",
+      "Bash(sed -n '132,136p' C:/Users/Nadine/Desktop/ProctoringV2/src/components/DistanceSetupModal.tsx)",
+      "Bash(sed -n '103,107p' C:/Users/Nadine/Desktop/ProctoringV2/src/hooks/useLivenessCheck.ts)",
+      "Bash(sed -n '40,44p' C:/Users/Nadine/Desktop/ProctoringV2/src/pages/instructor/Dashboard.tsx)",
+      "Bash(sed -n '40,44p' C:/Users/Nadine/Desktop/ProctoringV2/src/pages/instructor/ExamDetail.tsx)",
+      "Bash(npx vitest *)"
+    ]
+  }
+}

@@ -51,17 +51,16 @@ export const useLivenessCheck = (): UseLivenessCheckReturn => {
   const [result, setResult] = useState<LivenessCheckResult | null>(null);
   const [modelsLoaded, setModelsLoaded] = useState(false);
   const [faceDistanceCm, setFaceDistanceCm] = useState<number | null>(null);
-  const distanceDetectionRef = useRef<any>(null);
-
-  const log = useCallback((msg: string) => console.log('[LivenessCheck]', msg), []);
+  const distanceDetectionRef = useRef<ReturnType<typeof setTimeout> | null>(null);
 
   // Estimate face distance from detection box size
-  const estimateFaceDistance = useCallback((detection: any): number => {
-    if (!detection || !detection.detection || !detection.detection.box) return 50;
+  const estimateFaceDistance = useCallback((detection: unknown): number => {
+    const det = detection as Record<string, unknown>;
+    if (!det || !det.detection || !(det.detection as Record<string, unknown>).box) return 50;
     
-    const box = detection.detection.box;
-    const boxWidth = box.width || 0;
-    const boxHeight = box.height || 0;
+    const box = (det.detection as Record<string, unknown>).box as Record<string, unknown>;
+    const boxWidth = (box.width as number) || 0;
+    const boxHeight = (box.height as number) || 0;
     
     // Use the larger dimension for more stable estimation
     const boxSize = Math.max(boxWidth, boxHeight);
@@ -103,9 +102,8 @@ export const useLivenessCheck = (): UseLivenessCheckReturn => {
         if (detections.length === 1 && isRunning) {
           const distance = estimateFaceDistance(detections[0]);
           setFaceDistanceCm(distance);
-          console.log('[LivenessCheck] 📏 Face distance:', distance, 'cm | box:', detections[0].detection.box);
         }
-      } catch (err) {
+      } catch (_err) {
         // Silent fail - detection loop continues
       }
 
@@ -139,38 +137,32 @@ export const useLivenessCheck = (): UseLivenessCheckReturn => {
         setInstruction(`Step ${data.index + 1}: Please ${data.step.name}`);
       });
 
-      livenessModuleRef.current.on(LivenessEvent.STEP_PASSED, (_event, data) => {
-        log(`✓ Step passed: ${data.step.name}`);
+      livenessModuleRef.current.on(LivenessEvent.STEP_PASSED, () => {
+        // Step passed - handled by step completion
       });
 
-      livenessModuleRef.current.on(LivenessEvent.PROGRESS_UPDATED, (_event, _data) => {
+      livenessModuleRef.current.on(LivenessEvent.PROGRESS_UPDATED, () => {
         // Individual step progress if needed
       });
     }
-  }, [log]);
+  }, []);
 
   // Load face detection models on mount
   useEffect(() => {
     const loadModels = async () => {
       try {
-        log('Loading face detection models...');
         const MODEL_URL = '/models';
-
-        // Wait for faceapi to be ready if needed, though usually it's fine
         await faceapi.nets.tinyFaceDetector.loadFromUri(MODEL_URL);
         await faceapi.nets.faceLandmark68Net.loadFromUri(MODEL_URL);
         await faceapi.nets.faceExpressionNet.loadFromUri(MODEL_URL);
-        
         setModelsLoaded(true);
-        log('✓ Face detection models loaded');
-      } catch (err: any) {
-        log('✗ Model loading error: ' + err.message);
+      } catch {
         setModelsLoaded(false);
       }
     };
 
     loadModels();
-  }, [log]);
+  }, []);
 
   // Clear all intervals
   const clearIntervals = useCallback(() => {
@@ -188,20 +180,17 @@ export const useLivenessCheck = (): UseLivenessCheckReturn => {
   const performLivenessCheck = useCallback(async () => {
     const element = videoRef.current;
     if (!element) {
-      log('✗ No video element available');
       setIsFailed(true);
       setInstruction('Video not ready. Please try again.');
       return;
     }
 
     if (!faceapi.nets.tinyFaceDetector.isLoaded) {
-      log('✗ Face detection models not loaded');
       setIsFailed(true);
       setInstruction('Face detection models not loaded');
       return;
     }
 
-    log('Starting liveness check sequence...');
     setIsChecking(true);
     hasStartedCheckRef.current = true;
     blinkCountRef.current = 0;
@@ -209,7 +198,6 @@ export const useLivenessCheck = (): UseLivenessCheckReturn => {
     lastFacePositionRef.current = null;
     facePresentTimeRef.current = 0;
 
-    // Initialize module
     if (livenessModuleRef.current) {
       livenessModuleRef.current.initialize();
     }
@@ -224,15 +212,14 @@ export const useLivenessCheck = (): UseLivenessCheckReturn => {
       setProgress(newProgress);
 
       if (elapsed >= CHECK_DURATION && isChecking && !verificationCompleted) {
-        log('Check timeout');
         handleCompletion(false, 'Verification timed out');
       }
     }, 100);
 
     const handleCompletion = (passed: boolean, reason?: string) => {
-      if (verificationCompleted) return; // Prevent multiple calls
+      if (verificationCompleted) return;
       verificationCompleted = true;
-      
+
       clearIntervals();
       setIsChecking(false);
 
@@ -252,12 +239,10 @@ export const useLivenessCheck = (): UseLivenessCheckReturn => {
         setIsPassed(true);
         setIsFailed(false);
         setInstruction('Verification successful! You can now start the exam.');
-        log('✓ Liveness check sequence passed');
       } else {
         setIsPassed(false);
         setIsFailed(true);
         setInstruction(reason || 'Verification failed. Please try again.');
-        log(`✗ Liveness check sequence failed: ${reason}`);
       }
     };
 
@@ -289,7 +274,6 @@ export const useLivenessCheck = (): UseLivenessCheckReturn => {
           const detection = detections[0];
           const distance = estimateFaceDistance(detection);
           setFaceDistanceCm(distance);
-          console.log('[LivenessCheck] 📏 Face distance (during check):', distance, 'cm');
 
           // Process with liveness module
           if (livenessModuleRef.current) {
@@ -305,16 +289,16 @@ export const useLivenessCheck = (): UseLivenessCheckReturn => {
               expressions: d.expressions
             }));
 
-            livenessModuleRef.current.processFrame(mappedDetections as any);
+            livenessModuleRef.current.processFrame(mappedDetections as unknown[]);
           }
         }
-      } catch (err: any) {
+      } catch (err) {
         console.error('[LivenessCheck] Detection error:', err);
       }
 
       // Schedule next frame - 100ms for faster detection response
       if (hasStartedCheckRef.current && !verificationCompleted) {
-        detectionTimerRef.current = window.setTimeout(detectionLoop, 100) as any;
+        detectionTimerRef.current = window.setTimeout(detectionLoop, 100);
       }
     };
 
@@ -324,101 +308,81 @@ export const useLivenessCheck = (): UseLivenessCheckReturn => {
     // Listen for module events
     if (livenessModuleRef.current) {
       const onComplete = () => {
-        log('✓ All liveness steps completed successfully');
         handleCompletion(true, 'All poses verified');
         cleanupModuleListeners();
       };
 
-      const onTimeout = (data?: any) => {
-        log(`✗ Step timeout: ${data?.step?.name || 'unknown step'}`);
-        handleCompletion(false, `Step "${data?.step?.name || 'current'}" timed out. Please try again.`);
+      const onTimeout = (data?: unknown) => {
+        const stepName = (data as Record<string, unknown>)?.step ? ((data as Record<string, { step?: { name?: string } }>).step?.name || 'current') : 'current';
+        handleCompletion(false, `Step "${stepName}" timed out. Please try again.`);
         cleanupModuleListeners();
-      };
-
-      const onStepPassed = (data?: any) => {
-        log(`✓ Step passed: ${data?.step?.name}`);
       };
 
       const cleanupModuleListeners = () => {
         if (livenessModuleRef.current) {
           livenessModuleRef.current.off(LivenessEvent.VERIFICATION_COMPLETE, onComplete);
           livenessModuleRef.current.off(LivenessEvent.TIMEOUT_OCCURRED, onTimeout);
-          livenessModuleRef.current.off(LivenessEvent.STEP_PASSED, onStepPassed);
         }
       };
 
       livenessModuleRef.current.on(LivenessEvent.VERIFICATION_COMPLETE, onComplete);
       livenessModuleRef.current.on(LivenessEvent.TIMEOUT_OCCURRED, onTimeout);
-      livenessModuleRef.current.on(LivenessEvent.STEP_PASSED, onStepPassed);
     }
-  }, [log, clearIntervals]);
+  }, [clearIntervals, estimateFaceDistance]);
 
   // Start the liveness check
   const startCheck = useCallback(async () => {
     if (hasStartedCheckRef.current) {
-      log('Check already in progress');
       return;
     }
 
     if (!videoRef.current) {
-      log('Cannot start check - no video ref');
       setIsFailed(true);
       setInstruction('Camera not ready. Please wait.');
       return;
     }
 
     try {
-      // Reset state
       setIsPassed(false);
       setIsFailed(false);
       setProgress(0);
       setResult(null);
       setInstruction('Starting verification...');
 
-      log('Starting liveness check...');
-
-      // Wait for models to be loaded
-      const areModelsLoaded = () => 
-        faceapi.nets.tinyFaceDetector.isLoaded && 
-        faceapi.nets.faceLandmark68Net.isLoaded && 
+      const areModelsLoaded = () =>
+        faceapi.nets.tinyFaceDetector.isLoaded &&
+        faceapi.nets.faceLandmark68Net.isLoaded &&
         faceapi.nets.faceExpressionNet.isLoaded;
 
       if (!modelsLoaded || !areModelsLoaded()) {
-        log('Waiting for models to load...');
         const waitForModels = window.setInterval(() => {
           if (areModelsLoaded()) {
             window.clearInterval(waitForModels);
-            log('Models loaded, starting check');
             performLivenessCheck();
           }
         }, 100);
 
-        // Timeout for model loading
         setTimeout(() => {
           window.clearInterval(waitForModels);
           if (!areModelsLoaded()) {
-            log('Models failed to load');
             setIsFailed(true);
             setInstruction('Face detection models failed to load');
           }
         }, 15000);
       } else {
-        // Models already loaded, start check
         performLivenessCheck();
       }
-    } catch (err: any) {
-      log('✗ Liveness check error: ' + err.message);
+    } catch (err) {
+      const message = err instanceof Error ? err.message : 'Unknown error';
       setIsFailed(true);
-      setInstruction(`Error: ${err.message}`);
+      setInstruction(`Error: ${message}`);
     }
-  }, [log, modelsLoaded, performLivenessCheck]);
+  }, [modelsLoaded, performLivenessCheck]);
 
   // Reset the check
   const resetCheck = useCallback(() => {
-    log('Resetting liveness check');
-
     clearIntervals();
-    
+
     if (livenessModuleRef.current) {
       livenessModuleRef.current.reset();
     }
@@ -436,17 +400,14 @@ export const useLivenessCheck = (): UseLivenessCheckReturn => {
     movementDirectionsRef.current = new Set();
     lastFacePositionRef.current = null;
     facePresentTimeRef.current = 0;
-  }, [log, clearIntervals]);
+  }, [clearIntervals]);
 
   // Video ref callback
   const setVideoRef = useCallback(
     (element: HTMLVideoElement | null) => {
       videoRef.current = element;
-      if (element) {
-        log('✓ Video element mounted for liveness check');
-      }
     },
-    [log]
+    []
   );
 
   // Cleanup on unmount
@@ -454,9 +415,8 @@ export const useLivenessCheck = (): UseLivenessCheckReturn => {
     return () => {
       clearIntervals();
       hasStartedCheckRef.current = false;
-      log('Liveness check cleanup complete');
     };
-  }, [clearIntervals, log]);
+  }, [clearIntervals]);
 
   return {
     isChecking,

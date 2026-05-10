@@ -1,5 +1,15 @@
 import { useState, useEffect, useRef, useCallback } from 'react';
 import * as faceapi from 'face-api.js';
+import { VIOLATION_TAXONOMY } from '../types/examSession';
+import type { ViolationType } from '../types/examSession';
+
+export interface CanonicalViolation {
+  type: ViolationType;
+  severity: number;
+  client_captured_at: string;
+  description: string;
+  metadata?: Record<string, unknown>;
+}
 
 export interface ProctoringStatus {
   camera: boolean;
@@ -9,6 +19,9 @@ export interface ProctoringStatus {
   modelsLoaded: boolean;
   loading: boolean;
   errorMessage: string | null;
+  faceNotDetected: boolean;
+  faceTooClose: boolean;
+  faceTooFar: boolean;
 }
 
 export interface UseProctoringReturn {
@@ -16,14 +29,53 @@ export interface UseProctoringReturn {
   videoRef: React.RefCallback<HTMLVideoElement>;
   retryCamera: () => void;
   clearError: () => void;
+  recordViolation: (violation: { type: string; severity: string; description: string; metadata?: Record<string, unknown> }) => void;
+  setViolationCallback: (callback: (violation: { type: string; severity: string; description: string; metadata?: Record<string, unknown> }) => void) => void;
+  setCanonicalViolationCallback: (callback: (v: CanonicalViolation) => void) => void;
+  captureViolationSnapshot: (options?: { maxWidth?: number; maxHeight?: number; quality?: number }) => Promise<string | null>;
 }
 
-export const useProctoring = (isEnabled: boolean = true): UseProctoringReturn => {
+function emitCanonical(
+  type: ViolationType,
+  description: string,
+  metadata: Record<string, unknown>,
+  canonicalCb: React.MutableRefObject<((v: CanonicalViolation) => void) | null>,
+  legacyCb: React.MutableRefObject<((v: { type: string; severity: string; description: string; metadata?: Record<string, unknown> }) => void) | null>
+): void {
+  const severity = VIOLATION_TAXONOMY[type]?.severity ?? 10;
+  const now = new Date().toISOString();
+
+  canonicalCb.current?.({ type, severity, client_captured_at: now, description, metadata });
+
+  // Bridge to legacy callback (string severity)
+  const severityLabel =
+    severity >= 20 ? 'critical' : severity >= 15 ? 'high' : severity >= 10 ? 'medium' : 'low';
+  legacyCb.current?.({ type, severity: severityLabel, description, metadata });
+}
+
+export const useProctoring = (
+  isEnabled: boolean = true,
+  optimalDistanceCm?: number,
+  distanceToleranceCm?: number
+): UseProctoringReturn => {
   const videoRef = useRef<HTMLVideoElement | null>(null);
   const streamRef = useRef<MediaStream | null>(null);
   const isInitializedRef = useRef(false);
   const hasRequestedPermissionRef = useRef(false);
-  const detectionIntervalRef = useRef<any>(null);
+  const detectionIntervalRef = useRef<number | null>(null);
+  const violationCallbackRef = useRef<((violation: { type: string; severity: string; description: string; metadata?: Record<string, unknown> }) => void) | null>(null);
+  const canonicalCallbackRef = useRef<((v: CanonicalViolation) => void) | null>(null);
+  const faceNotDetectedCountRef = useRef(0);
+  const lastFaceAlertRef = useRef(0);
+  const canvasRef = useRef<HTMLCanvasElement | null>(null);
+  const cameraLostRef = useRef(false);
+  const optimalDistanceCmRef = useRef(optimalDistanceCm);
+  const distanceToleranceCmRef = useRef(distanceToleranceCm);
+
+  useEffect(() => {
+    optimalDistanceCmRef.current = optimalDistanceCm;
+    distanceToleranceCmRef.current = distanceToleranceCm;
+  }, [optimalDistanceCm, distanceToleranceCm]);
 
   const [status, setStatus] = useState<ProctoringStatus>({
     camera: false,
@@ -32,136 +84,112 @@ export const useProctoring = (isEnabled: boolean = true): UseProctoringReturn =>
     tabActive: true,
     modelsLoaded: false,
     loading: true,
-    errorMessage: null
+    errorMessage: null,
+    faceNotDetected: false,
+    faceTooClose: false,
+    faceTooFar: false,
   });
 
-  const log = (msg: string) => console.log('[Proctoring]', msg);
+  const setViolationCallbackFn = useCallback((
+    callback: (violation: { type: string; severity: string; description: string; metadata?: Record<string, unknown> }) => void
+  ) => {
+    violationCallbackRef.current = callback;
+  }, []);
 
-  // Load face-api models
+  const setCanonicalViolationCallback = useCallback((callback: (v: CanonicalViolation) => void) => {
+    canonicalCallbackRef.current = callback;
+  }, []);
+
   const loadModels = useCallback(async () => {
     if (status.modelsLoaded) return true;
-
     try {
-      log('Loading face detection models...');
-      const MODEL_URL = '/models';
-
-      await faceapi.nets.tinyFaceDetector.loadFromUri(MODEL_URL);
-
-      log('✓ Face detection models loaded');
+      await faceapi.nets.tinyFaceDetector.loadFromUri('/models');
       setStatus(prev => ({ ...prev, modelsLoaded: true }));
       return true;
-    } catch (err: any) {
-      log('✗ Model loading error: ' + err.message);
+    } catch {
       setStatus(prev => ({
         ...prev,
         modelsLoaded: false,
-        errorMessage: 'Face detection unavailable. Exam will continue without proctoring.'
+        errorMessage: 'Face detection unavailable. Exam will continue without proctoring.',
       }));
       return false;
     }
   }, [status.modelsLoaded]);
 
-  // Initialize camera
   const startCamera = useCallback(async (element: HTMLVideoElement) => {
-    if (isInitializedRef.current || hasRequestedPermissionRef.current) {
-      return;
-    }
+    if (isInitializedRef.current || hasRequestedPermissionRef.current) return;
     hasRequestedPermissionRef.current = true;
+    cameraLostRef.current = false;
 
     try {
-      log('Starting camera...');
-
       if (!navigator.mediaDevices?.getUserMedia) {
         throw new Error('Browser does not support camera access');
       }
 
-      // Add a timeout to getUserMedia as it can sometimes hang
-      const streamPromise = navigator.mediaDevices.getUserMedia({
+      const stream = await navigator.mediaDevices.getUserMedia({
         video: { width: { ideal: 640 }, height: { ideal: 480 }, facingMode: 'user' },
-        audio: false
+        audio: false,
       });
 
-      const timeoutPromise = new Promise<never>((_, reject) => 
-        window.setTimeout(() => reject(new Error('Camera request timed out')), 10000)
-      );
-
-      const stream = await Promise.race([streamPromise, timeoutPromise]);
-
-      log('✓ Camera permission granted');
       streamRef.current = stream;
       element.srcObject = stream;
 
-      await new Promise((resolve, reject) => {
-        const timeout = window.setTimeout(() => reject(new Error('Video stream initialization timed out')), 15000);
-        
-        const onVideoReady = () => {
-          window.clearTimeout(timeout);
-          element.removeEventListener('loadedmetadata', onVideoReady);
-          element.removeEventListener('error', onVideoError);
-          log('✓ Video ready');
-          resolve(true);
+      await new Promise<void>((resolve, reject) => {
+        const onReady = () => {
+          element.removeEventListener('loadedmetadata', onReady);
+          element.removeEventListener('error', onErr);
+          resolve();
         };
-
-        const onVideoError = (e: any) => {
-          window.clearTimeout(timeout);
-          element.removeEventListener('loadedmetadata', onVideoReady);
-          element.removeEventListener('error', onVideoError);
-          console.error('[Proctoring] Video error event:', e);
+        const onErr = () => {
+          element.removeEventListener('loadedmetadata', onReady);
+          element.removeEventListener('error', onErr);
           reject(new Error('Video source error'));
         };
-
-        // Check if already ready
-        if (element.readyState >= 1) {
-          onVideoReady();
-        } else {
-          element.addEventListener('loadedmetadata', onVideoReady);
-          element.addEventListener('error', onVideoError);
+        if (element.readyState >= 1) onReady();
+        else {
+          element.addEventListener('loadedmetadata', onReady);
+          element.addEventListener('error', onErr);
         }
       });
 
       element.muted = true;
       element.playsInline = true;
-      try {
-        await element.play();
-        log('✓ Video playing');
-      } catch (playErr: any) {
-        console.error('[Proctoring] Play error:', playErr);
-        // Sometimes play() fails if the browser thinks it's not user-initiated
-        // but we'll try to continue if metadata is loaded
-      }
+      await element.play().catch(() => {});
+
+      // T058: track when camera stream ends unexpectedly
+      stream.getVideoTracks().forEach(track => {
+        track.addEventListener('ended', () => {
+          if (!cameraLostRef.current) {
+            cameraLostRef.current = true;
+            setStatus(prev => ({ ...prev, camera: false, errorMessage: 'Camera disconnected' }));
+            emitCanonical('camera_unavailable', 'Camera stream ended unexpectedly', {}, canonicalCallbackRef, violationCallbackRef);
+          }
+        });
+      });
 
       setStatus(prev => ({ ...prev, camera: true, loading: false }));
       isInitializedRef.current = true;
     } catch (err: any) {
-      log('✗ Camera error: ' + err.message);
-
       let msg = 'Unable to access camera. ';
-      if (err.name === 'NotAllowedError')
-        msg = 'Camera permission denied. Allow access in your browser and refresh.';
-      else if (err.name === 'NotFoundError')
-        msg = 'No camera found. Connect a camera and refresh.';
-      else if (err.name === 'NotReadableError')
-        msg = 'Camera in use by another app. Close it and refresh.';
+      if (err.name === 'NotAllowedError') msg = 'Camera permission denied. Allow access in your browser and refresh.';
+      else if (err.name === 'NotFoundError') msg = 'No camera found. Connect a camera and refresh.';
+      else if (err.name === 'NotReadableError') msg = 'Camera in use by another app. Close it and refresh.';
       else msg += err.message;
 
       setStatus(prev => ({ ...prev, camera: false, loading: false, errorMessage: msg }));
-      hasRequestedPermissionRef.current = false; // Allow retry
+      hasRequestedPermissionRef.current = false;
+
+      // T058: emit camera_unavailable on permission/hardware failure
+      emitCanonical('camera_unavailable', msg, { error: err.name }, canonicalCallbackRef, violationCallbackRef);
     }
   }, []);
 
-  // Face detection
   const startFaceDetection = useCallback(() => {
-    if (!isEnabled || !status.camera || !status.modelsLoaded || !videoRef.current) {
-      return;
-    }
-
-    log('Starting face detection...');
+    if (!isEnabled || !status.camera || !status.modelsLoaded || !videoRef.current) return;
 
     const detectFaces = async () => {
       try {
-        if (!faceapi.nets.tinyFaceDetector.isLoaded) {
-          return;
-        }
+        if (!faceapi.nets.tinyFaceDetector.isLoaded) return;
 
         const detections = await faceapi.detectAllFaces(
           videoRef.current!,
@@ -169,32 +197,85 @@ export const useProctoring = (isEnabled: boolean = true): UseProctoringReturn =>
         );
 
         const faceCount = detections.length;
-        const timestamp = new Date().toLocaleTimeString();
+        const now = Date.now();
 
-        // Console logging
-        if (faceCount === 0) {
-          console.warn(`[${timestamp}] ⚠️ NO FACE DETECTED`);
-          console.log(`[Face Detection] Faces found: ${faceCount}`);
+        if (faceCount > 1) {
+          // T058: multiple_persons with canonical severity
+          setStatus(prev => ({ ...prev, multipleFaces: true, faceDetected: true }));
+          emitCanonical(
+            'multiple_persons',
+            `${faceCount} persons detected in frame`,
+            { faceCount },
+            canonicalCallbackRef,
+            violationCallbackRef
+          );
         } else if (faceCount === 1) {
-          console.log(`[${timestamp}] ✅ Single face detected (OK)`);
-          console.log(`[Face Detection] Faces found: ${faceCount}`);
+          setStatus(prev => ({ ...prev, multipleFaces: false, faceDetected: true, faceNotDetected: false }));
+          faceNotDetectedCountRef.current = 0;
         } else {
-          console.warn(`[${timestamp}] 🚨 MULTIPLE FACES DETECTED: ${faceCount} faces`);
-          console.warn(`[${timestamp}] ⚠️ VIOLATION: More than one person in frame`);
-          console.log(`[Face Detection] Faces found: ${faceCount}`);
+          faceNotDetectedCountRef.current++;
+          if (faceNotDetectedCountRef.current >= 2 && now - lastFaceAlertRef.current > 10000) {
+            setStatus(prev => ({ ...prev, faceDetected: false, faceNotDetected: true }));
+            // T058: face_not_visible with canonical severity
+            emitCanonical(
+              'face_not_visible',
+              'No face detected for 6+ seconds',
+              { consecutiveMisses: faceNotDetectedCountRef.current },
+              canonicalCallbackRef,
+              violationCallbackRef
+            );
+            lastFaceAlertRef.current = now;
+          } else {
+            setStatus(prev => ({ ...prev, faceDetected: false }));
+          }
         }
 
-        setStatus(prev => ({
-          ...prev,
-          faceDetected: faceCount >= 1,
-          multipleFaces: faceCount > 1
-        }));
-      } catch (err: any) {
-        console.error(`[${new Date().toLocaleTimeString()}] Detection error:`, err);
+        // Face distance estimation using calibrated baseline (T060b / FR-013a)
+        if (faceCount === 1 && detections[0]?.box) {
+          const optCm = optimalDistanceCmRef.current;
+          const tolCm = distanceToleranceCmRef.current;
+
+          if (optCm != null && tolCm != null) {
+            const box = detections[0].box;
+            const boxSize = Math.max(box.width, box.height);
+            const estimatedCm = Math.max(20, Math.min(100, Math.round(15 / (boxSize / 640))));
+            const lowerBound = optCm - tolCm;
+            const upperBound = optCm + tolCm;
+
+            if (estimatedCm < lowerBound) {
+              setStatus(prev => ({ ...prev, faceTooClose: true, faceTooFar: false }));
+              if (now - lastFaceAlertRef.current > 30000) {
+                emitCanonical(
+                  'face_too_close',
+                  'Face too close to camera',
+                  { baseline_cm: optCm, tolerance_cm: tolCm, estimated_distance_cm: estimatedCm },
+                  canonicalCallbackRef,
+                  violationCallbackRef
+                );
+                lastFaceAlertRef.current = now;
+              }
+            } else if (estimatedCm > upperBound) {
+              setStatus(prev => ({ ...prev, faceTooClose: false, faceTooFar: true }));
+              if (now - lastFaceAlertRef.current > 30000) {
+                emitCanonical(
+                  'face_too_far',
+                  'Face too far from camera',
+                  { baseline_cm: optCm, tolerance_cm: tolCm, estimated_distance_cm: estimatedCm },
+                  canonicalCallbackRef,
+                  violationCallbackRef
+                );
+                lastFaceAlertRef.current = now;
+              }
+            } else {
+              setStatus(prev => ({ ...prev, faceTooClose: false, faceTooFar: false }));
+            }
+          }
+        }
+      } catch {
+        // Silently ignore detection errors
       }
     };
 
-    // Start detection after small delay
     const timeout = window.setTimeout(() => {
       detectionIntervalRef.current = window.setInterval(detectFaces, 2000);
     }, 1000);
@@ -208,76 +289,90 @@ export const useProctoring = (isEnabled: boolean = true): UseProctoringReturn =>
     };
   }, [isEnabled, status.camera, status.modelsLoaded]);
 
-  // Callback ref for video element
-  const setVideoRef = useCallback(
-    (element: HTMLVideoElement | null) => {
-      if (element) {
-        log('✓ Video element mounted');
-        videoRef.current = element;
-        startCamera(element);
-      }
-    },
-    [startCamera]
-  );
+  const setVideoRef = useCallback((element: HTMLVideoElement | null) => {
+    if (element) {
+      videoRef.current = element;
+      startCamera(element);
+    }
+  }, [startCamera]);
 
-  // Retry camera
   const retryCamera = useCallback(() => {
-    log('Retrying camera...');
     setStatus(prev => ({ ...prev, errorMessage: null, loading: true, camera: false }));
     isInitializedRef.current = false;
     hasRequestedPermissionRef.current = false;
-
+    cameraLostRef.current = false;
     if (streamRef.current) {
       streamRef.current.getTracks().forEach(track => track.stop());
+      streamRef.current = null;
     }
-    if (videoRef.current) {
-      videoRef.current.srcObject = null;
-    }
-
+    if (videoRef.current) videoRef.current.srcObject = null;
     window.setTimeout(() => {
-      if (videoRef.current) {
-        startCamera(videoRef.current);
-      }
+      if (videoRef.current) startCamera(videoRef.current);
     }, 200);
   }, [startCamera]);
 
-  // Clear error
   const clearError = useCallback(() => {
     setStatus(prev => ({ ...prev, errorMessage: null }));
   }, []);
 
-  // Load models on mount
-  useEffect(() => {
-    loadModels();
-  }, [loadModels]);
+  const recordViolation = useCallback((violation: { type: string; severity: string; description: string; metadata?: Record<string, unknown> }) => {
+    violationCallbackRef.current?.(violation);
+  }, []);
 
-  // Start face detection when ready
-  useEffect(() => {
-    if (isEnabled && status.camera && status.modelsLoaded) {
-      return startFaceDetection();
+  const captureViolationSnapshot = useCallback(async (
+    options?: { maxWidth?: number; maxHeight?: number; quality?: number }
+  ): Promise<string | null> => {
+    try {
+      const video = videoRef.current;
+      if (!video || video.readyState < 2) return null;
+
+      if (!canvasRef.current) canvasRef.current = document.createElement('canvas');
+      const canvas = canvasRef.current;
+
+      const maxWidth = options?.maxWidth ?? 320;
+      const maxHeight = options?.maxHeight ?? 240;
+      const quality = options?.quality ?? 0.6;
+      const videoWidth = video.videoWidth;
+      const videoHeight = video.videoHeight;
+      const aspectRatio = videoWidth / videoHeight;
+
+      let width = maxWidth;
+      let height = maxHeight;
+      if (videoWidth / videoHeight > aspectRatio) height = Math.round(width / aspectRatio);
+      else width = Math.round(height * aspectRatio);
+
+      canvas.width = width;
+      canvas.height = height;
+      const ctx = canvas.getContext('2d');
+      if (!ctx) return null;
+      ctx.drawImage(video, 0, 0, width, height);
+      return canvas.toDataURL('image/jpeg', quality);
+    } catch {
+      return null;
     }
+  }, []);
+
+  useEffect(() => { loadModels(); }, [loadModels]);
+
+  useEffect(() => {
+    if (isEnabled && status.camera && status.modelsLoaded) return startFaceDetection();
   }, [isEnabled, status.camera, status.modelsLoaded, startFaceDetection]);
 
   // Tab visibility tracking
   useEffect(() => {
     if (!isEnabled) return;
-    
-    const handleVisibility = () => {
-      setStatus(prev => ({ ...prev, tabActive: !document.hidden }));
-    };
+    const handleVisibility = () => setStatus(prev => ({ ...prev, tabActive: !document.hidden }));
     document.addEventListener('visibilitychange', handleVisibility);
     return () => document.removeEventListener('visibilitychange', handleVisibility);
   }, [isEnabled]);
 
-  // Cleanup on unmount
+  // T064: Cleanup on unmount
   useEffect(() => {
     return () => {
-      if (detectionIntervalRef.current) {
-        window.clearInterval(detectionIntervalRef.current);
-      }
+      if (detectionIntervalRef.current) window.clearInterval(detectionIntervalRef.current);
       if (streamRef.current) {
         streamRef.current.getTracks().forEach(track => track.stop());
-        log('Camera stream stopped');
+        streamRef.current = null;
       }
       isInitializedRef.current = false;
       hasRequestedPermissionRef.current = false;
@@ -288,6 +383,10 @@ export const useProctoring = (isEnabled: boolean = true): UseProctoringReturn =>
     status,
     videoRef: setVideoRef,
     retryCamera,
-    clearError
+    clearError,
+    recordViolation,
+    setViolationCallback: setViolationCallbackFn,
+    setCanonicalViolationCallback,
+    captureViolationSnapshot,
   };
 };

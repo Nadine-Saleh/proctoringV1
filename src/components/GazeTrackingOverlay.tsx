@@ -1,6 +1,6 @@
 /**
  * GazeTrackingOverlay - Visual overlay for gaze tracking feedback
- * 
+ *
  * Features:
  * - Real-time gaze zone indicator
  * - Progressive warning system
@@ -10,9 +10,9 @@
  */
 
 import { useState } from 'react';
-import { 
-  Eye, 
-  AlertTriangle, 
+import {
+  Eye,
+  AlertTriangle,
   AlertCircle,
   CheckCircle,
   Settings,
@@ -20,13 +20,13 @@ import {
   Clock,
   X,
   Shield,
-  EyeOff
+  EyeOff,
 } from 'lucide-react';
-import type { 
-  GazeSample, 
-  GazeViolation, 
+import type {
+  GazeSample,
+  GazeViolation,
   GazeWarning,
-  AttentionMetrics 
+  AttentionMetrics,
 } from '../lib/gaze/GazeTrackingEngine';
 
 interface GazeTrackingOverlayProps {
@@ -64,23 +64,21 @@ export const GazeTrackingOverlay: React.FC<GazeTrackingOverlayProps> = ({
   onStop,
   onCalibrate,
   onClearViolations,
-  onClearWarnings
+  onClearWarnings,
 }) => {
   const [showDetails, setShowDetails] = useState(false);
   const [showViolations, setShowViolations] = useState(false);
-  const [showSettings, setShowSettings] = useState(false);
 
   const getZoneColor = (zone: string) => {
     switch (zone) {
-      case 'on-screen':
+      case 'on_screen':
         return 'bg-green-500';
-      case 'left':
-      case 'right':
-      case 'up':
-      case 'down':
+      case 'peripheral':
         return 'bg-yellow-500';
       case 'away':
         return 'bg-red-500';
+      case 'no_face':
+        return 'bg-gray-500';
       default:
         return 'bg-gray-500';
     }
@@ -88,17 +86,12 @@ export const GazeTrackingOverlay: React.FC<GazeTrackingOverlayProps> = ({
 
   const getZoneIcon = (zone: string) => {
     switch (zone) {
-      case 'on-screen':
+      case 'on_screen':
         return <Eye className="w-4 h-4" />;
-      case 'left':
-        return '←';
-      case 'right':
-        return '→';
-      case 'up':
-        return '↑';
-      case 'down':
-        return '↓';
+      case 'peripheral':
+        return <AlertTriangle className="w-4 h-4" />;
       case 'away':
+      case 'no_face':
         return <EyeOff className="w-4 h-4" />;
       default:
         return <Eye className="w-4 h-4" />;
@@ -132,7 +125,6 @@ export const GazeTrackingOverlay: React.FC<GazeTrackingOverlayProps> = ({
     return `${minutes}:${secs.toString().padStart(2, '0')}`;
   };
 
-  // Warning banner
   if (warningLevel > 0 && latestWarning) {
     return (
       <div className={`fixed top-4 left-1/2 transform -translate-x-1/2 z-50 px-6 py-4 rounded-lg border-2 shadow-lg ${getWarningColor(warningLevel)}`}>
@@ -154,7 +146,6 @@ export const GazeTrackingOverlay: React.FC<GazeTrackingOverlayProps> = ({
 
   return (
     <div className="space-y-3">
-      {/* Header */}
       <div className="flex items-center justify-between">
         <h3 className="text-sm font-semibold text-gray-900 flex items-center">
           <Eye className="w-4 h-4 mr-2 text-blue-600" />
@@ -169,20 +160,17 @@ export const GazeTrackingOverlay: React.FC<GazeTrackingOverlayProps> = ({
             <TrendingUp className="w-4 h-4 text-gray-600" />
           </button>
           <button
-            onClick={() => setShowSettings(!showSettings)}
+            onClick={onCalibrate}
             className="p-1.5 hover:bg-gray-100 rounded transition-colors"
-            title="Settings"
+            title="Calibrate"
           >
             <Settings className="w-4 h-4 text-gray-600" />
           </button>
         </div>
       </div>
 
-      {/* Status Indicator */}
       <div className={`p-3 rounded-lg border-2 ${
-        isRunning 
-          ? 'bg-green-50 border-green-200' 
-          : 'bg-gray-50 border-gray-200'
+        isRunning ? 'bg-green-50 border-green-200' : 'bg-gray-50 border-gray-200'
       }`}>
         <div className="flex items-center justify-between mb-2">
           <span className="text-xs font-medium text-gray-600">Status</span>
@@ -192,17 +180,14 @@ export const GazeTrackingOverlay: React.FC<GazeTrackingOverlayProps> = ({
           </div>
         </div>
 
-        {/* Current Zone */}
         {currentSample && (
           <div className="flex items-center justify-between">
             <div className="flex items-center space-x-2">
               <div className={`p-1.5 rounded ${getZoneColor(currentZone)}`}>
-                <span className="text-white text-xs">
-                  {getZoneIcon(currentZone)}
-                </span>
+                <span className="text-white text-xs">{getZoneIcon(currentZone)}</span>
               </div>
               <span className="text-xs font-medium capitalize">
-                {currentZone.replace('-', ' ')}
+                {currentZone.replace('_', ' ')}
               </span>
             </div>
             <span className="text-xs text-gray-500">
@@ -212,7 +197,6 @@ export const GazeTrackingOverlay: React.FC<GazeTrackingOverlayProps> = ({
         )}
       </div>
 
-      {/* Attention Score */}
       {isRunning && (
         <div className="p-3 rounded-lg bg-blue-50 border border-blue-200">
           <div className="flex items-center justify-between mb-1">
@@ -235,7 +219,6 @@ export const GazeTrackingOverlay: React.FC<GazeTrackingOverlayProps> = ({
         </div>
       )}
 
-      {/* Detailed Metrics */}
       {showDetails && isRunning && (
         <div className="space-y-2 p-3 rounded-lg bg-gray-50 border border-gray-200">
           <div className="flex items-center justify-between text-xs">
@@ -268,7 +251,6 @@ export const GazeTrackingOverlay: React.FC<GazeTrackingOverlayProps> = ({
         </div>
       )}
 
-      {/* Violations */}
       {violations.length > 0 && (
         <div className="p-3 rounded-lg bg-red-50 border border-red-200">
           <div className="flex items-center justify-between mb-2">
@@ -289,7 +271,7 @@ export const GazeTrackingOverlay: React.FC<GazeTrackingOverlayProps> = ({
           >
             {showViolations ? 'Hide' : 'Show'} recent violations
           </button>
-          
+
           {showViolations && (
             <div className="mt-2 space-y-1 max-h-32 overflow-y-auto">
               {violations.slice(-5).reverse().map((violation, idx) => (
@@ -308,7 +290,6 @@ export const GazeTrackingOverlay: React.FC<GazeTrackingOverlayProps> = ({
         </div>
       )}
 
-      {/* Error Display */}
       {error && (
         <div className="p-3 rounded-lg bg-red-50 border border-red-200">
           <div className="flex items-center space-x-2">
@@ -318,7 +299,6 @@ export const GazeTrackingOverlay: React.FC<GazeTrackingOverlayProps> = ({
         </div>
       )}
 
-      {/* Controls */}
       <div className="flex space-x-2">
         {!isRunning ? (
           <button
@@ -346,7 +326,6 @@ export const GazeTrackingOverlay: React.FC<GazeTrackingOverlayProps> = ({
         )}
       </div>
 
-      {/* Calibration Status */}
       {isCalibrated && (
         <div className="flex items-center justify-center space-x-1 text-xs text-green-600">
           <CheckCircle className="w-3 h-3" />
