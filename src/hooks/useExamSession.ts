@@ -5,7 +5,7 @@
 // Responsibility: React interface for session management
 
 import { useState, useCallback, useRef, useEffect } from 'react';
-import { ExamSessionService } from '../services/examSessionService';
+import { ExamSessionService } from '../services/ExamSessionService';
 import { ExamSubmissionService } from '../services/ExamSubmissionService';
 import { IdentityVerificationService, type JoinExamResponse, type StartSessionResponse } from '../services/IdentityVerificationService';
 import { SessionHeartbeat } from '../utils/SessionHeartbeat';
