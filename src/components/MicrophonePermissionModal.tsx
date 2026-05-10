@@ -73,228 +73,261 @@ export const MicrophonePermissionModal = ({
   const isError = !!status.errorMessage;
 
   return (
-    <div className="fixed inset-0 bg-black/80 flex items-center justify-center z-[9999] p-4">
-      <div className="bg-white rounded-2xl shadow-2xl max-w-md w-full overflow-hidden max-h-[90vh] flex flex-col">
+    <div className="modal-backdrop">
+      <div className="modal-card max-w-md max-h-[92vh] flex flex-col">
         {/* MODAL HEADER */}
-        {/* Purpose: Brand the proctoring step, explain requirement */}
-        <div className="bg-gradient-to-r from-purple-600 to-pink-600 px-6 py-4 flex-shrink-0">
-          <div className="flex items-center space-x-3">
-            <Mic className="w-6 h-6 text-white" />
-            <h2 className="text-xl font-bold text-white">Microphone Access</h2>
+        <div className="bg-brand-gradient px-6 py-5 flex-shrink-0">
+          <div className="flex items-center gap-3">
+            <div className="w-10 h-10 rounded-lg bg-white/15 ring-1 ring-white/20 backdrop-blur-sm flex items-center justify-center">
+              <Mic className="w-5 h-5 text-white" />
+            </div>
+            <div>
+              <div className="text-2xs font-semibold uppercase tracking-wider text-brand-200">
+                Step 3 of 3
+              </div>
+              <h2 className="text-lg font-semibold text-white tracking-tight2">
+                Microphone Access
+              </h2>
+            </div>
           </div>
-          <p className="text-purple-100 mt-1 text-sm">
-            Required for proctoring verification
+          <p className="text-brand-100 mt-2.5 text-sm leading-relaxed">
+            Audio recording is required for proctoring during the exam.
           </p>
         </div>
 
         {/* MAIN CONTENT */}
         <div className="p-6 flex-1 overflow-y-auto">
           {/* AUDIO PREVIEW CONTAINER */}
-          {/* Purpose: Visual feedback area (no real audio viz needed - direct stream recording) */}
-          {/* How: Status overlays on black canvas, no <audio> element */}
-          <div className="relative aspect-video bg-gray-900 rounded-lg overflow-hidden mb-6 border-2 border-purple-500">
+          <div className="relative aspect-video bg-ink-950 rounded-xl overflow-hidden mb-5 ring-1 ring-ink-900/60">
             {/* Direct MediaRecorder stream - no DOM audio visualization needed */}
 
             {/* Loading overlay */}
             {status.loading && (
-              <div className="absolute inset-0 bg-gradient-to-b from-purple-900/80 to-black/80 flex items-center justify-center">
-                <div className="text-center text-white">
-                  <div className="w-12 h-12 border-4 border-purple-400 border-t-transparent rounded-full animate-spin mx-auto mb-4" />
-                  <p className="text-lg font-semibold mb-2">Requesting microphone access...</p>
-                  <p className="text-sm opacity-90">
-                    Please allow microphone permission when prompted
+              <div className="absolute inset-0 bg-ink-950/90 backdrop-blur-sm flex items-center justify-center">
+                <div className="text-center text-white px-6">
+                  <div className="relative w-14 h-14 mx-auto mb-3">
+                    <div className="absolute inset-0 rounded-full border-2 border-white/15" />
+                    <div className="absolute inset-0 rounded-full border-2 border-t-brand-300 animate-spin" />
+                  </div>
+                  <p className="text-sm font-semibold mb-1">Requesting microphone access</p>
+                  <p className="text-xs text-white/70">
+                    Please allow microphone permission in your browser
                   </p>
                 </div>
               </div>
             )}
 
             {isPermissionGranted && (
-              <div className="absolute inset-0 bg-gradient-to-r from-green-900/80 to-emerald-900/80 flex flex-col items-center justify-center text-center p-8">
-                <div className="w-20 h-20 bg-green-500/20 rounded-2xl flex items-center justify-center mb-4 border-4 border-green-500/50">
-                  <Mic className="w-10 h-10 text-green-400" />
+              <div className="absolute inset-0 bg-success-700/30 backdrop-blur-[2px] flex flex-col items-center justify-center text-center p-6">
+                <div className="w-16 h-16 mb-4 rounded-2xl bg-success-500/20 ring-2 ring-success-400/50 backdrop-blur-sm flex items-center justify-center">
+                  <Mic className="w-8 h-8 text-white" />
                 </div>
-                <h3 className="text-2xl font-bold text-white mb-2">Microphone Active ✓</h3>
-                <p className="text-green-100 text-sm mb-6">Click "Start Exam" to continue</p>
-                <div className="w-full bg-green-500/20 border border-green-500/30 rounded-lg p-3">
-                  <div className="flex items-center justify-center space-x-2 mb-2">
-                    <div className="w-2 h-2 bg-green-400 rounded-full animate-ping" />
-                    <span className="text-xs font-medium text-green-200">Live Audio</span>
-                  </div>
-                  <p className="text-xs text-green-100">Permission granted successfully</p>
+                <h3 className="text-base font-semibold text-white mb-1 tracking-tight2">
+                  Microphone active
+                </h3>
+                <p className="text-xs text-success-50/85 mb-3">Audio stream healthy</p>
+                <div className="inline-flex items-center gap-2 px-2.5 py-1 rounded-full bg-white/10 ring-1 ring-white/20 backdrop-blur-sm">
+                  <span className="w-1.5 h-1.5 rounded-full bg-success-400 animate-pulse" />
+                  <span className="text-2xs font-semibold uppercase tracking-wider text-white/95">
+                    Live audio
+                  </span>
                 </div>
               </div>
             )}
 
             {isPermissionDenied && (
-              <div className="absolute inset-0 bg-gradient-to-b from-red-900/90 to-red-900/80 flex items-center justify-center">
-                <div className="text-center text-white p-8 max-w-sm">
-                  <MicOff className="w-20 h-20 mx-auto mb-4 text-red-400" />
-                  <h3 className="text-2xl font-bold mb-2">Microphone Access Denied</h3>
-                  <p className="text-red-100 mb-6">
-                    Microphone permission is required for proctoring. 
-                    Please enable it in your browser settings.
+              <div className="absolute inset-0 bg-danger-900/85 backdrop-blur-sm flex items-center justify-center">
+                <div className="text-center text-white p-6 max-w-sm">
+                  <div className="w-14 h-14 mx-auto mb-3 rounded-full bg-danger-500/20 ring-2 ring-danger-400/40 flex items-center justify-center">
+                    <MicOff className="w-7 h-7 text-danger-200" />
+                  </div>
+                  <h3 className="text-base font-semibold mb-1 tracking-tight2">Access denied</h3>
+                  <p className="text-xs text-danger-100/85">
+                    Enable microphone access in your browser site settings to continue.
                   </p>
                 </div>
               </div>
             )}
 
             {isError && !isPermissionDenied && (
-              <div className="absolute inset-0 bg-gradient-to-b from-yellow-900/90 to-yellow-900/80 flex items-center justify-center">
+              <div className="absolute inset-0 bg-warning-900/85 backdrop-blur-sm flex items-center justify-center">
                 <div className="text-center text-white p-6">
-                  <AlertCircle className="w-16 h-16 mx-auto mb-4 text-yellow-300" />
-                  <p className="text-lg font-semibold mb-2">{status.errorMessage}</p>
+                  <AlertCircle className="w-12 h-12 mx-auto mb-3 text-warning-300" />
+                  <p className="text-sm font-semibold">{status.errorMessage}</p>
                 </div>
               </div>
             )}
 
             {/* Fallback empty state */}
             {!status.loading && !isPermissionGranted && !isError && !isPermissionDenied && (
-              <div className="absolute inset-0 bg-gradient-to-b from-gray-900/80 flex items-center justify-center">
-                <div className="text-center text-gray-300">
-                  <MicOff className="w-16 h-16 mx-auto mb-4" />
-                  <p className="text-lg font-semibold">No Microphone Detected</p>
+              <div className="absolute inset-0 bg-ink-950/70 flex items-center justify-center">
+                <div className="text-center text-white/70">
+                  <MicOff className="w-12 h-12 mx-auto mb-2" />
+                  <p className="text-sm font-medium">No microphone detected</p>
                 </div>
               </div>
             )}
           </div>
 
           {/* Status & Instructions */}
-          <div className={`p-4 rounded-xl mb-6 ${
-            isPermissionGranted ? 'bg-green-50 border-2 border-green-200' :
-            isPermissionDenied || isError ? 'bg-red-50 border-2 border-red-200' :
-            status.loading ? 'bg-purple-50 border-2 border-purple-200' :
-            'bg-gray-50 border-2 border-gray-200'
-          }`}>
-            <div className="flex items-start space-x-3">
-              {isPermissionGranted ? (
-                <CheckCircle className="w-6 h-6 text-green-600 mt-0.5 flex-shrink-0" />
-              ) : isPermissionDenied || isError ? (
-                <MicOff className="w-6 h-6 text-red-600 mt-0.5 flex-shrink-0" />
-              ) : status.loading ? (
-                <div className="w-6 h-6 border-2 border-purple-500 border-t-transparent rounded-full animate-spin mt-0.5 flex-shrink-0" />
-              ) : (
-                <MicOff className="w-6 h-6 text-gray-500 mt-0.5 flex-shrink-0" />
-              )}
+          <div
+            className={`p-4 rounded-xl mb-5 border ${
+              isPermissionGranted
+                ? 'bg-success-50 border-success-200'
+                : isPermissionDenied || isError
+                ? 'bg-danger-50 border-danger-200'
+                : status.loading
+                ? 'bg-brand-50 border-brand-200'
+                : 'bg-ink-50 border-ink-200'
+            }`}
+          >
+            <div className="flex items-start gap-3">
+              <div
+                className={`w-8 h-8 rounded-lg flex items-center justify-center flex-shrink-0 ${
+                  isPermissionGranted
+                    ? 'bg-success-100 text-success-700'
+                    : isPermissionDenied || isError
+                    ? 'bg-danger-100 text-danger-700'
+                    : status.loading
+                    ? 'bg-brand-100 text-brand-700'
+                    : 'bg-ink-100 text-ink-600'
+                }`}
+              >
+                {isPermissionGranted ? (
+                  <CheckCircle className="w-4 h-4" />
+                ) : isPermissionDenied || isError ? (
+                  <MicOff className="w-4 h-4" />
+                ) : status.loading ? (
+                  <div className="w-4 h-4 border-2 border-current border-t-transparent rounded-full animate-spin" />
+                ) : (
+                  <MicOff className="w-4 h-4" />
+                )}
+              </div>
               <div className="flex-1 min-w-0">
-                <div className="flex items-center justify-between mb-2">
-                  <h3 className={`font-semibold text-sm ${
-                    isPermissionGranted ? 'text-green-800' :
-                    isPermissionDenied || isError ? 'text-red-800' :
-                    status.loading ? 'text-purple-800' : 'text-gray-800'
-                  }`}>
-                    {isPermissionGranted ? 'Microphone Ready' :
-                    isPermissionDenied ? 'Permission Denied' :
-                    isError ? 'Setup Error' :
-                    status.loading ? 'Initializing' : 'Not Ready'}
+                <div className="flex items-center justify-between gap-2">
+                  <h3
+                    className={`text-2xs font-semibold uppercase tracking-wider ${
+                      isPermissionGranted
+                        ? 'text-success-700'
+                        : isPermissionDenied || isError
+                        ? 'text-danger-700'
+                        : status.loading
+                        ? 'text-brand-700'
+                        : 'text-ink-600'
+                    }`}
+                  >
+                    {isPermissionGranted
+                      ? 'Microphone ready'
+                      : isPermissionDenied
+                      ? 'Permission denied'
+                      : isError
+                      ? 'Setup error'
+                      : status.loading
+                      ? 'Initializing'
+                      : 'Not ready'}
                   </h3>
                   {isPermissionGranted && (
-                    <div className="px-2 py-1 bg-green-100 text-green-800 text-xs rounded-full font-medium">
-                      ✓ Verified
-                    </div>
+                    <span className="pill pill-success">Verified</span>
                   )}
                 </div>
-                <p className={`text-sm ${
-                  isPermissionGranted ? 'text-green-700' :
-                  isPermissionDenied || isError ? 'text-red-700' :
-                  'text-gray-700'
-                }`}>
-                  {isPermissionGranted ? 'High quality audio stream active for proctoring.' :
-                  isPermissionDenied ? 'Microphone access blocked. Enable in browser settings.' :
-                  isError ? status.errorMessage || 'Unknown error' :
-                  status.loading ? 'Please wait while we setup your microphone...' :
-                  'Connect a microphone and refresh the page.'}
+                <p
+                  className={`text-sm font-medium mt-1 ${
+                    isPermissionGranted
+                      ? 'text-success-900'
+                      : isPermissionDenied || isError
+                      ? 'text-danger-900'
+                      : 'text-ink-800'
+                  }`}
+                >
+                  {isPermissionGranted
+                    ? 'High-quality audio stream is active for proctoring.'
+                    : isPermissionDenied
+                    ? 'Microphone access blocked. Enable it in browser settings.'
+                    : isError
+                    ? status.errorMessage || 'Unknown error'
+                    : status.loading
+                    ? 'Please wait while we set up your microphone…'
+                    : 'Connect a microphone and refresh the page.'}
                 </p>
               </div>
             </div>
           </div>
 
           {/* Requirements List */}
-          <div className="mb-6 space-y-2">
-            <h4 className="font-semibold text-gray-900 text-sm mb-3 flex items-center space-x-2">
-              <span>Requirements:</span>
+          <div className="mb-5">
+            <h4 className="text-2xs font-semibold uppercase tracking-wider text-ink-500 mb-2">
+              Best practices
             </h4>
-            <div className="space-y-2 text-sm text-gray-700">
-              <div className="flex items-center space-x-3 p-3 bg-blue-50 rounded-lg border border-blue-100">
-                <CheckCircle className="w-5 h-5 text-blue-600 flex-shrink-0" />
-                <span>Click "Allow" when browser asks for microphone permission</span>
-              </div>
-              <div className="flex items-center space-x-3 p-3 bg-blue-50 rounded-lg border border-blue-100">
-                <CheckCircle className="w-5 h-5 text-blue-600 flex-shrink-0" />
-                <span>Use built-in microphone or headset (no external speakers)</span>
-              </div>
-              <div className="flex items-center space-x-3 p-3 bg-blue-50 rounded-lg border border-blue-100">
-                <CheckCircle className="w-5 h-5 text-blue-600 flex-shrink-0" />
-                <span>Quiet environment (mute other applications)</span>
-              </div>
-            </div>
+            <ul className="space-y-1.5 text-sm text-ink-700">
+              {[
+                'Click "Allow" when your browser prompts you',
+                'Use a built-in microphone or headset (no external speakers)',
+                'Stay in a quiet environment and mute other applications',
+              ].map((item) => (
+                <li key={item} className="flex items-start gap-2.5">
+                  <CheckCircle className="w-4 h-4 text-success-600 flex-shrink-0 mt-0.5" />
+                  <span>{item}</span>
+                </li>
+              ))}
+            </ul>
           </div>
 
           {/* Action Buttons */}
-          <div className="flex flex-col space-y-3">
+          <div className="flex flex-col gap-2.5">
             {isPermissionGranted ? (
               <button
-                onClick={() => {
-                  onComplete();
-                }}
-                className="w-full flex items-center justify-center space-x-2 px-6 py-3 bg-green-600 hover:bg-green-700 text-white rounded-xl font-semibold text-lg transition-all shadow-lg hover:shadow-xl transform hover:-translate-y-0.5"
+                onClick={() => onComplete()}
+                className="btn btn-lg w-full bg-success-600 text-white shadow-soft hover:bg-success-700"
               >
-                <CheckCircle className="w-5 h-5" />
-                <span>Start Exam</span>
+                <CheckCircle className="w-4 h-4" />
+                <span>Start exam</span>
               </button>
             ) : status.loading ? (
-              <div className="w-full p-3 text-center bg-purple-100 border-2 border-purple-300 rounded-xl">
-                <div className="flex items-center justify-center space-x-2">
-                  <div className="w-5 h-5 border-2 border-purple-500 border-t-transparent rounded-full animate-spin" />
-                  <span className="text-sm font-medium text-purple-800">Waiting for permission...</span>
+              <div className="w-full p-3 text-center rounded-lg bg-brand-50 border border-brand-200">
+                <div className="flex items-center justify-center gap-2">
+                  <div className="w-4 h-4 border-2 border-brand-600 border-t-transparent rounded-full animate-spin" />
+                  <span className="text-xs font-medium text-brand-800 uppercase tracking-wider">
+                    Waiting for permission
+                  </span>
                 </div>
               </div>
             ) : (
               <>
                 <button
-                  onClick={() => {
-                    console.log('[Modal] Retry Microphone button clicked');
-                    retryMicrophone(); // This already calls startMicrophone(true) internally
-                  }}
-                  className="w-full flex items-center justify-center space-x-2 px-6 py-3 bg-blue-600 hover:bg-blue-700 text-white rounded-xl font-semibold transition-all shadow-lg hover:shadow-xl transform hover:-translate-y-0.5 disabled:opacity-50 disabled:cursor-not-allowed"
+                  onClick={() => retryMicrophone()}
                   disabled={status.loading}
+                  className="btn btn-md btn-primary w-full"
                 >
-                  <RefreshCw className="w-5 h-5 animate-spin" />
-                  <span>Retry Microphone</span>
+                  <RefreshCw className="w-4 h-4" />
+                  <span>Retry microphone</span>
                 </button>
                 <button
                   onClick={async () => {
-                    console.log('[Modal] Direct mic test - calling getUserMedia...');
                     try {
-                      const stream = await navigator.mediaDevices.getUserMedia({ audio: true, video: false });
-                      console.log('[Modal] Direct test SUCCESS - mic access granted');
-                      stream.getTracks().forEach(t => t.stop());
-                      alert('Microphone access successful! Browser supports microphone.');
+                      const stream = await navigator.mediaDevices.getUserMedia({
+                        audio: true,
+                        video: false,
+                      });
+                      stream.getTracks().forEach((t) => t.stop());
+                      alert('Microphone access successful — your browser supports it.');
                     } catch (err: any) {
-                      console.error('[Modal] Direct test FAILED:', err);
                       alert(`Microphone test failed: ${err.message || err.name}`);
                     }
                   }}
-                  className="w-full flex items-center justify-center space-x-2 px-6 py-3 bg-gray-600 hover:bg-gray-700 text-white rounded-xl font-semibold transition-all shadow-lg hover:shadow-xl transform hover:-translate-y-0.5"
+                  className="btn btn-md btn-secondary w-full"
                 >
-                  <span>Test Microphone Access</span>
+                  <span>Test microphone access</span>
                 </button>
               </>
             )}
 
-            {isPermissionDenied && (
-              <div className="text-center py-4 px-2">
-                <p className="text-xs text-gray-500 mb-2">
-                  Browser blocked microphone access. Check site settings.
-                </p>
-                <div className="flex space-x-2">
-                  <button
-                    onClick={onRetry}
-                    className="flex-1 px-3 py-2 text-xs bg-gray-600 hover:bg-gray-700 text-white rounded font-medium"
-                  >
-                    Back
-                  </button>
-                </div>
-              </div>
+            {isPermissionDenied && onRetry && (
+              <button
+                onClick={onRetry}
+                className="btn btn-sm btn-ghost w-full"
+              >
+                Back
+              </button>
             )}
           </div>
         </div>

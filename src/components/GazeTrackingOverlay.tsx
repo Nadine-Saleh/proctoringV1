@@ -78,9 +78,9 @@ export const GazeTrackingOverlay: React.FC<GazeTrackingOverlayProps> = ({
       case 'away':
         return 'bg-red-500';
       case 'no_face':
-        return 'bg-gray-500';
+        return 'bg-ink-500';
       default:
-        return 'bg-gray-500';
+        return 'bg-ink-500';
     }
   };
 
@@ -147,35 +147,35 @@ export const GazeTrackingOverlay: React.FC<GazeTrackingOverlayProps> = ({
   return (
     <div className="space-y-3">
       <div className="flex items-center justify-between">
-        <h3 className="text-sm font-semibold text-gray-900 flex items-center">
-          <Eye className="w-4 h-4 mr-2 text-blue-600" />
+        <h3 className="text-sm font-semibold text-ink-900 flex items-center">
+          <Eye className="w-4 h-4 mr-2 text-brand-700" />
           Gaze Tracking
         </h3>
         <div className="flex items-center space-x-2">
           <button
             onClick={() => setShowDetails(!showDetails)}
-            className="p-1.5 hover:bg-gray-100 rounded transition-colors"
+            className="p-1.5 hover:bg-ink-100 rounded transition-colors"
             title="Toggle details"
           >
-            <TrendingUp className="w-4 h-4 text-gray-600" />
+            <TrendingUp className="w-4 h-4 text-ink-600" />
           </button>
           <button
             onClick={onCalibrate}
-            className="p-1.5 hover:bg-gray-100 rounded transition-colors"
+            className="p-1.5 hover:bg-ink-100 rounded transition-colors"
             title="Calibrate"
           >
-            <Settings className="w-4 h-4 text-gray-600" />
+            <Settings className="w-4 h-4 text-ink-600" />
           </button>
         </div>
       </div>
 
       <div className={`p-3 rounded-lg border-2 ${
-        isRunning ? 'bg-green-50 border-green-200' : 'bg-gray-50 border-gray-200'
+        isRunning ? 'bg-green-50 border-green-200' : 'bg-ink-50 border-ink-100'
       }`}>
         <div className="flex items-center justify-between mb-2">
-          <span className="text-xs font-medium text-gray-600">Status</span>
+          <span className="text-xs font-medium text-ink-600">Status</span>
           <div className="flex items-center space-x-2">
-            <div className={`w-2 h-2 rounded-full ${isRunning ? 'bg-green-500' : 'bg-gray-400'} animate-pulse`} />
+            <div className={`w-2 h-2 rounded-full ${isRunning ? 'bg-green-500' : 'bg-ink-400'} animate-pulse`} />
             <span className="text-xs font-semibold">{isRunning ? 'Active' : 'Inactive'}</span>
           </div>
         </div>
@@ -190,7 +190,7 @@ export const GazeTrackingOverlay: React.FC<GazeTrackingOverlayProps> = ({
                 {currentZone.replace('_', ' ')}
               </span>
             </div>
-            <span className="text-xs text-gray-500">
+            <span className="text-xs text-ink-500">
               {(currentSample.confidence * 100).toFixed(0)}%
             </span>
           </div>
@@ -198,14 +198,14 @@ export const GazeTrackingOverlay: React.FC<GazeTrackingOverlayProps> = ({
       </div>
 
       {isRunning && (
-        <div className="p-3 rounded-lg bg-blue-50 border border-blue-200">
+        <div className="p-3 rounded-lg bg-brand-50/60 border border-brand-200">
           <div className="flex items-center justify-between mb-1">
-            <span className="text-xs font-medium text-blue-900">Attention Score</span>
+            <span className="text-xs font-medium text-brand-900">Attention Score</span>
             <span className={`text-lg font-bold ${getAttentionColor(metrics.attentionPercentage)}`}>
               {metrics.attentionPercentage.toFixed(1)}%
             </span>
           </div>
-          <div className="w-full bg-blue-200 rounded-full h-2">
+          <div className="w-full bg-brand-200 rounded-full h-2">
             <div
               className={`h-2 rounded-full transition-all ${
                 metrics.attentionPercentage >= 90 ? 'bg-green-500' :
@@ -220,32 +220,32 @@ export const GazeTrackingOverlay: React.FC<GazeTrackingOverlayProps> = ({
       )}
 
       {showDetails && isRunning && (
-        <div className="space-y-2 p-3 rounded-lg bg-gray-50 border border-gray-200">
+        <div className="space-y-2 p-3 rounded-lg bg-ink-50 border border-ink-100">
           <div className="flex items-center justify-between text-xs">
-            <span className="text-gray-600 flex items-center">
+            <span className="text-ink-600 flex items-center">
               <Clock className="w-3 h-3 mr-1" />
               Session Time
             </span>
             <span className="font-mono font-semibold">{formatTime(metrics.totalSessionTime)}</span>
           </div>
           <div className="flex items-center justify-between text-xs">
-            <span className="text-gray-600">On-Screen Time</span>
+            <span className="text-ink-600">On-Screen Time</span>
             <span className="font-mono font-semibold text-green-600">{formatTime(metrics.onScreenTime)}</span>
           </div>
           <div className="flex items-center justify-between text-xs">
-            <span className="text-gray-600">Off-Screen Time</span>
+            <span className="text-ink-600">Off-Screen Time</span>
             <span className="font-mono font-semibold text-red-600">{formatTime(metrics.offScreenTime)}</span>
           </div>
           <div className="flex items-center justify-between text-xs">
-            <span className="text-gray-600">Gaze Shifts</span>
+            <span className="text-ink-600">Gaze Shifts</span>
             <span className="font-mono font-semibold">{metrics.gazeShifts}</span>
           </div>
           <div className="flex items-center justify-between text-xs">
-            <span className="text-gray-600">Blink Rate</span>
+            <span className="text-ink-600">Blink Rate</span>
             <span className="font-mono font-semibold">{metrics.blinkRate.toFixed(1)}/min</span>
           </div>
           <div className="flex items-center justify-between text-xs">
-            <span className="text-gray-600">Face Distance</span>
+            <span className="text-ink-600">Face Distance</span>
             <span className="font-mono font-semibold">{(metrics.averageFaceDistance * 100).toFixed(0)}%</span>
           </div>
         </div>
@@ -278,11 +278,11 @@ export const GazeTrackingOverlay: React.FC<GazeTrackingOverlayProps> = ({
                 <div key={idx} className="text-xs p-2 bg-red-100 rounded">
                   <div className="flex items-center justify-between">
                     <span className="font-semibold">{violation.type}</span>
-                    <span className="text-gray-500">
+                    <span className="text-ink-500">
                       {new Date(violation.timestamp).toLocaleTimeString()}
                     </span>
                   </div>
-                  <p className="text-gray-700">{violation.description}</p>
+                  <p className="text-ink-700">{violation.description}</p>
                 </div>
               ))}
             </div>
@@ -319,7 +319,7 @@ export const GazeTrackingOverlay: React.FC<GazeTrackingOverlayProps> = ({
         {!isCalibrated && modelsLoaded && (
           <button
             onClick={onCalibrate}
-            className="px-3 py-2 bg-blue-600 text-white text-xs font-medium rounded-lg hover:bg-blue-700 transition-colors"
+            className="px-3 py-2 bg-brand-700 text-white text-xs font-medium rounded-lg hover:bg-brand-800 transition-colors"
           >
             Calibrate
           </button>

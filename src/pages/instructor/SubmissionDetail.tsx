@@ -54,10 +54,10 @@ const formatViolationType = (t: string) =>
   t.split('_').map(w => w.charAt(0).toUpperCase() + w.slice(1)).join(' ');
 
 const getSeverityColor = (sev: number) => {
-  if (sev >= 20) return 'bg-red-100 text-red-700 border-red-200';
+  if (sev >= 20) return 'bg-danger-100 text-danger-700 border-danger-200';
   if (sev >= 15) return 'bg-orange-100 text-orange-700 border-orange-200';
-  if (sev >= 10) return 'bg-amber-100 text-amber-700 border-amber-200';
-  return 'bg-blue-100 text-blue-700 border-blue-200';
+  if (sev >= 10) return 'bg-warning-100 text-warning-700 border-warning-200';
+  return 'bg-brand-100 text-brand-800 border-brand-200';
 };
 
 export const SubmissionDetail = () => {
@@ -224,7 +224,7 @@ export const SubmissionDetail = () => {
   if (loading) {
     return (
       <div className="min-h-screen flex items-center justify-center">
-        <div className="w-10 h-10 border-4 border-indigo-200 border-t-indigo-600 rounded-full animate-spin" />
+        <div className="w-10 h-10 border-4 border-brand-200 border-t-indigo-600 rounded-full animate-spin" />
       </div>
     );
   }
@@ -234,8 +234,8 @@ export const SubmissionDetail = () => {
       <div className="min-h-screen flex items-center justify-center">
         <div className="text-center">
           <XCircle className="w-12 h-12 text-red-400 mx-auto mb-4" />
-          <p className="text-gray-700 font-semibold">{error ?? 'Submission not found'}</p>
-          <button onClick={() => navigate(-1)} className="mt-4 text-indigo-600 hover:underline text-sm">
+          <p className="text-ink-700 font-semibold">{error ?? 'Submission not found'}</p>
+          <button onClick={() => navigate(-1)} className="mt-4 text-brand-700 hover:underline text-sm">
             Go back
           </button>
         </div>
@@ -255,83 +255,83 @@ export const SubmissionDetail = () => {
   const reviewedCount = violations.filter(v => v.is_reviewed).length;
 
   return (
-    <div className="min-h-screen bg-gray-50">
+    <div className="min-h-screen bg-ink-50">
       <div className="max-w-4xl mx-auto px-4 py-8">
         <button
           onClick={() => navigate(-1)}
-          className="flex items-center gap-2 text-gray-600 hover:text-gray-900 mb-6 text-sm"
+          className="flex items-center gap-2 text-ink-600 hover:text-ink-900 mb-6 text-sm"
         >
           <ArrowLeft className="w-4 h-4" /> Back to results
         </button>
 
-        <h1 className="text-2xl font-bold text-gray-900 mb-6">Submission Detail</h1>
+        <h1 className="text-2xl font-bold text-ink-900 mb-6">Submission Detail</h1>
 
         {/* Student + grade summary */}
-        <div className="bg-white rounded-xl shadow-sm border border-gray-200 p-6 mb-6">
+        <div className="bg-white rounded-xl shadow-sm border border-ink-100 p-6 mb-6">
           <div className="flex items-start justify-between flex-wrap gap-4">
             <div className="flex items-center gap-3">
-              <div className="w-10 h-10 rounded-full bg-indigo-100 flex items-center justify-center text-indigo-700 font-semibold">
+              <div className="w-10 h-10 rounded-full bg-brand-100 flex items-center justify-center text-brand-800 font-semibold">
                 {submission.student_name?.charAt(0) ?? '?'}
               </div>
               <div>
-                <p className="font-semibold text-gray-900">{submission.student_name ?? 'Unknown'}</p>
-                <p className="text-sm text-gray-500">{submission.student_email}</p>
+                <p className="font-semibold text-ink-900">{submission.student_name ?? 'Unknown'}</p>
+                <p className="text-sm text-ink-500">{submission.student_email}</p>
               </div>
             </div>
             <div className="flex items-center gap-4 flex-wrap">
               <div className="text-center">
-                <p className="text-xs text-gray-500 mb-1 flex items-center gap-1">
+                <p className="text-xs text-ink-500 mb-1 flex items-center gap-1">
                   <Award className="w-3 h-3" /> Grade
                 </p>
-                <p className="text-xl font-bold text-gray-900">{scorePercent}%</p>
-                <p className="text-xs text-gray-400">
+                <p className="text-xl font-bold text-ink-900">{scorePercent}%</p>
+                <p className="text-xs text-ink-400">
                   {submission.auto_graded_score} / {submission.auto_graded_max} pts
                 </p>
               </div>
               <div className="text-center">
-                <p className="text-xs text-gray-500 mb-1 flex items-center gap-1">
+                <p className="text-xs text-ink-500 mb-1 flex items-center gap-1">
                   <ShieldAlert className="w-3 h-3" /> Risk Score
                 </p>
                 <p
                   className={`text-xl font-bold ${
                     effectiveRiskScore >= 70
-                      ? 'text-red-600'
+                      ? 'text-danger-600'
                       : effectiveRiskScore >= 40
-                      ? 'text-amber-600'
-                      : 'text-green-600'
+                      ? 'text-warning-600'
+                      : 'text-success-600'
                   }`}
                 >
                   {Math.round(effectiveRiskScore)}
                 </p>
                 {isOverridden && (
-                  <p className="text-xs text-indigo-500">
+                  <p className="text-xs text-brand-600">
                     overridden from {Math.round(submission.final_cheating_score)}
                   </p>
                 )}
               </div>
               <div className="text-center">
-                <p className="text-xs text-gray-500 mb-1 flex items-center gap-1">
+                <p className="text-xs text-ink-500 mb-1 flex items-center gap-1">
                   <Clock className="w-3 h-3" /> Submitted
                 </p>
-                <p className="text-sm font-medium text-gray-700">
+                <p className="text-sm font-medium text-ink-700">
                   {new Date(submission.submitted_at).toLocaleString()}
                 </p>
-                <p className="text-xs text-gray-400">{submission.submit_reason.replace('_', ' ')}</p>
+                <p className="text-xs text-ink-400">{submission.submit_reason.replace('_', ' ')}</p>
               </div>
             </div>
           </div>
         </div>
 
         {/* Score override panel */}
-        <div className="bg-white rounded-xl shadow-sm border border-gray-200 p-5 mb-6">
+        <div className="bg-white rounded-xl shadow-sm border border-ink-100 p-5 mb-6">
           <div className="flex items-center justify-between mb-2">
-            <h2 className="font-semibold text-gray-900 text-sm">Instructor Risk Score Override</h2>
+            <h2 className="font-semibold text-ink-900 text-sm">Instructor Risk Score Override</h2>
             <div className="flex gap-2">
               {isOverridden && (
                 <button
                   onClick={handleRemoveOverride}
                   disabled={overrideSaving}
-                  className="flex items-center gap-1 text-xs text-gray-500 hover:text-red-600 disabled:opacity-50"
+                  className="flex items-center gap-1 text-xs text-ink-500 hover:text-danger-600 disabled:opacity-50"
                 >
                   <RotateCcw className="w-3 h-3" /> Remove override
                 </button>
@@ -347,7 +347,7 @@ export const SubmissionDetail = () => {
                     setOverrideNote(submission.instructor_note ?? '');
                     setShowOverrideForm(true);
                   }}
-                  className="flex items-center gap-1 text-xs text-indigo-600 hover:text-indigo-800"
+                  className="flex items-center gap-1 text-xs text-brand-700 hover:text-brand-800"
                 >
                   <Edit2 className="w-3 h-3" /> {isOverridden ? 'Edit override' : 'Set override'}
                 </button>
@@ -356,17 +356,17 @@ export const SubmissionDetail = () => {
           </div>
 
           {isOverridden && !showOverrideForm && (
-            <p className="text-sm text-gray-600">
+            <p className="text-sm text-ink-600">
               Score overridden to{' '}
               <strong>{Math.round(submission.instructor_override_score!)}</strong>
               {submission.instructor_note && (
-                <span className="text-gray-400"> — "{submission.instructor_note}"</span>
+                <span className="text-ink-400"> — "{submission.instructor_note}"</span>
               )}
             </p>
           )}
 
           {!isOverridden && !showOverrideForm && (
-            <p className="text-xs text-gray-400">
+            <p className="text-xs text-ink-400">
               Final score is {Math.round(submission.final_cheating_score)} (peak during exam). You
               can override it after reviewing the violations below.
             </p>
@@ -376,7 +376,7 @@ export const SubmissionDetail = () => {
             <div className="mt-3 space-y-3">
               <div className="flex items-center gap-3">
                 <div>
-                  <label className="block text-xs font-medium text-gray-700 mb-1">
+                  <label className="block text-xs font-medium text-ink-700 mb-1">
                     New score (0–100)
                   </label>
                   <input
@@ -386,11 +386,11 @@ export const SubmissionDetail = () => {
                     value={overrideScore}
                     onChange={e => setOverrideScore(e.target.value)}
                     placeholder="e.g. 25"
-                    className="w-28 px-3 py-1.5 border border-gray-300 rounded-lg text-sm focus:ring-2 focus:ring-indigo-400 focus:outline-none"
+                    className="w-28 px-3 py-1.5 border border-ink-200 rounded-lg text-sm focus:ring-2 focus:ring-brand-700/30 focus:outline-none"
                   />
                 </div>
                 <div className="flex-1">
-                  <label className="block text-xs font-medium text-gray-700 mb-1">
+                  <label className="block text-xs font-medium text-ink-700 mb-1">
                     Reason (optional)
                   </label>
                   <input
@@ -398,24 +398,24 @@ export const SubmissionDetail = () => {
                     value={overrideNote}
                     onChange={e => setOverrideNote(e.target.value)}
                     placeholder="e.g. Reviewed — violations appear accidental"
-                    className="w-full px-3 py-1.5 border border-gray-300 rounded-lg text-sm focus:ring-2 focus:ring-indigo-400 focus:outline-none"
+                    className="w-full px-3 py-1.5 border border-ink-200 rounded-lg text-sm focus:ring-2 focus:ring-brand-700/30 focus:outline-none"
                   />
                 </div>
               </div>
               {overrideError && (
-                <p className="text-xs text-red-600">{overrideError}</p>
+                <p className="text-xs text-danger-600">{overrideError}</p>
               )}
               <div className="flex gap-2">
                 <button
                   onClick={handleSaveOverride}
                   disabled={overrideSaving}
-                  className="px-4 py-1.5 rounded-lg bg-indigo-600 text-white text-sm font-medium hover:bg-indigo-700 disabled:opacity-50"
+                  className="px-4 py-1.5 rounded-lg bg-brand-700 text-white text-sm font-medium hover:bg-brand-800 disabled:opacity-50"
                 >
                   {overrideSaving ? 'Saving…' : 'Save'}
                 </button>
                 <button
                   onClick={() => setShowOverrideForm(false)}
-                  className="px-4 py-1.5 rounded-lg bg-gray-100 text-gray-700 text-sm font-medium hover:bg-gray-200"
+                  className="px-4 py-1.5 rounded-lg bg-ink-100 text-ink-700 text-sm font-medium hover:bg-ink-200"
                 >
                   Cancel
                 </button>
@@ -437,9 +437,9 @@ export const SubmissionDetail = () => {
             </div>
           </div>
         ) : submission.optimal_distance_cm != null ? (
-          <div className="bg-gray-50 border border-gray-200 rounded-xl p-4 mb-6 flex items-center gap-3">
-            <ArrowLeftRight className="w-5 h-5 text-gray-500" />
-            <p className="text-sm text-gray-700">
+          <div className="bg-ink-50 border border-ink-100 rounded-xl p-4 mb-6 flex items-center gap-3">
+            <ArrowLeftRight className="w-5 h-5 text-ink-500" />
+            <p className="text-sm text-ink-700">
               Distance baseline: <strong>{submission.optimal_distance_cm} cm</strong> ±{' '}
               <strong>{submission.distance_tolerance_cm ?? '?'} cm</strong>
             </p>
@@ -447,13 +447,13 @@ export const SubmissionDetail = () => {
         ) : null}
 
         {/* Violation timeline */}
-        <div className="bg-white rounded-xl shadow-sm border border-gray-200 overflow-hidden">
-          <div className="px-6 py-4 border-b border-gray-200 flex items-center justify-between">
-            <h2 className="font-semibold text-gray-900">
+        <div className="bg-white rounded-xl shadow-sm border border-ink-100 overflow-hidden">
+          <div className="px-6 py-4 border-b border-ink-100 flex items-center justify-between">
+            <h2 className="font-semibold text-ink-900">
               Violation Timeline ({violations.length})
             </h2>
             {violations.length > 0 && (
-              <span className="text-xs text-gray-500">
+              <span className="text-xs text-ink-500">
                 {reviewedCount} / {violations.length} reviewed
               </span>
             )}
@@ -462,10 +462,10 @@ export const SubmissionDetail = () => {
           {violations.length === 0 ? (
             <div className="px-6 py-10 text-center">
               <CheckCircle className="w-10 h-10 text-green-400 mx-auto mb-3" />
-              <p className="text-gray-500">No violations recorded for this session.</p>
+              <p className="text-ink-500">No violations recorded for this session.</p>
             </div>
           ) : (
-            <div className="divide-y divide-gray-100">
+            <div className="divide-y divide-ink-100">
               {violations.map(ev => {
                 const rs = reviewStates[ev.id] ?? {
                   saving: false,
@@ -476,7 +476,7 @@ export const SubmissionDetail = () => {
                 return (
                   <div
                     key={ev.id}
-                    className={`px-6 py-4 transition-colors ${ev.is_reviewed ? 'bg-gray-50' : ''}`}
+                    className={`px-6 py-4 transition-colors ${ev.is_reviewed ? 'bg-ink-50' : ''}`}
                   >
                     <div className="flex items-start justify-between gap-3">
                       <div className="flex-1">
@@ -486,22 +486,22 @@ export const SubmissionDetail = () => {
                           >
                             {formatViolationType(ev.violation_type)}
                           </span>
-                          <span className="text-xs text-gray-400">
+                          <span className="text-xs text-ink-400">
                             {new Date(ev.occurred_at).toLocaleTimeString()}
                           </span>
                           {ev.is_reviewed && (
-                            <span className="flex items-center gap-1 text-xs text-green-600 font-medium">
+                            <span className="flex items-center gap-1 text-xs text-success-600 font-medium">
                               <CheckCircle className="w-3 h-3" /> Reviewed
                             </span>
                           )}
                         </div>
 
                         {ev.description && (
-                          <p className="text-sm text-gray-600">{ev.description}</p>
+                          <p className="text-sm text-ink-600">{ev.description}</p>
                         )}
 
                         {ev.instructor_note && (
-                          <p className="text-xs text-indigo-600 mt-1 flex items-center gap-1">
+                          <p className="text-xs text-brand-700 mt-1 flex items-center gap-1">
                             <MessageSquare className="w-3 h-3" /> {ev.instructor_note}
                           </p>
                         )}
@@ -519,7 +519,7 @@ export const SubmissionDetail = () => {
                                 }))
                               }
                               placeholder="Add a note (optional)"
-                              className="w-full max-w-sm px-3 py-1.5 border border-gray-300 rounded-lg text-xs focus:ring-2 focus:ring-indigo-400 focus:outline-none"
+                              className="w-full max-w-sm px-3 py-1.5 border border-ink-200 rounded-lg text-xs focus:ring-2 focus:ring-brand-700/30 focus:outline-none"
                             />
                           </div>
                         )}
@@ -536,7 +536,7 @@ export const SubmissionDetail = () => {
                               href={url}
                               target="_blank"
                               rel="noreferrer"
-                              className="flex items-center gap-1 text-xs text-indigo-600 hover:underline"
+                              className="flex items-center gap-1 text-xs text-brand-700 hover:underline"
                             >
                               <Play className="w-3.5 h-3.5" /> View
                             </a>
@@ -551,7 +551,7 @@ export const SubmissionDetail = () => {
                               [ev.id]: { ...prev[ev.id], showNote: !prev[ev.id]?.showNote },
                             }))
                           }
-                          className="text-gray-400 hover:text-indigo-600 p-1 rounded"
+                          className="text-ink-400 hover:text-brand-700 p-1 rounded"
                           title="Add/edit note"
                         >
                           <MessageSquare className="w-3.5 h-3.5" />
@@ -563,8 +563,8 @@ export const SubmissionDetail = () => {
                           disabled={rs.saving}
                           className={`px-3 py-1 rounded-lg text-xs font-medium transition-colors disabled:opacity-50 ${
                             ev.is_reviewed
-                              ? 'bg-gray-200 text-gray-600 hover:bg-gray-300'
-                              : 'bg-green-100 text-green-700 hover:bg-green-200 border border-green-200'
+                              ? 'bg-ink-200 text-ink-600 hover:bg-ink-300'
+                              : 'bg-success-100 text-success-700 hover:bg-green-200 border border-success-200'
                           }`}
                         >
                           {rs.saving

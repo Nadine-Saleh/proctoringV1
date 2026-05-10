@@ -50,107 +50,111 @@ export function Login() {
   };
 
   return (
-    <div className="min-h-screen bg-gradient-to-br from-blue-50 to-indigo-100 flex items-center justify-center p-4">
-      <div className="bg-white rounded-2xl shadow-xl p-8 w-full max-w-md">
-        {/* Header */}
-        <div className="text-center mb-8">
-          <div className="inline-flex items-center justify-center w-16 h-16 bg-indigo-100 rounded-full mb-4">
-            <LogIn className="w-8 h-8 text-indigo-600" />
+    <div className="min-h-screen bg-mesh-burgundy flex items-center justify-center p-4">
+      <div className="w-full max-w-md animate-fade-in-up">
+        {/* Brand mark */}
+        <div className="flex flex-col items-center mb-8">
+          <div className="w-12 h-12 rounded-xl bg-brand-gradient flex items-center justify-center shadow-elevated mb-3">
+            <LogIn className="w-5 h-5 text-white" />
           </div>
-          <h1 className="text-2xl font-bold text-gray-900">Welcome Back</h1>
-          <p className="text-gray-600 mt-2">Sign in to your ProctoringV2 account</p>
+          <div className="text-2xs font-semibold uppercase tracking-[0.18em] text-brand-700">
+            Examify
+          </div>
         </div>
 
-        {/* Error Message */}
-        {error && (
-          <div className="mb-6 p-4 bg-red-50 border border-red-200 rounded-lg">
-            <p className="text-red-700 text-sm">{error}</p>
-          </div>
-        )}
-
-        {/* Login Form */}
-        <form onSubmit={handleSubmit} className="space-y-6">
-          {/* Email */}
-          <div>
-            <label htmlFor="email" className="block text-sm font-medium text-gray-700 mb-2">
-              Email Address
-            </label>
-            <input
-              id="email"
-              type="email"
-              value={email}
-              onChange={(e) => setEmail(e.target.value)}
-              required
-              className="w-full px-4 py-3 border border-gray-300 rounded-lg focus:ring-2 focus:ring-indigo-500 focus:border-indigo-500 transition"
-              placeholder="you@university.edu"
-            />
+        <div className="card p-8 shadow-elevated">
+          <div className="mb-7">
+            <h1 className="text-2xl font-semibold text-ink-900 tracking-tight2">
+              Welcome back
+            </h1>
+            <p className="text-sm text-ink-600 mt-1">
+              Sign in to continue to your dashboard.
+            </p>
           </div>
 
-          {/* Password */}
-          <div>
-            <label htmlFor="password" className="block text-sm font-medium text-gray-700 mb-2">
-              Password
-            </label>
-            <div className="relative">
-              <input
-                id="password"
-                type={showPassword ? 'text' : 'password'}
-                value={password}
-                onChange={(e) => setPassword(e.target.value)}
-                required
-                className="w-full px-4 py-3 pr-12 border border-gray-300 rounded-lg focus:ring-2 focus:ring-indigo-500 focus:border-indigo-500 transition"
-                placeholder="Enter your password"
-              />
-              <button
-                type="button"
-                onClick={() => setShowPassword(!showPassword)}
-                className="absolute right-3 top-1/2 -translate-y-1/2 text-gray-500 hover:text-gray-700"
-              >
-                {showPassword ? (
-                  <EyeOff className="w-5 h-5" />
-                ) : (
-                  <Eye className="w-5 h-5" />
-                )}
-              </button>
+          {error && (
+            <div className="mb-5 p-3.5 bg-danger-50 border border-danger-200 rounded-lg animate-slide-down">
+              <p className="text-sm text-danger-800">{error}</p>
             </div>
-          </div>
+          )}
 
-          {/* Submit Button */}
-          <button
-            type="submit"
-            disabled={isLoading}
-            className="w-full bg-indigo-600 text-white py-3 px-4 rounded-lg font-medium hover:bg-indigo-700 focus:outline-none focus:ring-2 focus:ring-indigo-500 focus:ring-offset-2 disabled:opacity-50 disabled:cursor-not-allowed transition flex items-center justify-center gap-2"
-          >
-            {isLoading ? (
-              <>
-                <Loader2 className="w-5 h-5 animate-spin" />
-                Signing in...
-              </>
-            ) : (
-              <>
-                <LogIn className="w-5 h-5" />
-                Sign In
-              </>
-            )}
-          </button>
-        </form>
+          <form onSubmit={handleSubmit} className="space-y-5">
+            <div>
+              <label htmlFor="email" className="field-label">
+                Email address
+              </label>
+              <input
+                id="email"
+                type="email"
+                value={email}
+                onChange={(e) => setEmail(e.target.value)}
+                required
+                className="field-input"
+                placeholder="you@university.edu"
+                autoComplete="email"
+              />
+            </div>
 
-        {/* Footer Links */}
-        <div className="mt-6 text-center">
-          <p className="text-gray-600">
+            <div>
+              <label htmlFor="password" className="field-label">
+                Password
+              </label>
+              <div className="relative">
+                <input
+                  id="password"
+                  type={showPassword ? 'text' : 'password'}
+                  value={password}
+                  onChange={(e) => setPassword(e.target.value)}
+                  required
+                  className="field-input pr-11"
+                  placeholder="Enter your password"
+                  autoComplete="current-password"
+                />
+                <button
+                  type="button"
+                  onClick={() => setShowPassword(!showPassword)}
+                  className="absolute right-2 top-1/2 -translate-y-1/2 p-2 text-ink-500 hover:text-ink-800 hover:bg-ink-50 rounded-md transition-colors"
+                  aria-label={showPassword ? 'Hide password' : 'Show password'}
+                >
+                  {showPassword ? <EyeOff className="w-4 h-4" /> : <Eye className="w-4 h-4" />}
+                </button>
+              </div>
+            </div>
+
+            <button
+              type="submit"
+              disabled={isLoading}
+              className="btn btn-lg btn-primary w-full"
+            >
+              {isLoading ? (
+                <>
+                  <Loader2 className="w-4 h-4 animate-spin" />
+                  Signing in…
+                </>
+              ) : (
+                <>
+                  <LogIn className="w-4 h-4" />
+                  Sign in
+                </>
+              )}
+            </button>
+          </form>
+
+          <div className="mt-6 text-center text-sm text-ink-600">
             Don't have an account?{' '}
-            <Link to="/signup" className="text-indigo-600 hover:text-indigo-700 font-medium">
+            <Link to="/signup" className="font-medium text-brand-700 hover:text-brand-800">
               Sign up
             </Link>
-          </p>
-        </div>
+          </div>
 
-        {/* Demo Credentials (for testing) */}
-        <div className="mt-8 p-4 bg-gray-50 rounded-lg">
-          <p className="text-xs text-gray-600 text-center mb-2">Demo Credentials (after setup):</p>
-          <div className="text-xs text-gray-500 space-y-1 font-mono">
-            <p>Student: student@test.com / password123</p>
-            <p>Instructor: instructor@test.com / password123</p>
+          <div className="mt-6 pt-5 border-t border-ink-100">
+            <p className="text-2xs uppercase tracking-wider text-ink-500 text-center mb-2 font-semibold">
+              Demo credentials
+            </p>
+            <div className="text-2xs text-ink-500 space-y-1 font-mono text-center">
+              <p>student@test.com&nbsp;/&nbsp;password123</p>
+              <p>instructor@test.com&nbsp;/&nbsp;password123</p>
+            </div>
           </div>
         </div>
       </div>

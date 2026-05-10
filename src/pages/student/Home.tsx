@@ -28,22 +28,22 @@ const SESSION_STATUS_LABELS: Record<string, string> = {
   terminated: 'Terminated',
 };
 
-const getStatusColor = (status: string) => {
+const getStatusPill = (status: string) => {
   switch (status) {
     case 'in_progress':
-      return 'bg-green-100 text-green-700 border-green-200';
+      return 'pill pill-success';
     case 'verified':
-      return 'bg-blue-100 text-blue-700 border-blue-200';
+      return 'pill pill-brand';
     case 'awaiting_verification':
-      return 'bg-yellow-100 text-yellow-700 border-yellow-200';
+      return 'pill pill-warning';
     case 'submitted':
     case 'auto_submitted':
-      return 'bg-gray-100 text-gray-700 border-gray-200';
+      return 'pill pill-neutral';
     case 'verification_blocked':
     case 'terminated':
-      return 'bg-red-100 text-red-700 border-red-200';
+      return 'pill pill-danger';
     default:
-      return 'bg-gray-100 text-gray-700 border-gray-200';
+      return 'pill pill-neutral';
   }
 };
 
@@ -109,91 +109,118 @@ export const StudentHome = () => {
   );
 
   return (
-    <div className="min-h-screen bg-gradient-to-br from-gray-50 to-blue-50">
-      <div className="max-w-5xl mx-auto px-4 sm:px-6 lg:px-8 py-12">
-        <div className="flex items-start justify-between mb-8">
+    <div className="min-h-screen bg-ink-50 grid-spotlight">
+      <div className="max-w-6xl mx-auto px-4 sm:px-6 lg:px-8 py-10">
+        <div className="flex flex-col sm:flex-row sm:items-end sm:justify-between gap-4 mb-8 animate-fade-in-up">
           <div>
-            <h1 className="text-4xl font-bold text-gray-900 mb-2">Welcome back!</h1>
-            <p className="text-lg text-gray-600">Your exam sessions</p>
+            <div className="text-2xs font-semibold uppercase tracking-[0.18em] text-brand-700 mb-1">
+              Student Portal
+            </div>
+            <h1 className="text-3xl font-semibold text-ink-900 tracking-tight2">
+              Welcome back
+            </h1>
+            <p className="text-ink-600 mt-1">Manage and join your scheduled exam sessions.</p>
           </div>
-          <Link
-            to="/exam/join"
-            className="flex items-center gap-2 px-6 py-3 bg-blue-600 text-white rounded-lg font-semibold hover:bg-blue-700 transition-colors"
-          >
-            <KeyRound className="w-5 h-5" />
-            Join Exam
+          <Link to="/exam/join" className="btn btn-lg btn-primary">
+            <KeyRound className="w-4 h-4" />
+            Join exam
           </Link>
         </div>
 
-        <div className="bg-blue-50 border border-blue-200 rounded-xl p-5 mb-8 flex items-start gap-3">
-          <AlertCircle className="w-5 h-5 text-blue-600 mt-0.5 flex-shrink-0" />
+        <div className="card p-5 mb-8 flex items-start gap-3.5 border-brand-100 bg-brand-50/40">
+          <div className="w-9 h-9 rounded-lg bg-brand-100 text-brand-700 flex items-center justify-center flex-shrink-0">
+            <AlertCircle className="w-4 h-4" />
+          </div>
           <div>
-            <h3 className="font-semibold text-blue-900 mb-1">Proctoring Information</h3>
-            <p className="text-sm text-blue-700">
-              All exams are monitored using AI proctoring. Ensure your camera is enabled and
-              you're in a quiet, well-lit environment before starting.
+            <h3 className="text-sm font-semibold text-brand-900 mb-0.5">Proctoring active</h3>
+            <p className="text-sm text-brand-800/80 leading-relaxed">
+              All exams are AI-monitored. Ensure your camera is enabled and you're in a quiet,
+              well-lit environment before starting.
             </p>
           </div>
         </div>
 
         {loading && (
-          <div className="flex items-center justify-center py-16">
-            <Loader2 className="w-8 h-8 animate-spin text-blue-600" />
+          <div className="grid grid-cols-1 md:grid-cols-2 gap-5">
+            {[0, 1].map((i) => (
+              <div key={i} className="card p-6 space-y-4">
+                <div className="skeleton h-5 w-24 rounded-full" />
+                <div className="skeleton h-6 w-3/4" />
+                <div className="space-y-2">
+                  <div className="skeleton h-4 w-1/2" />
+                  <div className="skeleton h-4 w-1/3" />
+                </div>
+                <div className="skeleton h-10 w-full rounded-lg" />
+              </div>
+            ))}
           </div>
         )}
 
         {!loading && error && (
-          <div className="flex items-start gap-3 p-4 bg-red-50 border border-red-200 rounded-lg mb-6">
-            <AlertCircle className="w-5 h-5 text-red-600 mt-0.5 flex-shrink-0" />
-            <p className="text-sm text-red-700">{error}</p>
+          <div className="flex items-start gap-3 p-4 bg-danger-50 border border-danger-200 rounded-xl mb-6">
+            <AlertCircle className="w-5 h-5 text-danger-700 mt-0.5 flex-shrink-0" />
+            <p className="text-sm text-danger-800">{error}</p>
           </div>
         )}
 
         {!loading && activeSessions.length > 0 && (
           <section className="mb-8">
-            <h2 className="text-xl font-semibold text-gray-900 mb-4">Active Exams</h2>
-            <div className="grid grid-cols-1 md:grid-cols-2 gap-5">
+            <div className="flex items-center justify-between mb-4">
+              <h2 className="text-2xs font-semibold uppercase tracking-wider text-ink-500">
+                Active exams
+              </h2>
+              <span className="text-xs text-ink-500 tabular-nums">
+                {activeSessions.length} open
+              </span>
+            </div>
+            <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
               {activeSessions.map((session) => {
-                const isClosed = ['submitted', 'auto_submitted', 'terminated'].includes(session.status);
+                const isClosed = ['submitted', 'auto_submitted', 'terminated'].includes(
+                  session.status
+                );
                 return (
                   <div
                     key={session.session_id}
-                    className="bg-white rounded-xl shadow-sm border border-gray-200 overflow-hidden hover:shadow-md transition-all"
+                    className="card p-6 hover:shadow-elevated hover:-translate-y-0.5 transition-all duration-200"
                   >
-                    <div className="p-6">
-                      <span className={`inline-flex px-3 py-1 rounded-full text-xs font-semibold border mb-3 ${getStatusColor(session.status)}`}>
+                    <div className="flex items-start justify-between gap-3 mb-4">
+                      <span className={getStatusPill(session.status)}>
                         {SESSION_STATUS_LABELS[session.status] ?? session.status}
                       </span>
-                      <h3 className="text-lg font-bold text-gray-900 mb-3">{session.exam_title}</h3>
-                      <div className="space-y-2 mb-5">
-                        <div className="flex items-center text-sm text-gray-600">
-                          <Calendar className="w-4 h-4 mr-2 text-gray-400" />
-                          {formatDate(session.exam_starts_at)}
-                        </div>
-                        <div className="flex items-center text-sm text-gray-600">
-                          <Clock className="w-4 h-4 mr-2 text-gray-400" />
-                          {session.duration_minutes} minutes
-                        </div>
-                      </div>
-                      <button
-                        disabled={isClosed}
-                        onClick={() => {
-                          if (isClosed) return;
-                          setCurrentExam({
-                            id: session.exam_id,
-                            title: session.exam_title,
-                            duration: session.duration_minutes,
-                          });
-                          navigate(getSessionRoute(session));
-                        }}
-                        className="w-full py-2.5 px-4 bg-blue-600 text-white rounded-lg font-semibold hover:bg-blue-700 transition-colors flex items-center justify-center gap-2 disabled:bg-gray-300 disabled:cursor-not-allowed disabled:hover:bg-gray-300"
-                      >
-                        {isClosed
-                          ? 'Already Submitted'
-                          : session.status === 'in_progress' ? 'Continue Exam' : 'Continue'}
-                        <ChevronRight className="w-4 h-4" />
-                      </button>
                     </div>
+                    <h3 className="text-base font-semibold text-ink-900 tracking-tight2 mb-3">
+                      {session.exam_title}
+                    </h3>
+                    <div className="space-y-1.5 mb-5 text-sm text-ink-600">
+                      <div className="flex items-center gap-2">
+                        <Calendar className="w-4 h-4 text-ink-400" />
+                        <span>{formatDate(session.exam_starts_at)}</span>
+                      </div>
+                      <div className="flex items-center gap-2">
+                        <Clock className="w-4 h-4 text-ink-400" />
+                        <span>{session.duration_minutes} minutes</span>
+                      </div>
+                    </div>
+                    <button
+                      disabled={isClosed}
+                      onClick={() => {
+                        if (isClosed) return;
+                        setCurrentExam({
+                          id: session.exam_id,
+                          title: session.exam_title,
+                          duration: session.duration_minutes,
+                        });
+                        navigate(getSessionRoute(session));
+                      }}
+                      className="btn btn-md btn-primary w-full"
+                    >
+                      {isClosed
+                        ? 'Already submitted'
+                        : session.status === 'in_progress'
+                        ? 'Continue exam'
+                        : 'Continue'}
+                      <ChevronRight className="w-4 h-4" />
+                    </button>
                   </div>
                 );
               })}
@@ -203,42 +230,51 @@ export const StudentHome = () => {
 
         {!loading && pastSessions.length > 0 && (
           <section>
-            <h2 className="text-xl font-semibold text-gray-900 mb-4">Past Exams</h2>
-            <div className="grid grid-cols-1 md:grid-cols-2 gap-5">
+            <div className="flex items-center justify-between mb-4">
+              <h2 className="text-2xs font-semibold uppercase tracking-wider text-ink-500">
+                Past exams
+              </h2>
+              <span className="text-xs text-ink-500 tabular-nums">
+                {pastSessions.length} completed
+              </span>
+            </div>
+            <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
               {pastSessions.map((session) => (
                 <div
                   key={session.session_id}
-                  className="bg-white rounded-xl shadow-sm border border-gray-100 overflow-hidden opacity-80"
+                  className="card-flat p-6 hover:shadow-card transition-all"
                 >
-                  <div className="p-6">
-                    <span className={`inline-flex px-3 py-1 rounded-full text-xs font-semibold border mb-3 ${getStatusColor(session.status)}`}>
+                  <div className="mb-3">
+                    <span className={getStatusPill(session.status)}>
                       {SESSION_STATUS_LABELS[session.status] ?? session.status}
                     </span>
-                    <h3 className="text-lg font-bold text-gray-900 mb-3">{session.exam_title}</h3>
-                    <div className="space-y-2 mb-5">
-                      <div className="flex items-center text-sm text-gray-600">
-                        <Calendar className="w-4 h-4 mr-2 text-gray-400" />
-                        {formatDate(session.exam_starts_at)}
-                      </div>
-                      <div className="flex items-center text-sm text-gray-600">
-                        <Clock className="w-4 h-4 mr-2 text-gray-400" />
-                        {session.duration_minutes} minutes
-                      </div>
-                      {session.submitted_at && (
-                        <div className="flex items-center text-sm text-gray-600">
-                          <FileText className="w-4 h-4 mr-2 text-gray-400" />
-                          Submitted {formatDate(session.submitted_at)}
-                        </div>
-                      )}
-                    </div>
-                    <Link
-                      to={`/exam/${session.session_id}/results`}
-                      className="w-full py-2.5 px-4 border border-gray-300 text-gray-700 rounded-lg font-semibold hover:bg-gray-50 transition-colors flex items-center justify-center gap-2"
-                    >
-                      View Results
-                      <ChevronRight className="w-4 h-4" />
-                    </Link>
                   </div>
+                  <h3 className="text-base font-semibold text-ink-900 tracking-tight2 mb-3">
+                    {session.exam_title}
+                  </h3>
+                  <div className="space-y-1.5 mb-5 text-sm text-ink-600">
+                    <div className="flex items-center gap-2">
+                      <Calendar className="w-4 h-4 text-ink-400" />
+                      <span>{formatDate(session.exam_starts_at)}</span>
+                    </div>
+                    <div className="flex items-center gap-2">
+                      <Clock className="w-4 h-4 text-ink-400" />
+                      <span>{session.duration_minutes} minutes</span>
+                    </div>
+                    {session.submitted_at && (
+                      <div className="flex items-center gap-2">
+                        <FileText className="w-4 h-4 text-ink-400" />
+                        <span>Submitted {formatDate(session.submitted_at)}</span>
+                      </div>
+                    )}
+                  </div>
+                  <Link
+                    to={`/exam/${session.session_id}/results`}
+                    className="btn btn-md btn-secondary w-full"
+                  >
+                    View results
+                    <ChevronRight className="w-4 h-4" />
+                  </Link>
                 </div>
               ))}
             </div>
@@ -246,16 +282,19 @@ export const StudentHome = () => {
         )}
 
         {!loading && sessions.length === 0 && !error && (
-          <div className="text-center py-16 text-gray-500">
-            <FileText className="w-12 h-12 mx-auto mb-4 text-gray-300" />
-            <p className="text-lg font-medium text-gray-700 mb-2">No exam sessions yet</p>
-            <p className="text-sm mb-6">Join an exam using the access code from your instructor.</p>
-            <Link
-              to="/exam/join"
-              className="inline-flex items-center gap-2 px-6 py-3 bg-blue-600 text-white rounded-lg font-semibold hover:bg-blue-700 transition-colors"
-            >
-              <KeyRound className="w-5 h-5" />
-              Join an Exam
+          <div className="card p-12 text-center animate-fade-in-up">
+            <div className="w-14 h-14 mx-auto mb-4 rounded-2xl bg-brand-50 text-brand-700 flex items-center justify-center">
+              <FileText className="w-6 h-6" />
+            </div>
+            <h2 className="text-lg font-semibold text-ink-900 tracking-tight2 mb-1.5">
+              No exam sessions yet
+            </h2>
+            <p className="text-sm text-ink-600 mb-6 max-w-sm mx-auto">
+              Join an exam using the access code provided by your instructor to begin.
+            </p>
+            <Link to="/exam/join" className="btn btn-md btn-primary">
+              <KeyRound className="w-4 h-4" />
+              Join an exam
             </Link>
           </div>
         )}

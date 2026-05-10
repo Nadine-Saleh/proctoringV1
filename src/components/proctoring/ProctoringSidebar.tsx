@@ -1,4 +1,4 @@
-import { CheckCircle } from 'lucide-react';
+import { Activity, Radio } from 'lucide-react';
 import type { ReactNode, RefCallback } from 'react';
 import type { ProctoringStatus } from '../../hooks/useProctoring';
 import type { ExamQuestion, SessionCalibration } from '../../types/exam';
@@ -63,9 +63,38 @@ export const ProctoringSidebar = ({
   micActive,
   micStreamHealthy,
 }: ProctoringSidebarProps) => (
-  <div className="w-96 bg-white border-l border-gray-200 flex flex-col">
-    <div className="p-6 border-b border-gray-200">
-      <h3 className="text-lg font-semibold text-gray-900 mb-4">Proctoring Monitor</h3>
+  <aside
+    className="w-[400px] flex-shrink-0 flex flex-col bg-white border-l border-ink-100 shadow-[-1px_0_24px_-12px_rgba(17,12,14,0.08)]"
+    aria-label="Proctoring control panel"
+  >
+    {/* Header */}
+    <div className="px-5 pt-5 pb-3">
+      <div className="flex items-center justify-between mb-4">
+        <div className="flex items-center gap-2.5">
+          <div className="relative w-8 h-8 rounded-lg bg-brand-gradient flex items-center justify-center shadow-sm">
+            <Activity className="w-4 h-4 text-white" />
+          </div>
+          <div>
+            <div className="text-2xs font-semibold uppercase tracking-wider text-brand-700">
+              Mission Control
+            </div>
+            <h3 className="text-sm font-semibold text-ink-900 leading-tight">
+              Proctoring Monitor
+            </h3>
+          </div>
+        </div>
+
+        <div className="flex items-center gap-1.5 px-2 py-1 rounded-md bg-ink-50 border border-ink-100">
+          <Radio className={`w-3 h-3 ${hasSession ? 'text-success-600' : 'text-ink-400'}`} />
+          <span
+            className={`text-2xs font-semibold uppercase tracking-wider ${
+              hasSession ? 'text-success-700' : 'text-ink-500'
+            }`}
+          >
+            {hasSession ? 'Online' : 'Offline'}
+          </span>
+        </div>
+      </div>
 
       <CameraFeed
         status={status}
@@ -73,7 +102,10 @@ export const ProctoringSidebar = ({
         onRetry={onRetryCamera}
         overlay={cameraOverlay}
       />
+    </div>
 
+    {/* Telemetry */}
+    <div className="px-5 pb-3">
       {examStarted && liveScore > 0 && (
         <ScoreBadge
           score={liveScore}
@@ -82,7 +114,10 @@ export const ProctoringSidebar = ({
         />
       )}
 
-      <div className="space-y-3">
+      <div className="mb-3">
+        <h4 className="text-2xs font-semibold uppercase tracking-wider text-ink-500 mb-2">
+          Live Signals
+        </h4>
         <StatusIndicators
           status={status}
           gazeRunning={gazeRunning}
@@ -93,30 +128,23 @@ export const ProctoringSidebar = ({
           micActive={micActive}
           micStreamHealthy={micStreamHealthy}
         />
-
-        {examStarted && faceDistanceCm && sessionCalibration?.optimal_distance_cm && (
-          <DistanceIndicator
-            faceDistanceCm={faceDistanceCm}
-            optimalDistanceCm={sessionCalibration.optimal_distance_cm}
-          />
-        )}
-
-        {hasSession && (
-          <div className="p-2 rounded bg-green-50 border border-green-200">
-            <div className="flex items-center justify-between">
-              <span className="text-xs text-green-700 font-medium">Session Active</span>
-              <CheckCircle className="w-3 h-3 text-green-600" />
-            </div>
-          </div>
-        )}
       </div>
+
+      {examStarted && faceDistanceCm && sessionCalibration?.optimal_distance_cm && (
+        <DistanceIndicator
+          faceDistanceCm={faceDistanceCm}
+          optimalDistanceCm={sessionCalibration.optimal_distance_cm}
+        />
+      )}
     </div>
 
-    <QuestionNavigator
-      questions={questions}
-      currentIndex={currentQuestion}
-      answers={answers}
-      onSelect={onSelectQuestion}
-    />
-  </div>
+    <div className="border-t border-ink-100 flex-1 flex flex-col min-h-0">
+      <QuestionNavigator
+        questions={questions}
+        currentIndex={currentQuestion}
+        answers={answers}
+        onSelect={onSelectQuestion}
+      />
+    </div>
+  </aside>
 );

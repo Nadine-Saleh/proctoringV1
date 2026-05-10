@@ -186,21 +186,20 @@ export const CalibrationModal: React.FC<CalibrationModalProps> = ({
   // Show completion state
   if (isComplete) {
     return (
-      <div className="fixed inset-0 bg-black/70 flex items-center justify-center z-50">
-        <div className="bg-white rounded-2xl shadow-2xl p-8 max-w-md w-full mx-4">
+      <div className="modal-backdrop">
+        <div className="modal-card max-w-md p-8">
           <div className="text-center">
-            <CheckCircle className="w-16 h-16 text-green-500 mx-auto mb-4" />
-            <h2 className="text-2xl font-bold text-gray-900 mb-2">
-              Calibration Complete
+            <div className="w-16 h-16 mx-auto mb-4 rounded-2xl bg-success-50 ring-1 ring-success-200 flex items-center justify-center">
+              <CheckCircle className="w-7 h-7 text-success-600" />
+            </div>
+            <h2 className="text-xl font-semibold text-ink-900 tracking-tight2 mb-2">
+              Calibration complete
             </h2>
-            <p className="text-gray-600 mb-6">
+            <p className="text-sm text-ink-600 mb-6">
               Gaze tracking has been calibrated for your setup.
             </p>
-            <button
-              onClick={handleCancel}
-              className="w-full px-6 py-3 bg-blue-600 text-white rounded-lg font-semibold hover:bg-blue-700 transition-colors"
-            >
-              Continue to Exam
+            <button onClick={handleCancel} className="btn btn-md btn-primary w-full">
+              Continue to exam
             </button>
           </div>
         </div>
@@ -209,83 +208,92 @@ export const CalibrationModal: React.FC<CalibrationModalProps> = ({
   }
 
   return (
-    <div className="fixed inset-0 bg-black/70 flex items-center justify-center z-50">
-      <div className="bg-white rounded-2xl shadow-2xl p-8 max-w-md w-full mx-4">
+    <div className="modal-backdrop">
+      <div className="modal-card max-w-md p-8">
         {/* Header */}
         <div className="text-center mb-6">
-          <Target className="w-12 h-12 text-blue-600 mx-auto mb-3" />
-          <h2 className="text-2xl font-bold text-gray-900 mb-2">
-            Gaze Calibration
+          <div className="w-14 h-14 mx-auto mb-4 rounded-2xl bg-brand-gradient flex items-center justify-center shadow-md">
+            <Target className="w-6 h-6 text-white" />
+          </div>
+          <h2 className="text-xl font-semibold text-ink-900 tracking-tight2 mb-1">
+            Gaze calibration
           </h2>
-          <p className="text-gray-600">
-            Follow the dots with your eyes to calibrate gaze tracking
+          <p className="text-sm text-ink-600">
+            Follow the dots with your eyes to calibrate tracking.
           </p>
         </div>
 
         {/* Progress */}
         <div className="mb-6">
-          <div className="flex justify-between text-sm text-gray-600 mb-2">
-            <span>Progress</span>
-            <span>{currentPointIndex + 1} / {CALIBRATION_POINTS.length}</span>
+          <div className="flex justify-between items-baseline mb-1.5">
+            <span className="text-2xs font-semibold uppercase tracking-wider text-ink-500">
+              Progress
+            </span>
+            <span className="text-xs font-mono tabular-nums text-ink-700">
+              {currentPointIndex + 1} / {CALIBRATION_POINTS.length}
+            </span>
           </div>
-          <div className="w-full bg-gray-200 rounded-full h-2">
+          <div className="h-1.5 bg-ink-100 rounded-full overflow-hidden">
             <div
-              className="bg-blue-600 h-2 rounded-full transition-all"
-              style={{ width: `${((currentPointIndex + 1) / CALIBRATION_POINTS.length) * 100}%` }}
+              className="h-full bg-brand-gradient rounded-full transition-all duration-500"
+              style={{
+                width: `${((currentPointIndex + 1) / CALIBRATION_POINTS.length) * 100}%`,
+              }}
             />
           </div>
         </div>
 
         {/* Current instruction */}
-        <div className="text-center mb-6 p-4 bg-blue-50 rounded-lg">
-          <p className="text-lg font-semibold text-blue-900">
+        <div className="text-center mb-6 p-5 bg-brand-50 border border-brand-100 rounded-xl">
+          <p className="text-base font-semibold text-brand-800 tracking-tight2">
             {currentPoint.label}
           </p>
           {countdown > 0 && !isCollecting && (
-            <p className="text-3xl font-bold text-blue-600 mt-2">
+            <p className="text-4xl font-semibold text-brand-700 mt-2 tabular-nums tracking-tight2 animate-scale-in">
               {countdown}
             </p>
           )}
           {isCollecting && (
-            <p className="text-sm text-blue-700 mt-2 animate-pulse">
-              Collecting gaze data...
+            <p className="text-xs text-brand-700 mt-2 uppercase font-semibold tracking-wider animate-pulse-soft">
+              Collecting gaze data…
             </p>
           )}
         </div>
 
         {/* Navigation hint */}
-        {currentPointIndex > 0 && currentPointIndex < CALIBRATION_POINTS.length - 1 && !isCollecting && countdown > 0 && (
-          <div className="flex items-center justify-center text-gray-500 text-sm mb-4">
-            <ArrowRight className="w-4 h-4 mr-2" />
-            Get ready for the next position
-          </div>
-        )}
+        {currentPointIndex > 0 &&
+          currentPointIndex < CALIBRATION_POINTS.length - 1 &&
+          !isCollecting &&
+          countdown > 0 && (
+            <div className="flex items-center justify-center text-ink-500 text-xs mb-4">
+              <ArrowRight className="w-3.5 h-3.5 mr-2" />
+              Get ready for the next position
+            </div>
+          )}
 
         {/* Cancel button */}
-        <button
-          onClick={handleCancel}
-          className="w-full px-6 py-3 border-2 border-gray-300 text-gray-700 rounded-lg font-semibold hover:bg-gray-50 transition-colors"
-        >
-          Skip Calibration
+        <button onClick={handleCancel} className="btn btn-md btn-secondary w-full">
+          Skip calibration
         </button>
       </div>
 
       {/* Calibration dots overlay */}
       {isCollecting && (
         <div className="absolute inset-0 pointer-events-none">
-          {CALIBRATION_POINTS.map((point, index) => (
-            index === currentPointIndex && (
-              <div
-                key={index}
-                className="absolute w-8 h-8 bg-red-500 rounded-full border-4 border-white shadow-lg animate-pulse"
-                style={{
-                  left: `${point.position.x * 100}%`,
-                  top: `${point.position.y * 100}%`,
-                  transform: 'translate(-50%, -50%)'
-                }}
-              />
-            )
-          ))}
+          {CALIBRATION_POINTS.map(
+            (point, index) =>
+              index === currentPointIndex && (
+                <div
+                  key={index}
+                  className="absolute w-9 h-9 rounded-full bg-brand-700 border-4 border-white shadow-lg animate-pulse-ring"
+                  style={{
+                    left: `${point.position.x * 100}%`,
+                    top: `${point.position.y * 100}%`,
+                    transform: 'translate(-50%, -50%)',
+                  }}
+                />
+              )
+          )}
         </div>
       )}
     </div>

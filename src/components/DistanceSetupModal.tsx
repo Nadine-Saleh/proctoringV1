@@ -176,24 +176,35 @@ export const DistanceSetupModal = ({ onComplete }: DistanceSetupModalProps) => {
   const isTooClose = currentDistance !== null && currentDistance < 30;
   const isTooFar = currentDistance !== null && currentDistance > 70;
 
+  const stable = stableCount >= 10;
+
   return (
-    <div className="fixed inset-0 bg-black/80 flex items-center justify-center z-[9999] p-4">
-      <div className="bg-white rounded-2xl shadow-2xl max-w-md w-full overflow-hidden">
+    <div className="modal-backdrop">
+      <div className="modal-card max-w-md">
         {/* Header */}
-        <div className="bg-gradient-to-r from-indigo-600 to-purple-600 px-6 py-4">
-          <div className="flex items-center space-x-3">
-            <ArrowLeftRight className="w-6 h-6 text-white" />
-            <h2 className="text-xl font-bold text-white">Distance Setup</h2>
+        <div className="bg-brand-gradient px-6 py-5">
+          <div className="flex items-center gap-3">
+            <div className="w-10 h-10 rounded-lg bg-white/15 flex items-center justify-center backdrop-blur-sm ring-1 ring-white/20">
+              <ArrowLeftRight className="w-5 h-5 text-white" />
+            </div>
+            <div>
+              <div className="text-2xs font-semibold uppercase tracking-wider text-brand-200">
+                Step 1 of 3
+              </div>
+              <h2 className="text-lg font-semibold text-white tracking-tight2">
+                Camera Distance Setup
+              </h2>
+            </div>
           </div>
-          <p className="text-indigo-100 mt-1 text-sm">
-            Position yourself at a comfortable distance from the camera
+          <p className="text-brand-100 mt-2.5 text-sm leading-relaxed">
+            Position yourself at a comfortable distance for accurate face tracking.
           </p>
         </div>
 
         {/* Content */}
         <div className="p-6">
           {/* Video */}
-          <div className="relative aspect-video bg-gray-900 rounded-lg overflow-hidden mb-4">
+          <div className="relative aspect-video bg-ink-950 rounded-xl overflow-hidden mb-5 ring-1 ring-ink-900/60">
             <video
               ref={videoRef}
               autoPlay
@@ -202,86 +213,122 @@ export const DistanceSetupModal = ({ onComplete }: DistanceSetupModalProps) => {
               className="w-full h-full object-cover transform scale-x-[-1]"
             />
 
+            <div className="pointer-events-none absolute inset-0 bg-gradient-to-t from-black/50 to-transparent" />
+
             {!cameraReady && !cameraError && (
-              <div className="absolute inset-0 bg-black/60 flex items-center justify-center">
+              <div className="absolute inset-0 bg-ink-950/85 backdrop-blur-sm flex items-center justify-center">
                 <div className="text-center text-white">
-                  <div className="w-10 h-10 border-4 border-indigo-500 border-t-transparent rounded-full animate-spin mx-auto mb-2" />
-                  <p className="text-xs">Setting up camera...</p>
+                  <div className="relative w-12 h-12 mx-auto mb-3">
+                    <div className="absolute inset-0 rounded-full border-2 border-white/15" />
+                    <div className="absolute inset-0 rounded-full border-2 border-t-brand-300 animate-spin" />
+                  </div>
+                  <p className="text-xs font-medium tracking-wide uppercase text-white/80">
+                    Setting up camera
+                  </p>
                 </div>
               </div>
             )}
 
             {cameraError && (
-              <div className="absolute inset-0 bg-red-900/80 flex items-center justify-center">
+              <div className="absolute inset-0 bg-danger-900/85 backdrop-blur-sm flex items-center justify-center">
                 <div className="text-center text-white p-4">
+                  <AlertTriangle className="w-9 h-9 text-danger-300 mx-auto mb-2" />
                   <p className="text-sm">{cameraError}</p>
                 </div>
               </div>
             )}
 
-            {/* Face guide overlay */}
             {cameraReady && (
-              <div className="absolute inset-0 flex items-center justify-center">
-                <div className="w-40 h-48 border-2 border-white/40 rounded-lg">
-                  <div className="w-full h-full flex items-center justify-center">
-                    <span className="text-white/60 text-xs">Position face here</span>
+              <div className="absolute inset-0 flex items-center justify-center pointer-events-none">
+                <div
+                  className={`relative w-40 h-48 rounded-2xl ring-2 ring-dashed transition-colors duration-300 ${
+                    isDistanceGood ? 'ring-success-400/80' : 'ring-white/40'
+                  }`}
+                >
+                  {/* corner accents */}
+                  <span className="absolute -top-1 -left-1 w-3 h-3 border-t-2 border-l-2 border-white/80 rounded-tl-md" />
+                  <span className="absolute -top-1 -right-1 w-3 h-3 border-t-2 border-r-2 border-white/80 rounded-tr-md" />
+                  <span className="absolute -bottom-1 -left-1 w-3 h-3 border-b-2 border-l-2 border-white/80 rounded-bl-md" />
+                  <span className="absolute -bottom-1 -right-1 w-3 h-3 border-b-2 border-r-2 border-white/80 rounded-br-md" />
+                  <div className="absolute inset-0 flex items-center justify-center">
+                    <span className="text-white/70 text-xs font-medium">Position face</span>
                   </div>
                 </div>
+              </div>
+            )}
+
+            {cameraReady && (
+              <div className="absolute top-2.5 left-2.5 inline-flex items-center gap-1.5 px-2 py-1 rounded-md bg-black/40 backdrop-blur-sm">
+                <span className="w-1.5 h-1.5 rounded-full bg-danger-500 animate-pulse-soft" />
+                <span className="text-2xs font-semibold uppercase tracking-wider text-white/90">
+                  Live
+                </span>
               </div>
             )}
           </div>
 
           {/* Distance Display */}
           {currentDistance ? (
-            <div className="mb-4 p-4 bg-gray-50 border border-gray-200 rounded-lg">
-              <div className="text-center mb-3">
-                <span className="text-3xl font-bold text-gray-900">~{currentDistance} cm</span>
+            <div className="panel p-4 mb-5">
+              <div className="flex items-baseline justify-center gap-1 mb-3">
+                <span className="text-3xl font-semibold text-ink-900 tabular-nums tracking-tight2">
+                  {currentDistance}
+                </span>
+                <span className="text-sm text-ink-500 font-medium">cm</span>
               </div>
 
               {/* Distance bar */}
-              <div className="relative h-4 bg-gray-200 rounded-full overflow-hidden mb-2">
-                <div 
-                  className={`h-full rounded-full transition-all duration-200 ${
-                    isDistanceGood ? 'bg-green-500' : isTooClose ? 'bg-yellow-500' : 'bg-orange-500'
-                  }`}
-                  style={{ width: `${Math.max(10, Math.min(90, (currentDistance / 100) * 100))}%` }}
+              <div className="relative h-2 bg-ink-100 rounded-full overflow-hidden mb-2">
+                <div
+                  className="absolute top-0 h-full bg-success-200/70"
+                  style={{ left: '12.5%', width: '50%' }}
                 />
-                {/* Optimal zone (30-70cm) */}
-                <div className="absolute top-0 h-full bg-green-200/50" style={{ left: '30%', width: '40%' }} />
+                <div
+                  className={`absolute top-1/2 -translate-x-1/2 -translate-y-1/2 w-3.5 h-3.5 rounded-full ring-2 ring-white shadow-sm transition-all duration-200 ${
+                    isDistanceGood
+                      ? 'bg-success-500'
+                      : isTooClose
+                      ? 'bg-warning-500'
+                      : 'bg-warning-500'
+                  }`}
+                  style={{ left: `${Math.max(0, Math.min(100, (currentDistance / 100) * 100))}%` }}
+                />
               </div>
 
-              <div className="flex justify-between text-xs text-gray-500">
+              <div className="flex justify-between text-2xs text-ink-400 mt-2 tabular-nums">
                 <span>20cm</span>
-                <span className="text-green-600 font-medium">Optimal: 30-70cm</span>
+                <span className="text-success-700 font-medium">Optimal 30–70cm</span>
                 <span>100cm</span>
               </div>
 
               {/* Feedback */}
-              {isDistanceGood && (
-                <div className="mt-3 flex items-center justify-center space-x-2 text-green-700">
-                  <CheckCircle className="w-4 h-4" />
-                  <span className="text-sm font-medium">
-                    {stableCount >= 10 ? '✓ Distance stable! Click to continue.' : 'Good distance! Hold still...'}
-                  </span>
-                </div>
-              )}
-              {isTooClose && (
-                <div className="mt-3 flex items-center justify-center space-x-2 text-yellow-700">
-                  <AlertTriangle className="w-4 h-4" />
-                  <span className="text-sm font-medium">Too close! Move back slightly.</span>
-                </div>
-              )}
-              {isTooFar && (
-                <div className="mt-3 flex items-center justify-center space-x-2 text-orange-700">
-                  <AlertTriangle className="w-4 h-4" />
-                  <span className="text-sm font-medium">Too far! Move closer.</span>
-                </div>
-              )}
+              <div className="mt-3 pt-3 border-t border-ink-100">
+                {isDistanceGood ? (
+                  <div className="flex items-center gap-2 text-success-700">
+                    <CheckCircle className="w-4 h-4" />
+                    <span className="text-sm font-medium">
+                      {stable ? 'Distance stable — ready to continue' : 'Hold still while we lock in…'}
+                    </span>
+                  </div>
+                ) : isTooClose ? (
+                  <div className="flex items-center gap-2 text-warning-700">
+                    <AlertTriangle className="w-4 h-4" />
+                    <span className="text-sm font-medium">Too close — move back slightly</span>
+                  </div>
+                ) : (
+                  <div className="flex items-center gap-2 text-warning-700">
+                    <AlertTriangle className="w-4 h-4" />
+                    <span className="text-sm font-medium">Too far — move closer</span>
+                  </div>
+                )}
+              </div>
             </div>
           ) : (
-            <div className="mb-4 p-4 bg-blue-50 border border-blue-200 rounded-lg text-center">
-              <p className="text-sm text-blue-700">
-                {cameraReady ? 'Position your face in the frame to detect distance...' : 'Loading...'}
+            <div className="p-4 mb-5 rounded-xl bg-brand-50/60 border border-brand-100 text-center">
+              <p className="text-sm text-brand-800 font-medium">
+                {cameraReady
+                  ? 'Position your face inside the frame to begin measurement…'
+                  : 'Initializing camera…'}
               </p>
             </div>
           )}
@@ -290,10 +337,10 @@ export const DistanceSetupModal = ({ onComplete }: DistanceSetupModalProps) => {
           <button
             onClick={handleSetDistance}
             disabled={!isDistanceGood || stableCount < 5}
-            className="w-full px-6 py-3 bg-indigo-600 text-white rounded-lg hover:bg-indigo-700 disabled:opacity-50 disabled:cursor-not-allowed font-semibold transition-colors flex items-center justify-center space-x-2"
+            className="btn btn-lg btn-primary w-full"
           >
-            <CheckCircle className="w-5 h-5" />
-            <span>Continue to Verification</span>
+            <CheckCircle className="w-4 h-4" />
+            <span>Continue to verification</span>
           </button>
         </div>
       </div>

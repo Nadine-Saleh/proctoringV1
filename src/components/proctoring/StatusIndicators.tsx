@@ -1,4 +1,15 @@
-import { AlertTriangle, CheckCircle, MicOff } from 'lucide-react';
+import {
+  AlertTriangle,
+  Camera,
+  CheckCircle2,
+  Eye,
+  Mic,
+  MicOff,
+  Monitor,
+  ScanFace,
+  StretchHorizontal,
+} from 'lucide-react';
+import type { ReactNode } from 'react';
 import type { ProctoringStatus } from '../../hooks/useProctoring';
 
 interface StatusIndicatorsProps {
@@ -12,37 +23,51 @@ interface StatusIndicatorsProps {
   micStreamHealthy?: boolean;
 }
 
-const Spinner = () => (
-  <div className="w-4 h-4 border-2 border-gray-400 border-t-transparent rounded-full animate-spin" />
-);
+type SignalState = 'good' | 'warn' | 'bad' | 'idle' | 'loading';
 
-const Row = ({
+const STATE_STYLES: Record<SignalState, { dot: string; text: string; bg: string; pulse: boolean }> = {
+  good:    { dot: 'bg-success-500', text: 'text-success-700', bg: 'bg-success-50/60',  pulse: true },
+  warn:    { dot: 'bg-warning-500', text: 'text-warning-700', bg: 'bg-warning-50/60',  pulse: true },
+  bad:     { dot: 'bg-danger-500',  text: 'text-danger-700',  bg: 'bg-danger-50/60',   pulse: true },
+  idle:    { dot: 'bg-ink-300',     text: 'text-ink-500',     bg: 'bg-ink-50',         pulse: false },
+  loading: { dot: 'bg-ink-300',     text: 'text-ink-500',     bg: 'bg-ink-50',         pulse: false },
+};
+
+const SignalRow = ({
+  icon,
   label,
   state,
-  icon,
+  detail,
 }: {
+  icon: ReactNode;
   label: string;
-  state: 'good' | 'warn' | 'bad' | 'idle' | 'loading';
-  icon?: React.ReactNode;
+  state: SignalState;
+  detail?: string;
 }) => {
-  const styles = {
-    good: { bg: 'bg-green-50', text: 'text-green-700' },
-    warn: { bg: 'bg-yellow-50', text: 'text-yellow-700' },
-    bad: { bg: 'bg-red-50', text: 'text-red-700' },
-    idle: { bg: 'bg-gray-50', text: 'text-gray-500' },
-    loading: { bg: 'bg-gray-50', text: 'text-gray-500' },
-  }[state];
-
-  const defaultIcon =
-    state === 'good' ? <CheckCircle className="w-4 h-4 text-green-600" />
-    : state === 'warn' ? <AlertTriangle className="w-4 h-4 text-yellow-600" />
-    : state === 'bad' ? <AlertTriangle className="w-4 h-4 text-red-600" />
-    : <Spinner />;
-
+  const s = STATE_STYLES[state];
   return (
-    <div className={`flex items-center justify-between p-3 rounded-lg ${styles.bg}`}>
-      <span className={`text-sm font-medium ${styles.text}`}>{label}</span>
-      {icon ?? defaultIcon}
+    <div className="group flex items-center gap-3 px-3 py-2.5 rounded-lg bg-white border border-ink-100 hover:border-ink-200 transition-colors">
+      <div className={`flex-shrink-0 w-8 h-8 rounded-lg flex items-center justify-center ${s.bg}`}>
+        <span className={s.text}>{icon}</span>
+      </div>
+      <div className="flex-1 min-w-0">
+        <div className="text-sm font-medium text-ink-800 leading-tight truncate">{label}</div>
+        {detail && (
+          <div className="text-2xs text-ink-500 mt-0.5 truncate tabular-nums">{detail}</div>
+        )}
+      </div>
+      <div className="flex items-center gap-2 flex-shrink-0">
+        {state === 'loading' ? (
+          <div className="w-3.5 h-3.5 border-2 border-ink-300 border-t-transparent rounded-full animate-spin" />
+        ) : (
+          <span className="relative flex w-2 h-2">
+            {s.pulse && (
+              <span className={`absolute inset-0 rounded-full ${s.dot} opacity-60 animate-ping`} />
+            )}
+            <span className={`relative inline-flex rounded-full w-2 h-2 ${s.dot}`} />
+          </span>
+        )}
+      </div>
     </div>
   );
 };
@@ -57,31 +82,68 @@ export const StatusIndicators = ({
   micActive,
   micStreamHealthy,
 }: StatusIndicatorsProps) => (
-  <>
-    <Row label="Camera" state={status.camera ? 'good' : 'bad'} />
-    <Row
-      label={status.modelsLoaded ? 'Face Detection' : 'Loading Models...'}
+  <div className="space-y-1.5">
+    <SignalRow
+      icon={<Camera className="w-4 h-4" />}
+      label="Camera feed"
+      state={status.camera ? 'good' : 'bad'}
+      detail={status.camera ? 'Streaming' : 'Disconnected'}
+    />
+
+    <SignalRow
+      icon={<ScanFace className="w-4 h-4" />}
+      label={status.modelsLoaded ? 'Face detection' : 'Loading models'}
       state={!status.modelsLoaded ? 'loading' : status.faceDetected ? 'good' : 'warn'}
+      detail={
+        !status.modelsLoaded
+          ? 'Initializing'
+          : status.faceDetected
+          ? 'Face locked'
+          : 'No face detected'
+      }
     />
-    <Row label="Tab Status" state={status.tabActive ? 'good' : 'bad'} />
-    <Row
-      label={gazeRunning ? 'Eye Gaze' : 'Gaze Detection'}
+
+    <SignalRow
+      icon={<Eye className="w-4 h-4" />}
+      label={gazeRunning ? 'Eye gaze' : 'Gaze tracking'}
       state={!gazeRunning ? 'loading' : gazeLookingAway ? 'bad' : 'good'}
+      detail={
+        !gazeRunning
+          ? 'Calibrating'
+          : gazeLookingAway
+          ? 'Looking away'
+          : 'On screen'
+      }
     />
+
+    <SignalRow
+      icon={<Monitor className="w-4 h-4" />}
+      label="Tab focus"
+      state={status.tabActive ? 'good' : 'bad'}
+      detail={status.tabActive ? 'Active window' : 'Out of focus'}
+    />
+
     {poseDetecting !== undefined && (
-      <Row
-        label={poseDetecting ? 'Pose Detection' : poseLoadingProgress || 'Loading Pose...'}
-        state={!poseDetecting ? 'loading' : poseFrameValid ? 'good' : 'bad'}
+      <SignalRow
+        icon={<StretchHorizontal className="w-4 h-4" />}
+        label={poseDetecting ? 'Pose detection' : poseLoadingProgress || 'Loading pose'}
+        state={!poseDetecting ? 'loading' : poseFrameValid ? 'good' : 'warn'}
+        detail={!poseDetecting ? 'Initializing' : poseFrameValid ? 'Posture valid' : 'Posture issue'}
       />
     )}
+
     {micActive !== undefined && (
-      <Row
-        label={`Microphone ${micStreamHealthy ? '✓' : '⚠️'}`}
+      <SignalRow
+        icon={micActive && micStreamHealthy ? <Mic className="w-4 h-4" /> : <MicOff className="w-4 h-4" />}
+        label="Microphone"
         state={micActive && micStreamHealthy ? 'good' : 'bad'}
-        icon={micActive && micStreamHealthy
-          ? <CheckCircle className="w-4 h-4 text-green-600" />
-          : <MicOff className="w-4 h-4 text-red-600" />}
+        detail={micActive && micStreamHealthy ? 'Recording' : 'Disconnected'}
       />
     )}
-  </>
+  </div>
 );
+
+export const SignalRowItem = SignalRow;
+
+// Re-export icons for convenience to consumers
+export { CheckCircle2 as _StatusGoodIcon, AlertTriangle as _StatusBadIcon };

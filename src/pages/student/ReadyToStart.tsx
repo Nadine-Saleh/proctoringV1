@@ -55,65 +55,78 @@ export const ReadyToStart = () => {
   const exam = joinData?.exam;
 
   return (
-    <div className="min-h-screen bg-gradient-to-br from-gray-50 to-blue-50 flex items-center justify-center px-4">
-      <div className="w-full max-w-lg bg-white rounded-2xl shadow-sm border border-gray-200 p-8">
-        <div className="flex items-center justify-center w-14 h-14 bg-green-100 rounded-xl mb-6 mx-auto">
-          <ShieldCheck className="w-7 h-7 text-green-600" />
+    <div className="min-h-screen bg-ink-50 grid-spotlight flex items-center justify-center px-4 py-12">
+      <div className="w-full max-w-lg card p-8 shadow-elevated animate-fade-in-up">
+        <div className="flex items-center justify-center w-14 h-14 rounded-2xl bg-success-50 ring-1 ring-success-200 mb-5 mx-auto">
+          <ShieldCheck className="w-6 h-6 text-success-600" />
         </div>
 
-        <h1 className="text-2xl font-bold text-gray-900 text-center mb-2">You Are Verified</h1>
-        <p className="text-gray-500 text-center mb-8">
-          Your identity has been confirmed. Review the exam details below, then begin when ready.
+        <h1 className="text-2xl font-semibold text-ink-900 text-center tracking-tight2 mb-1">
+          You're verified
+        </h1>
+        <p className="text-sm text-ink-600 text-center mb-7">
+          Your identity has been confirmed. Review the details below, then begin when ready.
         </p>
 
         {exam && (
-          <div className="bg-gray-50 border border-gray-200 rounded-xl p-5 mb-6 space-y-3">
-            <h2 className="font-semibold text-gray-900 text-lg">{exam.title}</h2>
+          <div className="panel p-5 mb-5">
+            <div className="text-2xs font-semibold uppercase tracking-wider text-ink-500 mb-1">
+              Exam
+            </div>
+            <h2 className="text-lg font-semibold text-ink-900 tracking-tight2">{exam.title}</h2>
             {exam.description && (
-              <p className="text-sm text-gray-600">{exam.description}</p>
+              <p className="text-sm text-ink-600 mt-2 leading-relaxed">{exam.description}</p>
             )}
-            <div className="flex items-center gap-2 text-sm text-gray-600">
-              <Clock className="w-4 h-4 text-gray-400" />
-              <span>{exam.duration_minutes} minutes</span>
+            <div className="flex items-center gap-2 text-sm text-ink-700 mt-3 pt-3 border-t border-ink-100">
+              <Clock className="w-4 h-4 text-ink-500" />
+              <span>
+                <span className="font-semibold tabular-nums">{exam.duration_minutes}</span> minutes
+              </span>
             </div>
           </div>
         )}
 
-        <div className="bg-amber-50 border border-amber-200 rounded-lg p-4 mb-6 flex gap-3">
-          <FileText className="w-5 h-5 text-amber-600 flex-shrink-0 mt-0.5" />
-          <div className="text-sm text-amber-800">
-            <p className="font-semibold mb-1">Before you begin</p>
-            <ul className="list-disc list-inside space-y-1 text-amber-700">
-              <li>Stay in this browser tab for the entire exam.</li>
-              <li>Keep your face visible to the camera at all times.</li>
-              <li>The timer starts the moment you click "Begin Exam".</li>
-              <li>Camera is inactive on this screen.</li>
-            </ul>
+        <div className="rounded-xl bg-warning-50 border border-warning-200 p-4 mb-6">
+          <div className="flex items-start gap-3">
+            <div className="w-8 h-8 rounded-lg bg-warning-100 text-warning-700 flex items-center justify-center flex-shrink-0">
+              <FileText className="w-4 h-4" />
+            </div>
+            <div className="text-sm text-warning-900">
+              <p className="text-2xs font-semibold uppercase tracking-wider text-warning-700 mb-1.5">
+                Before you begin
+              </p>
+              <ul className="space-y-1 text-warning-900/85 leading-relaxed">
+                <li>• Stay in this browser tab for the entire exam.</li>
+                <li>• Keep your face visible to the camera at all times.</li>
+                <li>• The timer starts the moment you press <em>Begin exam</em>.</li>
+                <li>• Camera is inactive on this screen.</li>
+              </ul>
+            </div>
           </div>
         </div>
 
         {error && (
-          <div className="flex items-start gap-3 p-4 bg-red-50 border border-red-200 rounded-lg mb-6">
-            <AlertCircle className="w-5 h-5 text-red-600 mt-0.5 flex-shrink-0" />
-            <p className="text-sm text-red-700">{error}</p>
+          <div className="flex items-start gap-3 p-3.5 bg-danger-50 border border-danger-200 rounded-lg mb-5">
+            <AlertCircle className="w-4 h-4 text-danger-700 mt-0.5 flex-shrink-0" />
+            <p className="text-sm text-danger-800">{error}</p>
           </div>
         )}
 
         <button
           onClick={handleBegin}
           disabled={loading}
-          className="w-full py-4 bg-blue-600 text-white rounded-xl font-bold text-lg hover:bg-blue-700 transition-colors disabled:bg-blue-300 disabled:cursor-not-allowed flex items-center justify-center gap-3"
+          className="btn btn-xl btn-primary w-full text-base"
           data-testid="begin-exam-button"
         >
           {loading ? (
             <>
-              <Loader2 className="w-6 h-6 animate-spin" />
-              Starting Exam…
+              <Loader2 className="w-5 h-5 animate-spin" />
+              Starting exam…
             </>
           ) : (
             <>
-              <PlayCircle className="w-6 h-6" />
-              Begin Exam
+              <PlayCircle className="w-5 h-5" />
+              Begin exam
             </>
           )}
         </button>

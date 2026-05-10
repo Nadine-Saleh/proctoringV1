@@ -5,6 +5,7 @@ import { Navigation } from './components/Navigation';
 import { ProtectedRoute } from './components/ProtectedRoute';
 import { Login } from './pages/auth/Login';
 import { Signup } from './pages/auth/Signup';
+import { Landing } from './pages/Landing';
 import { StudentHome } from './pages/student/Home';
 import { JoinExam } from './pages/student/JoinExam';
 import { VerifyIdentity } from './pages/student/VerifyIdentity';
@@ -23,10 +24,13 @@ function AppContent() {
 
   if (isLoading) {
     return (
-      <div className="min-h-screen bg-gray-50 flex items-center justify-center">
-        <div className="text-center">
-          <div className="w-12 h-12 animate-spin text-indigo-600 mx-auto mb-4 border-4 border-indigo-200 border-t-indigo-600 rounded-full" />
-          <p className="text-gray-600">Loading...</p>
+      <div className="min-h-screen bg-ink-50 grid-spotlight flex items-center justify-center">
+        <div className="text-center animate-fade-in">
+          <div className="relative w-12 h-12 mx-auto mb-4">
+            <div className="absolute inset-0 rounded-full border-2 border-brand-100" />
+            <div className="absolute inset-0 rounded-full border-2 border-t-brand-700 animate-spin" />
+          </div>
+          <p className="text-sm font-medium text-ink-600">Loading…</p>
         </div>
       </div>
     );
@@ -34,18 +38,19 @@ function AppContent() {
 
   if (!isAuthenticated) {
     return (
-      <div className="min-h-screen bg-gray-50">
+      <div className="min-h-screen bg-ink-50">
         <Routes>
+          <Route path="/" element={<Landing />} />
           <Route path="/login" element={<Login />} />
           <Route path="/signup" element={<Signup />} />
-          <Route path="*" element={<Navigate to="/login" replace />} />
+          <Route path="*" element={<Navigate to="/" replace />} />
         </Routes>
       </div>
     );
   }
 
   return (
-    <div className="min-h-screen bg-gray-50">
+    <div className="min-h-screen bg-ink-50">
       <Navigation onSignOut={signOut} userName={user?.full_name} />
       <Routes>
         <Route

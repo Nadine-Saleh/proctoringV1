@@ -1,4 +1,4 @@
-import { MicOff } from 'lucide-react';
+import { MicOff, AlertCircle } from 'lucide-react';
 import { LivenessCheckModal } from '../../components/LivenessCheckModal';
 import { DistanceSetupModal } from '../../components/DistanceSetupModal';
 import { ExamSubmissionModal } from '../../components/ExamSubmissionModal';
@@ -11,10 +11,13 @@ import { ProctoringSidebar } from '../../components/proctoring/ProctoringSidebar
 import { useExamFlow } from '../../hooks/useExamFlow';
 
 const LoadingScreen = ({ message }: { message: string }) => (
-  <div className="min-h-screen bg-gray-50 flex items-center justify-center">
-    <div className="text-center">
-      <div className="w-12 h-12 border-4 border-indigo-200 border-t-indigo-600 rounded-full animate-spin mx-auto mb-4" />
-      <p className="text-gray-600">{message}</p>
+  <div className="min-h-screen bg-ink-50 grid-spotlight flex items-center justify-center">
+    <div className="text-center animate-fade-in">
+      <div className="relative w-14 h-14 mx-auto mb-5">
+        <div className="absolute inset-0 rounded-full border-2 border-brand-100" />
+        <div className="absolute inset-0 rounded-full border-2 border-t-brand-700 animate-spin" />
+      </div>
+      <p className="text-sm font-medium text-ink-700">{message}</p>
     </div>
   </div>
 );
@@ -26,15 +29,20 @@ export const Exam = () => {
 
   if (!flow.currentExam) {
     return (
-      <div className="min-h-screen bg-gray-50 flex items-center justify-center">
-        <div className="text-center">
-          <h1 className="text-2xl font-bold mb-4">No exam selected</h1>
-          <p className="text-gray-600 mb-4">Please navigate from the home page and select an exam.</p>
+      <div className="min-h-screen bg-ink-50 grid-spotlight flex items-center justify-center px-6">
+        <div className="card max-w-md w-full text-center px-8 py-10 animate-fade-in-up">
+          <div className="w-14 h-14 mx-auto mb-5 rounded-full bg-warning-50 flex items-center justify-center">
+            <AlertCircle className="w-6 h-6 text-warning-600" />
+          </div>
+          <h1 className="text-xl font-semibold text-ink-900 mb-2 tracking-tight2">No exam selected</h1>
+          <p className="text-sm text-ink-600 mb-6">
+            Please navigate from the home page and select an exam to continue.
+          </p>
           <button
             onClick={() => flow.navigate('/')}
-            className="px-4 py-2 bg-blue-600 text-white rounded hover:bg-blue-700"
+            className="btn btn-md btn-primary w-full"
           >
-            Go to Home
+            Go to home
           </button>
         </div>
       </div>
@@ -79,15 +87,14 @@ export const Exam = () => {
   }
 
   const question = flow.questions[flow.currentQuestion];
-  const progress = flow.questions.length > 0
-    ? ((flow.currentQuestion + 1) / flow.questions.length) * 100
-    : 0;
+  const progress =
+    flow.questions.length > 0 ? ((flow.currentQuestion + 1) / flow.questions.length) * 100 : 0;
 
   const showMicWarning = flow.examStarted && !flow.micActive;
 
   return (
-    <div className="min-h-screen bg-gray-50 flex">
-      <div className="flex-1 flex flex-col">
+    <div className="min-h-screen bg-ink-50 flex">
+      <div className="flex-1 flex flex-col min-w-0">
         {flow.warningBanner && (
           <WarningBanner banner={flow.warningBanner} onDismiss={() => flow.setWarningBanner(null)} />
         )}
@@ -101,12 +108,17 @@ export const Exam = () => {
         />
 
         {showMicWarning && (
-          <div className="bg-red-50 border-l-4 border-red-400 p-4 mx-6 my-4">
-            <div className="flex items-center">
-              <MicOff className="w-5 h-5 text-red-600 mr-2 flex-shrink-0" />
-              <p className="text-sm font-medium text-red-800">
-                Microphone connection lost. Please check your microphone and refresh the page.
-              </p>
+          <div className="mx-6 mt-4 animate-slide-down">
+            <div className="flex items-start gap-3 p-4 rounded-xl bg-danger-50 border border-danger-200">
+              <div className="w-8 h-8 rounded-lg bg-danger-100 flex items-center justify-center flex-shrink-0">
+                <MicOff className="w-4 h-4 text-danger-700" />
+              </div>
+              <div>
+                <p className="text-sm font-semibold text-danger-900">Microphone connection lost</p>
+                <p className="text-xs text-danger-700 mt-0.5">
+                  Please check your microphone and refresh the page to continue.
+                </p>
+              </div>
             </div>
           </div>
         )}
@@ -160,19 +172,36 @@ export const Exam = () => {
       />
 
       {flow.sessionError && (
-        <div className="fixed bottom-4 right-4 z-40 bg-red-600 text-white px-4 py-3 rounded-lg shadow-lg max-w-md">
-          <p className="text-sm font-medium">Session Error</p>
-          <p className="text-xs mt-1">{flow.sessionError}</p>
+        <div className="fixed bottom-4 right-4 z-40 max-w-sm animate-fade-in-up">
+          <div className="card border-danger-200 bg-white p-4 flex items-start gap-3 ring-1 ring-danger-200">
+            <div className="w-8 h-8 rounded-lg bg-danger-100 flex items-center justify-center flex-shrink-0">
+              <AlertCircle className="w-4 h-4 text-danger-700" />
+            </div>
+            <div className="min-w-0">
+              <p className="text-sm font-semibold text-ink-900">Session error</p>
+              <p className="text-xs text-ink-600 mt-0.5">{flow.sessionError}</p>
+            </div>
+          </div>
         </div>
       )}
 
       {flow.submissionError && (
-        <div className="fixed bottom-4 right-4 z-40 bg-red-600 text-white px-4 py-3 rounded-lg shadow-lg max-w-md">
-          <p className="text-sm font-medium">Submission Failed</p>
-          <p className="text-xs mt-1">{flow.submissionError}</p>
-          <button onClick={() => flow.setSubmissionError(null)} className="text-xs underline mt-2">
-            Dismiss
-          </button>
+        <div className="fixed bottom-4 right-4 z-40 max-w-sm animate-fade-in-up">
+          <div className="card border-danger-200 bg-white p-4 flex items-start gap-3 ring-1 ring-danger-200">
+            <div className="w-8 h-8 rounded-lg bg-danger-100 flex items-center justify-center flex-shrink-0">
+              <AlertCircle className="w-4 h-4 text-danger-700" />
+            </div>
+            <div className="min-w-0 flex-1">
+              <p className="text-sm font-semibold text-ink-900">Submission failed</p>
+              <p className="text-xs text-ink-600 mt-0.5">{flow.submissionError}</p>
+              <button
+                onClick={() => flow.setSubmissionError(null)}
+                className="text-xs font-medium text-brand-700 hover:text-brand-800 mt-2"
+              >
+                Dismiss
+              </button>
+            </div>
+          </div>
         </div>
       )}
 
