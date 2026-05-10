@@ -58,10 +58,10 @@ export const StudentResults = () => {
   };
 
   const getScoreColor = (score: number) => {
-    if (score >= 90) return 'text-green-600';
-    if (score >= 80) return 'text-blue-600';
-    if (score >= 70) return 'text-yellow-600';
-    return 'text-red-600';
+    if (score >= 90) return 'text-success-700';
+    if (score >= 80) return 'text-brand-700';
+    if (score >= 70) return 'text-warning-700';
+    return 'text-danger-700';
   };
 
   // If no submission and no grade, redirect to home
@@ -71,75 +71,105 @@ export const StudentResults = () => {
 
   if (isLoading) {
     return (
-      <div className="min-h-screen bg-gradient-to-br from-gray-50 to-blue-50 flex items-center justify-center">
+      <div className="min-h-screen bg-ink-50 grid-spotlight flex items-center justify-center">
         <div className="text-center">
-          <div className="w-12 h-12 border-4 border-indigo-200 border-t-indigo-600 rounded-full animate-spin mx-auto mb-4" />
-          <p className="text-gray-600">Loading your results...</p>
+          <div className="relative w-12 h-12 mx-auto mb-4">
+            <div className="absolute inset-0 rounded-full border-2 border-brand-100" />
+            <div className="absolute inset-0 rounded-full border-2 border-t-brand-700 animate-spin" />
+          </div>
+          <p className="text-sm font-medium text-ink-600">Loading your results…</p>
         </div>
       </div>
     );
   }
 
   return (
-    <div className="min-h-screen bg-gradient-to-br from-gray-50 to-blue-50">
-      <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 py-12">
-        <div className="mb-8">
-          <h1 className="text-4xl font-bold text-gray-900 mb-2">Exam Results</h1>
-          <p className="text-lg text-gray-600">Your performance summary</p>
+    <div className="min-h-screen bg-ink-50 grid-spotlight">
+      <div className="max-w-6xl mx-auto px-4 sm:px-6 lg:px-8 py-10">
+        <div className="mb-8 animate-fade-in-up">
+          <div className="text-2xs font-semibold uppercase tracking-[0.18em] text-brand-700 mb-1">
+            Exam Results
+          </div>
+          <h1 className="text-3xl font-semibold text-ink-900 tracking-tight2">
+            Performance summary
+          </h1>
+          <p className="text-ink-600 mt-1">A breakdown of how you did on this exam.</p>
         </div>
 
-        {/* Submission Error */}
         {error && (
-          <div className="mb-8 p-4 bg-red-50 border border-red-200 rounded-lg flex items-start space-x-3">
-            <AlertTriangle className="w-5 h-5 text-red-600 mt-0.5 flex-shrink-0" />
+          <div className="mb-6 p-4 bg-danger-50 border border-danger-200 rounded-xl flex items-start gap-3">
+            <AlertTriangle className="w-4 h-4 text-danger-700 mt-0.5 flex-shrink-0" />
             <div>
-              <h3 className="font-semibold text-red-900">Error</h3>
-              <p className="text-sm text-red-700">{error}</p>
+              <h3 className="text-sm font-semibold text-danger-900">Error</h3>
+              <p className="text-sm text-danger-700">{error}</p>
             </div>
           </div>
         )}
 
         {/* Score Cards */}
-        <div className="grid grid-cols-1 md:grid-cols-3 gap-6 mb-8">
-          <div className="bg-white rounded-xl shadow-sm border border-gray-200 p-6">
-            <div className="flex items-center justify-between mb-2">
-              <span className="text-sm font-medium text-gray-600">Your Score</span>
-              <TrendingUp className="w-5 h-5 text-blue-600" />
+        <div className="grid grid-cols-1 md:grid-cols-3 gap-4 mb-8">
+          <div className="card p-6">
+            <div className="flex items-center justify-between mb-3">
+              <span className="text-2xs font-semibold uppercase tracking-wider text-ink-500">
+                Score
+              </span>
+              <div className="w-8 h-8 rounded-lg bg-brand-50 text-brand-700 flex items-center justify-center">
+                <TrendingUp className="w-4 h-4" />
+              </div>
             </div>
-            <div className="flex items-baseline space-x-2">
-              <span className={`text-4xl font-bold ${getScoreColor(displayScore)}`}>{displayScore}</span>
-              <span className="text-xl text-gray-500">%</span>
-            </div>
-          </div>
-
-          <div className="bg-white rounded-xl shadow-sm border border-gray-200 p-6">
-            <div className="flex items-center justify-between mb-2">
-              <span className="text-sm font-medium text-gray-600">Correct Answers</span>
-              <CheckCircle className="w-5 h-5 text-green-600" />
-            </div>
-            <div className="flex items-baseline space-x-2">
-              <span className="text-4xl font-bold text-gray-900">{displayCorrect}</span>
-              <span className="text-xl text-gray-500">/ {displayTotal}</span>
+            <div className="flex items-baseline gap-1">
+              <span className={`text-4xl font-semibold tabular-nums tracking-tight2 ${getScoreColor(displayScore)}`}>
+                {displayScore}
+              </span>
+              <span className="text-xl text-ink-400">%</span>
             </div>
           </div>
 
-          <div className="bg-white rounded-xl shadow-sm border border-gray-200 p-6">
-            <div className="flex items-center justify-between mb-2">
-              <span className="text-sm font-medium text-gray-600">Status</span>
-              <Award className="w-5 h-5 text-yellow-600" />
+          <div className="card p-6">
+            <div className="flex items-center justify-between mb-3">
+              <span className="text-2xs font-semibold uppercase tracking-wider text-ink-500">
+                Correct
+              </span>
+              <div className="w-8 h-8 rounded-lg bg-success-50 text-success-700 flex items-center justify-center">
+                <CheckCircle className="w-4 h-4" />
+              </div>
+            </div>
+            <div className="flex items-baseline gap-1">
+              <span className="text-4xl font-semibold text-ink-900 tabular-nums tracking-tight2">
+                {displayCorrect}
+              </span>
+              <span className="text-xl text-ink-400 tabular-nums">/ {displayTotal}</span>
+            </div>
+          </div>
+
+          <div className="card p-6">
+            <div className="flex items-center justify-between mb-3">
+              <span className="text-2xs font-semibold uppercase tracking-wider text-ink-500">
+                Status
+              </span>
+              <div className="w-8 h-8 rounded-lg bg-warning-50 text-warning-700 flex items-center justify-center">
+                <Award className="w-4 h-4" />
+              </div>
             </div>
             <div className="flex flex-col gap-1">
-              <span className={`text-2xl font-bold ${getScoreColor(displayScore)}`}>
-                {displayScore >= 70 ? 'Passed' : 'Needs Review'}
+              <span className={`text-2xl font-semibold tracking-tight2 ${getScoreColor(displayScore)}`}>
+                {displayScore >= 70 ? 'Passed' : 'Needs review'}
               </span>
               {submissionResult?.grade_status === 'partial_pending_review' && (
-                <span className="text-xs text-amber-600 font-medium">Some answers pending instructor review</span>
+                <span className="text-xs text-warning-700 font-medium">
+                  Some answers pending instructor review
+                </span>
               )}
               {submissionResult?.grade_status === 'fully_pending_review' && (
-                <span className="text-xs text-amber-600 font-medium">Grade pending instructor review</span>
+                <span className="text-xs text-warning-700 font-medium">
+                  Grade pending instructor review
+                </span>
               )}
               {submissionResult?.submission_id && (
-                <span className="text-xs text-gray-400 font-mono truncate" title={submissionResult.submission_id}>
+                <span
+                  className="text-2xs text-ink-400 font-mono truncate mt-0.5"
+                  title={submissionResult.submission_id}
+                >
                   ID: {submissionResult.submission_id.slice(0, 8)}…
                 </span>
               )}
@@ -149,40 +179,61 @@ export const StudentResults = () => {
 
         {/* Detailed Results */}
         {grade && grade.graded_answers.length > 0 && (
-          <div className="bg-white rounded-xl shadow-sm border border-gray-200 overflow-hidden">
-            <div className="px-6 py-4 border-b border-gray-200">
-              <h2 className="text-xl font-semibold text-gray-900">Question Breakdown</h2>
+          <div className="card overflow-hidden">
+            <div className="px-6 py-4 border-b border-ink-100 flex items-center justify-between">
+              <div>
+                <h2 className="text-base font-semibold text-ink-900 tracking-tight2">
+                  Question breakdown
+                </h2>
+                <p className="text-2xs uppercase tracking-wider text-ink-500 mt-0.5">
+                  Answer-by-answer summary
+                </p>
+              </div>
+              <span className="text-xs text-ink-500 tabular-nums">
+                {grade.graded_answers.length} questions
+              </span>
             </div>
-            <div className="divide-y divide-gray-200">
+            <div className="divide-y divide-ink-100">
               {grade.graded_answers.map((answer, index) => (
-                <div key={answer.question_id} className="px-6 py-5 hover:bg-gray-50 transition-colors">
-                  <div className="flex items-start justify-between">
-                    <div className="flex-1">
-                      <div className="flex items-center space-x-3 mb-2">
-                        <span className="text-sm font-semibold text-gray-500">Q{index + 1}</span>
-                        <span className={`inline-flex px-3 py-1 rounded-full text-xs font-semibold border ${
-                          answer.is_correct
-                            ? 'bg-green-100 text-green-700 border-green-200'
-                            : 'bg-red-100 text-red-700 border-red-200'
-                        }`}>
+                <div
+                  key={answer.question_id}
+                  className="px-6 py-5 hover:bg-ink-50/50 transition-colors"
+                >
+                  <div className="flex items-start gap-4">
+                    <div className="flex-shrink-0 inline-flex items-center justify-center w-8 h-8 rounded-md bg-ink-100 text-ink-700 text-xs font-semibold tabular-nums">
+                      {index + 1}
+                    </div>
+                    <div className="flex-1 min-w-0">
+                      <div className="flex items-center flex-wrap gap-2 mb-2">
+                        <span className={answer.is_correct ? 'pill pill-success' : 'pill pill-danger'}>
                           {answer.is_correct ? 'Correct' : 'Incorrect'}
                         </span>
-                        <span className="text-sm text-gray-500">
+                        <span className="text-2xs uppercase tracking-wider text-ink-500 font-mono tabular-nums">
                           {answer.points_earned}/{answer.points_possible} pts
                         </span>
                       </div>
-                      <p className="text-gray-900 font-medium mb-2">{answer.question_text}</p>
-                      <div className="text-sm text-gray-600 space-y-1">
-                        <div className="flex items-center space-x-2">
-                          <span className="text-gray-500">Your answer:</span>
-                          <span className={answer.is_correct ? 'text-green-700 font-medium' : 'text-red-700 font-medium'}>
-                            {answer.selected_answer !== null ? `Option ${String.fromCharCode(65 + parseInt(answer.selected_answer))}` : 'Not answered'}
+                      <p className="text-sm font-medium text-ink-900 mb-2 leading-relaxed">
+                        {answer.question_text}
+                      </p>
+                      <div className="text-sm text-ink-600 space-y-1">
+                        <div className="flex items-center gap-2">
+                          <span className="text-ink-500">Your answer:</span>
+                          <span
+                            className={`font-medium ${
+                              answer.is_correct ? 'text-success-700' : 'text-danger-700'
+                            }`}
+                          >
+                            {answer.selected_answer !== null
+                              ? `Option ${String.fromCharCode(
+                                  65 + parseInt(answer.selected_answer)
+                                )}`
+                              : 'Not answered'}
                           </span>
                         </div>
                         {!answer.is_correct && answer.correct_answer !== null && (
-                          <div className="flex items-center space-x-2">
-                            <span className="text-gray-500">Correct answer:</span>
-                            <span className="text-green-700 font-medium">
+                          <div className="flex items-center gap-2">
+                            <span className="text-ink-500">Correct answer:</span>
+                            <span className="font-medium text-success-700">
                               Option {String.fromCharCode(65 + parseInt(answer.correct_answer))}
                             </span>
                           </div>
@@ -196,29 +247,32 @@ export const StudentResults = () => {
           </div>
         )}
 
-        {/* Legacy Fallback (for mock data) */}
+        {/* Legacy Fallback */}
         {!grade && submissionResult && (
-          <div className="bg-white rounded-xl shadow-sm border border-gray-200 overflow-hidden">
-            <div className="px-6 py-4 border-b border-gray-200">
-              <h2 className="text-xl font-semibold text-gray-900">Summary</h2>
+          <div className="card overflow-hidden">
+            <div className="px-6 py-4 border-b border-ink-100">
+              <h2 className="text-base font-semibold text-ink-900 tracking-tight2">Summary</h2>
             </div>
-            <div className="px-6 py-8 text-center">
-              <div className="inline-flex items-center justify-center w-24 h-24 rounded-full bg-blue-100 mb-4">
-                <span className={`text-3xl font-bold ${getScoreColor(displayScore)}`}>{displayScore}%</span>
+            <div className="px-6 py-10 text-center">
+              <div className="inline-flex items-center justify-center w-24 h-24 rounded-full bg-brand-50 ring-1 ring-brand-100 mb-4">
+                <span className={`text-3xl font-semibold tracking-tight2 ${getScoreColor(displayScore)}`}>
+                  {displayScore}%
+                </span>
               </div>
-              <p className="text-gray-600">
-                You answered {displayCorrect} out of {displayTotal} questions correctly.
+              <p className="text-ink-600">
+                You answered <span className="font-semibold text-ink-900">{displayCorrect}</span> out of{' '}
+                <span className="font-semibold text-ink-900">{displayTotal}</span> questions correctly.
               </p>
-              <div className="mt-4 flex items-center justify-center space-x-6 text-sm text-gray-500">
-                <div className="flex items-center space-x-1">
+              <div className="mt-4 flex items-center justify-center gap-6 text-sm text-ink-500">
+                <div className="flex items-center gap-1.5">
                   <Calendar className="w-4 h-4" />
                   <span>{formatDate(new Date().toISOString())}</span>
                 </div>
-                <div className="flex items-center space-x-1">
+                <div className="flex items-center gap-1.5">
                   <Clock className="w-4 h-4" />
                   <span>Submitted</span>
                 </div>
-                <div className="flex items-center space-x-1">
+                <div className="flex items-center gap-1.5">
                   <BarChart className="w-4 h-4" />
                   <span>{displayCorrect} correct</span>
                 </div>

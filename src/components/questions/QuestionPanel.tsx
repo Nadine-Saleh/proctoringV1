@@ -1,4 +1,4 @@
-import { CheckCircle, ChevronLeft, ChevronRight } from 'lucide-react';
+import { CheckCircle2, ChevronLeft, ChevronRight, Send } from 'lucide-react';
 import type { ExamQuestion } from '../../types/exam';
 
 interface QuestionPanelProps {
@@ -13,6 +13,8 @@ interface QuestionPanelProps {
   onSubmit: () => void;
 }
 
+const OPTION_LETTERS = ['A', 'B', 'C', 'D', 'E', 'F'];
+
 export const QuestionPanel = ({
   question,
   selectedAnswer,
@@ -25,43 +27,108 @@ export const QuestionPanel = ({
   onSubmit,
 }: QuestionPanelProps) => {
   const isLast = currentIndex === totalQuestions - 1;
+  const isFirst = currentIndex === 0;
 
   return (
     <>
-      <div className="flex-1 overflow-auto">
-        <div className="max-w-5xl mx-auto px-6 py-8">
-          <div className="bg-white rounded-xl shadow-sm border border-gray-200 p-8 mb-6">
-            <h2 className="text-2xl font-semibold text-gray-900 mb-6">{question.prompt}</h2>
-            <div className="space-y-3">
-              {question.options.map((option, index) => {
-                const selected = selectedAnswer === index;
-                return (
-                  <button
-                    key={index}
-                    onClick={() => onSelectAnswer(question.id, index)}
-                    className={`w-full text-left p-4 rounded-lg border-2 transition-all ${
-                      selected ? 'border-blue-500 bg-blue-50' : 'border-gray-200 hover:border-gray-300 bg-white'
-                    }`}
-                  >
-                    <div className="flex items-center">
-                      <div className={`w-6 h-6 rounded-full border-2 flex items-center justify-center mr-3 ${
-                        selected ? 'border-blue-500 bg-blue-500' : 'border-gray-300'
-                      }`}>
-                        {selected && <div className="w-2 h-2 bg-white rounded-full" />}
+      <div className="flex-1 overflow-auto grid-spotlight">
+        <div className="max-w-4xl mx-auto px-6 py-10">
+          <div className="card overflow-hidden animate-fade-in-up">
+            {/* Question header strip */}
+            <div className="px-7 py-3.5 border-b border-ink-100 bg-ink-50/50 flex items-center justify-between">
+              <div className="flex items-center gap-2.5">
+                <span className="inline-flex items-center justify-center w-7 h-7 rounded-md bg-brand-gradient text-white text-xs font-semibold shadow-sm tabular-nums">
+                  {currentIndex + 1}
+                </span>
+                <span className="text-2xs font-semibold uppercase tracking-wider text-ink-500">
+                  Question {currentIndex + 1} of {totalQuestions}
+                </span>
+              </div>
+              {selectedAnswer !== undefined && (
+                <span className="pill pill-success">
+                  <CheckCircle2 className="w-3 h-3" />
+                  Answered
+                </span>
+              )}
+            </div>
+
+            <div className="px-7 py-7">
+              <h2 className="text-xl md:text-[22px] font-semibold tracking-tightish text-ink-900 leading-relaxed text-balance mb-7">
+                {question.prompt}
+              </h2>
+
+              <div role="radiogroup" aria-label="Answer options" className="space-y-2.5">
+                {question.options.map((option, index) => {
+                  const selected = selectedAnswer === index;
+                  const letter = OPTION_LETTERS[index] ?? `${index + 1}`;
+                  return (
+                    <button
+                      key={index}
+                      role="radio"
+                      aria-checked={selected}
+                      onClick={() => onSelectAnswer(question.id, index)}
+                      className={`
+                        group w-full text-left relative overflow-hidden
+                        rounded-xl border transition-all duration-200 ease-out
+                        focus-visible:ring-2 focus-visible:ring-brand-700 focus-visible:ring-offset-2
+                        ${
+                          selected
+                            ? 'border-brand-600 bg-brand-50/70 shadow-soft ring-1 ring-brand-600/20'
+                            : 'border-ink-200 bg-white hover:border-brand-300 hover:bg-brand-50/30'
+                        }
+                      `}
+                    >
+                      <div className="flex items-center gap-4 px-5 py-4">
+                        <span
+                          className={`
+                            flex-shrink-0 inline-flex items-center justify-center
+                            w-9 h-9 rounded-lg text-sm font-semibold
+                            transition-colors duration-150
+                            ${
+                              selected
+                                ? 'bg-brand-700 text-white shadow-sm'
+                                : 'bg-ink-100 text-ink-600 group-hover:bg-brand-100 group-hover:text-brand-700'
+                            }
+                          `}
+                        >
+                          {letter}
+                        </span>
+                        <span
+                          className={`flex-1 text-base leading-relaxed ${
+                            selected ? 'text-ink-900 font-medium' : 'text-ink-700'
+                          }`}
+                        >
+                          {option}
+                        </span>
+                        <span
+                          className={`
+                            flex-shrink-0 w-5 h-5 rounded-full border-2 flex items-center justify-center
+                            transition-all duration-150
+                            ${
+                              selected
+                                ? 'border-brand-700 bg-brand-700'
+                                : 'border-ink-300 group-hover:border-brand-400'
+                            }
+                          `}
+                        >
+                          {selected && (
+                            <span className="w-2 h-2 rounded-full bg-white animate-scale-in" />
+                          )}
+                        </span>
                       </div>
-                      <span className="text-gray-700">{option}</span>
-                    </div>
-                  </button>
-                );
-              })}
+                    </button>
+                  );
+                })}
+              </div>
             </div>
           </div>
 
-          <div className="flex items-center justify-between">
+          {/* Action bar */}
+          <div className="flex items-center justify-between mt-6">
             <button
               onClick={onPrevious}
-              disabled={currentIndex === 0}
-              className="flex items-center space-x-2 px-6 py-3 rounded-lg bg-white border border-gray-300 text-gray-700 hover:bg-gray-50 disabled:opacity-50"
+              disabled={isFirst}
+              className="btn btn-md btn-secondary"
             >
               <ChevronLeft className="w-4 h-4" />
               <span>Previous</span>
@@ -70,15 +137,15 @@ export const QuestionPanel = ({
             {isLast ? (
               <button
                 onClick={onSubmit}
-                className="flex items-center space-x-2 px-8 py-3 rounded-lg bg-green-600 text-white hover:bg-green-700 font-semibold"
+                className="btn btn-lg bg-success-600 text-white shadow-soft hover:bg-success-700 hover:shadow-card font-semibold"
               >
-                <CheckCircle className="w-5 h-5" />
+                <Send className="w-4 h-4" />
                 <span>Submit Exam</span>
               </button>
             ) : (
               <button
                 onClick={onNext}
-                className="flex items-center space-x-2 px-6 py-3 rounded-lg bg-blue-600 text-white hover:bg-blue-700 font-semibold"
+                className="btn btn-md btn-primary"
               >
                 <span>Next</span>
                 <ChevronRight className="w-4 h-4" />
@@ -88,11 +155,18 @@ export const QuestionPanel = ({
         </div>
       </div>
 
-      <div className="bg-white border-t border-gray-200 px-6 py-3">
-        <div className="max-w-5xl mx-auto">
-          <div className="w-full bg-gray-200 rounded-full h-2">
-            <div className="bg-blue-600 h-2 rounded-full transition-all" style={{ width: `${progress}%` }} />
+      {/* Progress footer */}
+      <div className="bg-white/95 backdrop-blur-md border-t border-ink-100 px-6 py-3">
+        <div className="max-w-4xl mx-auto flex items-center gap-4">
+          <div className="flex-1 h-1.5 bg-ink-100 rounded-full overflow-hidden">
+            <div
+              className="h-full bg-brand-gradient rounded-full transition-all duration-500 ease-out"
+              style={{ width: `${progress}%` }}
+            />
           </div>
+          <span className="text-xs font-mono tabular-nums text-ink-500 flex-shrink-0">
+            {Math.round(progress)}%
+          </span>
         </div>
       </div>
     </>

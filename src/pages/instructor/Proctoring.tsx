@@ -236,19 +236,19 @@ export const ProctoringReport = () => {
 
   const getSeverityIcon = (severity: string) => {
     switch (severity) {
-      case 'critical': return <XCircle className="w-5 h-5 text-red-600" />;
+      case 'critical': return <XCircle className="w-5 h-5 text-danger-600" />;
       case 'high': return <AlertTriangle className="w-5 h-5 text-orange-600" />;
-      case 'medium': return <AlertCircle className="w-5 h-5 text-yellow-600" />;
-      default: return <AlertCircle className="w-5 h-5 text-blue-600" />;
+      case 'medium': return <AlertCircle className="w-5 h-5 text-warning-600" />;
+      default: return <AlertCircle className="w-5 h-5 text-brand-700" />;
     }
   };
 
   const getSeverityColor = (severity: string) => {
     switch (severity) {
-      case 'critical': return 'bg-red-100 text-red-700 border-red-200';
+      case 'critical': return 'bg-danger-100 text-danger-700 border-danger-200';
       case 'high': return 'bg-orange-100 text-orange-700 border-orange-200';
-      case 'medium': return 'bg-yellow-100 text-yellow-700 border-yellow-200';
-      default: return 'bg-blue-100 text-blue-700 border-blue-200';
+      case 'medium': return 'bg-warning-100 text-warning-700 border-warning-200';
+      default: return 'bg-brand-100 text-brand-800 border-brand-200';
     }
   };
 
@@ -336,17 +336,17 @@ export const ProctoringReport = () => {
 
   if (isLoading && examId !== 'all') {
     return (
-      <div className="min-h-screen bg-gradient-to-br from-gray-50 to-blue-50 flex items-center justify-center">
+      <div className="min-h-screen bg-ink-50 grid-spotlight flex items-center justify-center">
         <div className="text-center">
-          <Loader2 className="w-12 h-12 animate-spin text-indigo-600 mx-auto mb-4" />
-          <p className="text-gray-600">Loading violation data...</p>
+          <Loader2 className="w-12 h-12 animate-spin text-brand-700 mx-auto mb-4" />
+          <p className="text-ink-600">Loading violation data...</p>
         </div>
       </div>
     );
   }
 
   return (
-    <div className="min-h-screen bg-gradient-to-br from-gray-50 to-blue-50">
+    <div className="min-h-screen bg-ink-50 grid-spotlight">
       {/* Hidden audio for alert sounds */}
       <audio ref={audioRef} src="data:audio/wav;base64,UklGRl9vT19XQVZFZm10IBAAAAABAAEAQB8AAEAfAAABAAgAZGF0YU" preload="auto" />
       
@@ -354,12 +354,12 @@ export const ProctoringReport = () => {
         <div className="mb-8">
           <div className="flex items-center justify-between">
             <div>
-              <h1 className="text-4xl font-bold text-gray-900 mb-2">Proctoring Report</h1>
-              <p className="text-lg text-gray-600">Monitor flagged events and suspicious activities</p>
+              <h1 className="text-4xl font-bold text-ink-900 mb-2">Proctoring Report</h1>
+              <p className="text-lg text-ink-600">Monitor flagged events and suspicious activities</p>
             </div>
             <div className="flex items-center space-x-4">
               <div className={`flex items-center space-x-2 px-4 py-2 rounded-lg ${
-                isConnected ? 'bg-green-100 text-green-700' : 'bg-red-100 text-red-700'
+                isConnected ? 'bg-success-100 text-success-700' : 'bg-danger-100 text-danger-700'
               }`}>
                 <Activity className={`w-5 h-5 ${isConnected ? 'animate-pulse' : ''}`} />
                 <span className="font-medium">{isConnected ? 'Live Monitoring Active' : 'Disconnected'}</span>
@@ -367,7 +367,7 @@ export const ProctoringReport = () => {
               <button
                 onClick={() => setShowLiveMonitoring(!showLiveMonitoring)}
                 className={`flex items-center space-x-2 px-4 py-2 rounded-lg font-medium ${
-                  showLiveMonitoring ? 'bg-blue-600 text-white' : 'bg-gray-200 text-gray-700'
+                  showLiveMonitoring ? 'bg-brand-700 text-white' : 'bg-ink-200 text-ink-700'
                 }`}
               >
                 <Bell className="w-5 h-5" />
@@ -379,12 +379,12 @@ export const ProctoringReport = () => {
 
         {/* Live Alerts Panel */}
         {showLiveMonitoring && liveAlerts.length > 0 && (
-          <div className="mb-8 bg-gradient-to-r from-red-50 to-orange-50 border-2 border-red-200 rounded-xl p-6">
+          <div className="mb-8 bg-gradient-to-r from-red-50 to-orange-50 border-2 border-danger-200 rounded-xl p-6">
             <div className="flex items-center justify-between mb-4">
               <div className="flex items-center space-x-3">
-                <Zap className="w-6 h-6 text-red-600 animate-pulse" />
-                <h2 className="text-xl font-bold text-red-800">Live Cheating Alerts</h2>
-                <span className="px-3 py-1 bg-red-600 text-white text-sm font-bold rounded-full">
+                <Zap className="w-6 h-6 text-danger-600 animate-pulse" />
+                <h2 className="text-xl font-bold text-danger-800">Live Cheating Alerts</h2>
+                <span className="px-3 py-1 bg-danger-600 text-white text-sm font-bold rounded-full">
                   {liveAlerts.filter(a => !a.acknowledged).length} New
                 </span>
               </div>
@@ -395,39 +395,39 @@ export const ProctoringReport = () => {
                   key={alert.id}
                   className={`p-4 rounded-lg border-2 transition-all ${
                     alert.acknowledged 
-                      ? 'bg-gray-100 border-gray-300 opacity-60' 
-                      : 'bg-white border-red-300 shadow-lg'
+                      ? 'bg-ink-100 border-ink-200 opacity-60' 
+                      : 'bg-white border-danger-200 shadow-lg'
                   }`}
                 >
                   <div className="flex items-center justify-between">
                     <div className="flex items-center space-x-4 flex-1">
                       <div className={`w-12 h-12 rounded-full flex items-center justify-center font-bold text-white ${
-                        alert.riskLevel === 'critical' ? 'bg-red-600' : 'bg-orange-600'
+                        alert.riskLevel === 'critical' ? 'bg-danger-600' : 'bg-orange-600'
                       }`}>
                         {alert.studentName?.charAt(0) || 'S'}
                       </div>
                       <div className="flex-1">
                         <div className="flex items-center space-x-3">
-                          <h3 className="font-bold text-gray-900">
+                          <h3 className="font-bold text-ink-900">
                             {alert.studentName || `Student ${alert.studentId.slice(0, 8)}`}
                           </h3>
                           <span className={`px-3 py-1 rounded-full text-xs font-bold ${
                             alert.riskLevel === 'critical' 
-                              ? 'bg-red-600 text-white' 
+                              ? 'bg-danger-600 text-white' 
                               : 'bg-orange-600 text-white'
                           }`}>
                             {alert.riskLevel.toUpperCase()} RISK
                           </span>
                         </div>
                         <div className="flex items-center space-x-4 mt-1">
-                          <span className="text-sm text-gray-600">
-                            Score: <span className="font-bold text-red-600">{alert.violationScore}/100</span>
+                          <span className="text-sm text-ink-600">
+                            Score: <span className="font-bold text-danger-600">{alert.violationScore}/100</span>
                           </span>
-                          <span className="text-sm text-gray-600">{formatTimeAgo(alert.timestamp)}</span>
+                          <span className="text-sm text-ink-600">{formatTimeAgo(alert.timestamp)}</span>
                         </div>
                         <div className="flex flex-wrap gap-2 mt-2">
                           {alert.events.slice(0, 3).map((event, idx) => (
-                            <span key={idx} className="text-xs px-2 py-1 bg-red-100 text-red-700 rounded">
+                            <span key={idx} className="text-xs px-2 py-1 bg-danger-100 text-danger-700 rounded">
                               {event.type.replace('_', ' ').toUpperCase()}
                             </span>
                           ))}
@@ -439,8 +439,8 @@ export const ProctoringReport = () => {
                       disabled={alert.acknowledged}
                       className={`px-4 py-2 rounded-lg font-medium ${
                         alert.acknowledged
-                          ? 'bg-gray-300 text-gray-500 cursor-not-allowed'
-                          : 'bg-green-600 text-white hover:bg-green-700'
+                          ? 'bg-ink-200 text-ink-500 cursor-not-allowed'
+                          : 'bg-success-600 text-white hover:bg-success-700'
                       }`}
                     >
                       {alert.acknowledged ? 'Acknowledged' : 'Acknowledge'}
@@ -454,11 +454,11 @@ export const ProctoringReport = () => {
 
         {/* Exam Selector */}
         <div className="mb-6">
-          <label className="block text-sm font-medium text-gray-700 mb-2">Select Exam</label>
+          <label className="block text-sm font-medium text-ink-700 mb-2">Select Exam</label>
           <select
             value={examId}
             onChange={(e) => setExamId(e.target.value)}
-            className="w-full max-w-md px-4 py-3 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-transparent"
+            className="w-full max-w-md px-4 py-3 border border-ink-200 rounded-lg focus:ring-2 focus:ring-brand-700/30 focus:border-transparent"
           >
             <option value="all">All Exams</option>
             {exams.map(exam => (
@@ -468,72 +468,72 @@ export const ProctoringReport = () => {
         </div>
 
         {examId === 'all' ? (
-          <div className="bg-white rounded-xl shadow-sm border border-gray-200 p-12 text-center">
-            <Filter className="w-12 h-12 text-gray-400 mx-auto mb-4" />
-            <h3 className="text-lg font-semibold text-gray-900 mb-2">Select an Exam</h3>
-            <p className="text-gray-600">Choose an exam to view violation data and proctoring reports.</p>
+          <div className="bg-white rounded-xl shadow-sm border border-ink-100 p-12 text-center">
+            <Filter className="w-12 h-12 text-ink-400 mx-auto mb-4" />
+            <h3 className="text-lg font-semibold text-ink-900 mb-2">Select an Exam</h3>
+            <p className="text-ink-600">Choose an exam to view violation data and proctoring reports.</p>
           </div>
         ) : (
           <>
             {/* Stats Cards */}
             <div className="grid grid-cols-2 md:grid-cols-5 gap-4 mb-8">
-              <div className="bg-white rounded-xl shadow-sm border border-gray-200 p-4">
+              <div className="bg-white rounded-xl shadow-sm border border-ink-100 p-4">
                 <div className="flex items-center justify-between mb-2">
-                  <span className="text-xs font-medium text-gray-600">Total Violations</span>
-                  <AlertCircle className="w-4 h-4 text-gray-600" />
+                  <span className="text-xs font-medium text-ink-600">Total Violations</span>
+                  <AlertCircle className="w-4 h-4 text-ink-600" />
                 </div>
-                <div className="text-2xl font-bold text-gray-900">{violations.length}</div>
+                <div className="text-2xl font-bold text-ink-900">{violations.length}</div>
               </div>
-              <div className="bg-white rounded-xl shadow-sm border border-gray-200 p-4">
+              <div className="bg-white rounded-xl shadow-sm border border-ink-100 p-4">
                 <div className="flex items-center justify-between mb-2">
-                  <span className="text-xs font-medium text-gray-600">Critical</span>
-                  <XCircle className="w-4 h-4 text-red-600" />
+                  <span className="text-xs font-medium text-ink-600">Critical</span>
+                  <XCircle className="w-4 h-4 text-danger-600" />
                 </div>
-                <div className="text-2xl font-bold text-red-600">{criticalCount}</div>
+                <div className="text-2xl font-bold text-danger-600">{criticalCount}</div>
               </div>
-              <div className="bg-white rounded-xl shadow-sm border border-gray-200 p-4">
+              <div className="bg-white rounded-xl shadow-sm border border-ink-100 p-4">
                 <div className="flex items-center justify-between mb-2">
-                  <span className="text-xs font-medium text-gray-600">High</span>
+                  <span className="text-xs font-medium text-ink-600">High</span>
                   <AlertTriangle className="w-4 h-4 text-orange-600" />
                 </div>
                 <div className="text-2xl font-bold text-orange-600">{highCount}</div>
               </div>
-              <div className="bg-white rounded-xl shadow-sm border border-gray-200 p-4">
+              <div className="bg-white rounded-xl shadow-sm border border-ink-100 p-4">
                 <div className="flex items-center justify-between mb-2">
-                  <span className="text-xs font-medium text-gray-600">Students Flagged</span>
-                  <User className="w-4 h-4 text-blue-600" />
+                  <span className="text-xs font-medium text-ink-600">Students Flagged</span>
+                  <User className="w-4 h-4 text-brand-700" />
                 </div>
-                <div className="text-2xl font-bold text-blue-600">{totalUniqueStudents}</div>
+                <div className="text-2xl font-bold text-brand-700">{totalUniqueStudents}</div>
               </div>
-              <div className="bg-white rounded-xl shadow-sm border border-gray-200 p-4">
+              <div className="bg-white rounded-xl shadow-sm border border-ink-100 p-4">
                 <div className="flex items-center justify-between mb-2">
-                  <span className="text-xs font-medium text-gray-600">Active Sessions</span>
-                  <CheckCircle className="w-4 h-4 text-green-600" />
+                  <span className="text-xs font-medium text-ink-600">Active Sessions</span>
+                  <CheckCircle className="w-4 h-4 text-success-600" />
                 </div>
-                <div className="text-2xl font-bold text-green-600">
+                <div className="text-2xl font-bold text-success-600">
                   {sessions.filter(s => s.status === 'in_progress').length}
                 </div>
               </div>
-              <div className="bg-white rounded-xl shadow-sm border border-gray-200 p-4">
+              <div className="bg-white rounded-xl shadow-sm border border-ink-100 p-4">
                 <div className="flex items-center justify-between mb-2">
-                  <span className="text-xs font-medium text-gray-600">Live Alerts</span>
-                  <Bell className="w-4 h-4 text-red-600" />
+                  <span className="text-xs font-medium text-ink-600">Live Alerts</span>
+                  <Bell className="w-4 h-4 text-danger-600" />
                 </div>
-                <div className="text-2xl font-bold text-red-600">
+                <div className="text-2xl font-bold text-danger-600">
                   {liveAlerts.filter(a => !a.acknowledged).length}
                 </div>
               </div>
             </div>
 
             {/* Filters */}
-            <div className="bg-white rounded-xl shadow-sm border border-gray-200 p-4 mb-6">
+            <div className="bg-white rounded-xl shadow-sm border border-ink-100 p-4 mb-6">
               <div className="flex items-center space-x-4">
                 <div className="relative flex-1">
-                  <Filter className="absolute left-3 top-1/2 transform -translate-y-1/2 w-5 h-5 text-gray-400" />
+                  <Filter className="absolute left-3 top-1/2 transform -translate-y-1/2 w-5 h-5 text-ink-400" />
                   <select
                     value={severityFilter}
                     onChange={(e) => setSeverityFilter(e.target.value)}
-                    className="w-full pl-11 pr-4 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-transparent appearance-none bg-white"
+                    className="w-full pl-11 pr-4 py-2 border border-ink-200 rounded-lg focus:ring-2 focus:ring-brand-700/30 focus:border-transparent appearance-none bg-white"
                   >
                     <option value="all">All Severities</option>
                     <option value="critical">Critical</option>
@@ -543,11 +543,11 @@ export const ProctoringReport = () => {
                   </select>
                 </div>
                 <div className="relative flex-1">
-                  <Eye className="absolute left-3 top-1/2 transform -translate-y-1/2 w-5 h-5 text-gray-400" />
+                  <Eye className="absolute left-3 top-1/2 transform -translate-y-1/2 w-5 h-5 text-ink-400" />
                   <select
                     value={typeFilter}
                     onChange={(e) => setTypeFilter(e.target.value)}
-                    className="w-full pl-11 pr-4 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-transparent appearance-none bg-white"
+                    className="w-full pl-11 pr-4 py-2 border border-ink-200 rounded-lg focus:ring-2 focus:ring-brand-700/30 focus:border-transparent appearance-none bg-white"
                   >
                     <option value="all">All Types</option>
                     {violationTypes.map(type => (
@@ -560,25 +560,25 @@ export const ProctoringReport = () => {
 
             {/* Session Summaries */}
             {sessions.length > 0 && (
-              <div className="bg-white rounded-xl shadow-sm border border-gray-200 overflow-hidden mb-6">
-                <div className="px-6 py-4 border-b border-gray-200">
-                  <h2 className="text-xl font-semibold text-gray-900">Student Sessions</h2>
+              <div className="bg-white rounded-xl shadow-sm border border-ink-100 overflow-hidden mb-6">
+                <div className="px-6 py-4 border-b border-ink-100">
+                  <h2 className="text-xl font-semibold text-ink-900">Student Sessions</h2>
                 </div>
-                <div className="divide-y divide-gray-200">
+                <div className="divide-y divide-ink-100">
                   {sessions.map(session => {
                     const sessionViolations = violations.filter(v => v.session_id === session.session_id);
                     const sessionSummary = summaries[session.session_id];
 
                     return (
-                      <div key={session.session_id} className="px-6 py-4 hover:bg-gray-50">
+                      <div key={session.session_id} className="px-6 py-4 hover:bg-ink-50">
                         <div className="flex items-center justify-between mb-3">
                           <div className="flex items-center space-x-3">
-                            <div className="w-10 h-10 rounded-full bg-gradient-to-br from-blue-500 to-blue-600 flex items-center justify-center text-white font-semibold">
+                            <div className="w-10 h-10 rounded-full bg-gradient-to-br from-brand-600 to-brand-700 flex items-center justify-center text-white font-semibold">
                               {session.student_name?.charAt(0) || '?'}
                             </div>
                             <div>
                               <div className="flex items-center gap-2">
-                                <h3 className="font-semibold text-gray-900">{session.student_name}</h3>
+                                <h3 className="font-semibold text-ink-900">{session.student_name}</h3>
                                 {session.calibration_skipped && (
                                   <span
                                     className="inline-flex items-center gap-1 px-2 py-0.5 rounded text-xs font-medium bg-orange-100 text-orange-700 border border-orange-200"
@@ -589,10 +589,10 @@ export const ProctoringReport = () => {
                                   </span>
                                 )}
                               </div>
-                              <p className="text-sm text-gray-500">
+                              <p className="text-sm text-ink-500">
                                 {session.student_email}
                                 {!session.calibration_skipped && session.optimal_distance_cm != null && (
-                                  <span className="ml-2 text-xs text-gray-400">
+                                  <span className="ml-2 text-xs text-ink-400">
                                     Baseline: {session.optimal_distance_cm} cm
                                   </span>
                                 )}
@@ -604,10 +604,10 @@ export const ProctoringReport = () => {
                             {session.status === 'in_progress' && (
                               <div className={`px-3 py-1 rounded-lg text-xs font-bold border ${
                                 (sessionScores[session.session_id] ?? 0) >= 70
-                                  ? 'bg-red-100 text-red-700 border-red-200'
+                                  ? 'bg-danger-100 text-danger-700 border-danger-200'
                                   : (sessionScores[session.session_id] ?? 0) >= 40
-                                  ? 'bg-amber-100 text-amber-700 border-amber-200'
-                                  : 'bg-green-100 text-green-700 border-green-200'
+                                  ? 'bg-warning-100 text-warning-700 border-warning-200'
+                                  : 'bg-success-100 text-success-700 border-success-200'
                               }`}>
                                 <span>Score: </span>
                                 <span data-testid="student-score">
@@ -619,7 +619,7 @@ export const ProctoringReport = () => {
                             {session.status === 'in_progress' && (
                               <button
                                 onClick={() => setConfirmTerminateId(session.session_id)}
-                                className="flex items-center space-x-1 px-3 py-1 rounded-lg text-xs font-semibold bg-red-600 text-white hover:bg-red-700 border border-red-700"
+                                className="flex items-center space-x-1 px-3 py-1 rounded-lg text-xs font-semibold bg-danger-600 text-white hover:bg-danger-700 border border-red-700"
                                 title="Terminate this session"
                               >
                                 <XCircle className="w-3.5 h-3.5" />
@@ -627,14 +627,14 @@ export const ProctoringReport = () => {
                               </button>
                             )}
                             <span className={`px-3 py-1 rounded-full text-xs font-semibold border ${
-                              session.status === 'in_progress' ? 'bg-green-100 text-green-700 border-green-200' :
-                              session.status === 'submitted' ? 'bg-blue-100 text-blue-700 border-blue-200' :
-                              session.status === 'terminated' ? 'bg-red-100 text-red-700 border-red-200' :
-                              'bg-gray-100 text-gray-700 border-gray-200'
+                              session.status === 'in_progress' ? 'bg-success-100 text-success-700 border-success-200' :
+                              session.status === 'submitted' ? 'bg-brand-100 text-brand-800 border-brand-200' :
+                              session.status === 'terminated' ? 'bg-danger-100 text-danger-700 border-danger-200' :
+                              'bg-ink-100 text-ink-700 border-ink-100'
                             }`}>
                               {session.status.replace('_', ' ').toUpperCase()}
                             </span>
-                            <span className="text-sm font-semibold text-gray-900">
+                            <span className="text-sm font-semibold text-ink-900">
                               {sessionViolations.length} violations
                             </span>
                           </div>
@@ -663,20 +663,20 @@ export const ProctoringReport = () => {
             )}
 
             {/* Violation Timeline */}
-            <div className="bg-white rounded-xl shadow-sm border border-gray-200 overflow-hidden">
-              <div className="px-6 py-4 border-b border-gray-200">
-                <h2 className="text-xl font-semibold text-gray-900">Violation Timeline</h2>
+            <div className="bg-white rounded-xl shadow-sm border border-ink-100 overflow-hidden">
+              <div className="px-6 py-4 border-b border-ink-100">
+                <h2 className="text-xl font-semibold text-ink-900">Violation Timeline</h2>
               </div>
 
               {filteredViolations.length === 0 ? (
                 <div className="px-6 py-12 text-center">
-                  <AlertCircle className="w-12 h-12 text-gray-400 mx-auto mb-4" />
-                  <p className="text-gray-600">No violations match the selected filters</p>
+                  <AlertCircle className="w-12 h-12 text-ink-400 mx-auto mb-4" />
+                  <p className="text-ink-600">No violations match the selected filters</p>
                 </div>
               ) : (
-                <div className="divide-y divide-gray-200">
+                <div className="divide-y divide-ink-100">
                   {filteredViolations.slice(0, 50).map((violation) => (
-                    <div key={violation.id} className="px-6 py-4 hover:bg-gray-50">
+                    <div key={violation.id} className="px-6 py-4 hover:bg-ink-50">
                       <div className="flex items-start space-x-4">
                         <div className="flex flex-col items-center space-y-2 mt-1">
                           {getSeverityIcon(getSeverityLabel(violation.severity))}
@@ -684,14 +684,14 @@ export const ProctoringReport = () => {
 
                         <div className="flex-1">
                           <div className="flex items-center space-x-3 mb-1">
-                            <h3 className="text-sm font-semibold text-gray-900">
+                            <h3 className="text-sm font-semibold text-ink-900">
                               {formatViolationType(getViolationType(violation))}
                             </h3>
                             <span className={`inline-flex px-2 py-0.5 rounded text-xs font-semibold border ${getSeverityColor(getSeverityLabel(violation.severity))}`}>
                               {getSeverityLabel(violation.severity)}
                             </span>
                             {violation.duration_ms && (
-                              <span className="inline-flex items-center px-2 py-0.5 rounded text-xs font-medium bg-gray-100 text-gray-700">
+                              <span className="inline-flex items-center px-2 py-0.5 rounded text-xs font-medium bg-ink-100 text-ink-700">
                                 <Clock className="w-3 h-3 mr-1" />
                                 {Math.round(violation.duration_ms / 1000)}s
                               </span>
@@ -699,10 +699,10 @@ export const ProctoringReport = () => {
                           </div>
 
                           {violation.description && (
-                            <p className="text-sm text-gray-600 mb-2">{violation.description}</p>
+                            <p className="text-sm text-ink-600 mb-2">{violation.description}</p>
                           )}
 
-                          <div className="flex items-center space-x-4 text-xs text-gray-500">
+                          <div className="flex items-center space-x-4 text-xs text-ink-500">
                             <div className="flex items-center space-x-1">
                               <User className="w-3 h-3" />
                               <span>{getViolationStudentName(violation)}</span>
@@ -712,7 +712,7 @@ export const ProctoringReport = () => {
                               <span>{formatTimestamp(getViolationTimestamp(violation))}</span>
                             </div>
                             {violation.is_reviewed && (
-                              <span className="flex items-center space-x-1 text-green-600">
+                              <span className="flex items-center space-x-1 text-success-600">
                                 <CheckCircle className="w-3 h-3" />
                                 <span>Reviewed</span>
                               </span>
@@ -726,8 +726,8 @@ export const ProctoringReport = () => {
               )}
 
               {filteredViolations.length > 50 && (
-                <div className="px-6 py-3 bg-gray-50 border-t border-gray-200 text-center">
-                  <p className="text-sm text-gray-600">
+                <div className="px-6 py-3 bg-ink-50 border-t border-ink-100 text-center">
+                  <p className="text-sm text-ink-600">
                     Showing 50 of {filteredViolations.length} violations
                   </p>
                 </div>
@@ -742,23 +742,23 @@ export const ProctoringReport = () => {
         <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/50">
           <div className="bg-white rounded-xl shadow-xl p-6 max-w-md w-full mx-4">
             <div className="flex items-center space-x-3 mb-4">
-              <XCircle className="w-7 h-7 text-red-600 flex-shrink-0" />
-              <h2 className="text-lg font-semibold text-gray-900">Terminate Session?</h2>
+              <XCircle className="w-7 h-7 text-danger-600 flex-shrink-0" />
+              <h2 className="text-lg font-semibold text-ink-900">Terminate Session?</h2>
             </div>
-            <p className="text-sm text-gray-600 mb-6">
+            <p className="text-sm text-ink-600 mb-6">
               This will immediately end the student's exam session. The student will be unable to continue.
               This action cannot be undone.
             </p>
             <div className="flex space-x-3 justify-end">
               <button
                 onClick={() => setConfirmTerminateId(null)}
-                className="px-4 py-2 rounded-lg font-medium bg-gray-100 text-gray-700 hover:bg-gray-200"
+                className="px-4 py-2 rounded-lg font-medium bg-ink-100 text-ink-700 hover:bg-ink-200"
               >
                 Cancel
               </button>
               <button
                 onClick={handleTerminateConfirmed}
-                className="px-4 py-2 rounded-lg font-medium bg-red-600 text-white hover:bg-red-700"
+                className="px-4 py-2 rounded-lg font-medium bg-danger-600 text-white hover:bg-danger-700"
               >
                 Terminate Session
               </button>

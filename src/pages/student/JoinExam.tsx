@@ -52,28 +52,30 @@ export const JoinExam = () => {
   };
 
   return (
-    <div className="min-h-screen bg-gradient-to-br from-gray-50 to-blue-50 flex items-center justify-center px-4">
-      <div className="w-full max-w-md">
-        <div className="bg-white rounded-2xl shadow-sm border border-gray-200 p-8">
-          <div className="flex items-center justify-center w-14 h-14 bg-blue-100 rounded-xl mb-6 mx-auto">
-            <KeyRound className="w-7 h-7 text-blue-600" />
+    <div className="min-h-screen bg-ink-50 grid-spotlight flex items-center justify-center px-4 py-12">
+      <div className="w-full max-w-md animate-fade-in-up">
+        <div className="card p-8 shadow-elevated">
+          <div className="flex items-center justify-center w-14 h-14 rounded-2xl bg-brand-gradient shadow-elevated mb-5 mx-auto">
+            <KeyRound className="w-6 h-6 text-white" />
           </div>
 
-          <h1 className="text-2xl font-bold text-gray-900 text-center mb-2">Join Exam</h1>
-          <p className="text-gray-500 text-center mb-8">
-            Enter the 8-character access code provided by your instructor.
+          <h1 className="text-2xl font-semibold text-ink-900 text-center tracking-tight2 mb-1">
+            Join exam
+          </h1>
+          <p className="text-sm text-ink-600 text-center mb-7">
+            Enter the 8-character access code from your instructor.
           </p>
 
           {error && (
-            <div className="flex items-start gap-3 p-4 bg-red-50 border border-red-200 rounded-lg mb-6">
-              <AlertCircle className="w-5 h-5 text-red-600 mt-0.5 flex-shrink-0" />
-              <p className="text-sm text-red-700">{error}</p>
+            <div className="flex items-start gap-3 p-3.5 bg-danger-50 border border-danger-200 rounded-lg mb-5 animate-slide-down">
+              <AlertCircle className="w-4 h-4 text-danger-700 mt-0.5 flex-shrink-0" />
+              <p className="text-sm text-danger-800">{error}</p>
             </div>
           )}
 
           <div className="mb-6">
-            <label htmlFor="access-code" className="block text-sm font-medium text-gray-700 mb-2">
-              Access Code
+            <label htmlFor="access-code" className="field-label text-center">
+              Access code
             </label>
             <input
               id="access-code"
@@ -82,29 +84,32 @@ export const JoinExam = () => {
               onChange={(e) => handleCodeChange(e.target.value)}
               onKeyDown={(e) => e.key === 'Enter' && handleJoin()}
               maxLength={8}
-              placeholder="e.g. 4X9MWRTP"
-              className="w-full px-4 py-3 border border-gray-300 rounded-lg text-center text-xl font-mono tracking-widest focus:ring-2 focus:ring-blue-500 focus:border-transparent transition-all uppercase"
+              placeholder="4X9MWRTP"
+              className="field-input text-center text-2xl font-mono tracking-[0.4em] uppercase py-4"
               disabled={loading}
               autoComplete="off"
               aria-label="Access code"
             />
-            <p className="text-xs text-gray-400 mt-2 text-center">
-              Numbers and letters only (I, L, O, U excluded)
+            <p className="text-2xs text-ink-500 mt-2 text-center uppercase tracking-wider">
+              Letters and numbers only (I, L, O, U excluded)
             </p>
           </div>
 
           <button
             onClick={handleJoin}
             disabled={loading || code.length !== 8}
-            className="w-full py-3 px-4 bg-blue-600 text-white rounded-lg font-semibold hover:bg-blue-700 transition-colors disabled:bg-blue-300 disabled:cursor-not-allowed flex items-center justify-center gap-2"
+            className="btn btn-lg btn-primary w-full"
           >
             {loading ? (
               <>
-                <Loader2 className="w-5 h-5 animate-spin" />
+                <Loader2 className="w-4 h-4 animate-spin" />
                 Joining…
               </>
             ) : (
-              'Join Exam'
+              <>
+                <KeyRound className="w-4 h-4" />
+                Join exam
+              </>
             )}
           </button>
         </div>

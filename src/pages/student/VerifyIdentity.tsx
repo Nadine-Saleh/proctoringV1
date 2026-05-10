@@ -124,38 +124,45 @@ export const VerifyIdentity = () => {
 
   if (step === 'privacy') {
     return (
-      <div className="min-h-screen bg-gradient-to-br from-gray-50 to-blue-50 flex items-center justify-center px-4">
-        <div className="w-full max-w-lg bg-white rounded-2xl shadow-sm border border-gray-200 p-8">
-          <div className="flex items-center justify-center w-14 h-14 bg-blue-100 rounded-xl mb-6 mx-auto">
-            <ShieldCheck className="w-7 h-7 text-blue-600" />
+      <div className="min-h-screen bg-ink-50 grid-spotlight flex items-center justify-center px-4 py-12">
+        <div className="w-full max-w-lg card p-8 shadow-elevated animate-fade-in-up">
+          <div className="flex items-center justify-center w-14 h-14 rounded-2xl bg-brand-gradient shadow-elevated mb-5 mx-auto">
+            <ShieldCheck className="w-6 h-6 text-white" />
           </div>
 
-          <h1 className="text-2xl font-bold text-gray-900 text-center mb-2">Identity Verification</h1>
+          <h1 className="text-2xl font-semibold text-ink-900 text-center tracking-tight2 mb-1">
+            Identity verification
+          </h1>
           {joinData && (
-            <p className="text-gray-500 text-center mb-6">
+            <p className="text-sm text-ink-600 text-center mb-6">
               {joinData.exam.title}
             </p>
           )}
 
-          <div className="bg-blue-50 border border-blue-200 rounded-lg p-4 mb-6 flex gap-3">
-            <Info className="w-5 h-5 text-blue-600 flex-shrink-0 mt-0.5" />
-            <div className="text-sm text-blue-800 space-y-1">
-              <p className="font-semibold">Privacy notice (FR-032)</p>
-              <ul className="list-disc list-inside space-y-1 text-blue-700">
-                <li>Your camera will be used to verify your identity.</li>
+          <div className="rounded-xl bg-brand-50/50 border border-brand-100 p-4 mb-6 flex gap-3">
+            <Info className="w-4 h-4 text-brand-700 flex-shrink-0 mt-0.5" />
+            <div className="text-sm text-brand-900 space-y-2">
+              <p className="text-2xs font-semibold uppercase tracking-wider text-brand-700">
+                Privacy notice
+              </p>
+              <ul className="list-disc list-inside space-y-1 text-brand-800/85 text-sm leading-relaxed">
+                <li>Your camera is used to verify your identity.</li>
                 <li>Only a mathematical face descriptor is stored — never a photo.</li>
                 <li>The descriptor cannot be reversed into an image.</li>
-                <li>You have {attemptsRemaining} verification attempt{attemptsRemaining !== 1 ? 's' : ''} for this exam.</li>
+                <li>
+                  You have <span className="font-semibold tabular-nums">{attemptsRemaining}</span>{' '}
+                  verification attempt{attemptsRemaining !== 1 ? 's' : ''} for this exam.
+                </li>
               </ul>
             </div>
           </div>
 
           <button
             onClick={() => setStep(requiresCapture ? 'capture' : 'verifying')}
-            className="w-full py-3 bg-blue-600 text-white rounded-lg font-semibold hover:bg-blue-700 transition-colors flex items-center justify-center gap-2"
+            className="btn btn-lg btn-primary w-full"
           >
-            <Camera className="w-5 h-5" />
-            {requiresCapture ? 'Set Up Face Verification' : 'Start Verification'}
+            <Camera className="w-4 h-4" />
+            {requiresCapture ? 'Set up face verification' : 'Start verification'}
           </button>
         </div>
       </div>
@@ -164,13 +171,17 @@ export const VerifyIdentity = () => {
 
   if (step === 'blocked') {
     return (
-      <div className="min-h-screen bg-gradient-to-br from-gray-50 to-red-50 flex items-center justify-center px-4">
-        <div className="w-full max-w-md bg-white rounded-2xl shadow-sm border border-red-200 p-8 text-center">
-          <AlertCircle className="w-12 h-12 text-red-500 mx-auto mb-4" />
-          <h2 className="text-xl font-bold text-gray-900 mb-2">Verification Blocked</h2>
-          <p className="text-gray-600 mb-6">
-            You have exhausted all verification attempts for this exam. Your instructor has been
-            notified. Please contact them for assistance.
+      <div className="min-h-screen bg-ink-50 grid-spotlight flex items-center justify-center px-4">
+        <div className="w-full max-w-md card p-8 text-center ring-1 ring-danger-200 animate-fade-in-up">
+          <div className="w-14 h-14 mx-auto mb-4 rounded-2xl bg-danger-50 ring-1 ring-danger-200 flex items-center justify-center">
+            <AlertCircle className="w-6 h-6 text-danger-600" />
+          </div>
+          <h2 className="text-xl font-semibold text-ink-900 tracking-tight2 mb-2">
+            Verification blocked
+          </h2>
+          <p className="text-sm text-ink-600">
+            You have exhausted all verification attempts. Your instructor has been notified —
+            please contact them for assistance.
           </p>
         </div>
       </div>
@@ -178,44 +189,58 @@ export const VerifyIdentity = () => {
   }
 
   return (
-    <div className="min-h-screen bg-gradient-to-br from-gray-50 to-blue-50 flex items-center justify-center px-4">
-      <div className="w-full max-w-xl bg-white rounded-2xl shadow-sm border border-gray-200 p-8">
-        <h1 className="text-2xl font-bold text-gray-900 text-center mb-2">
-          {step === 'capture' ? 'Capture Your Face' : 'Verify Your Identity'}
+    <div className="min-h-screen bg-ink-50 grid-spotlight flex items-center justify-center px-4 py-12">
+      <div className="w-full max-w-xl card p-8 shadow-elevated animate-fade-in-up">
+        <h1 className="text-2xl font-semibold text-ink-900 text-center tracking-tight2 mb-1">
+          {step === 'capture' ? 'Capture your face' : 'Verify your identity'}
         </h1>
-        <p className="text-gray-500 text-center mb-6">
+        <p className="text-sm text-ink-600 text-center mb-6">
           {step === 'capture'
-            ? 'Position your face clearly in the frame, then click Capture.'
-            : `Position your face in the frame. ${attemptsRemaining} attempt${attemptsRemaining !== 1 ? 's' : ''} remaining.`}
+            ? 'Position your face clearly in the frame, then capture.'
+            : `Position your face in the frame. ${attemptsRemaining} attempt${
+                attemptsRemaining !== 1 ? 's' : ''
+              } remaining.`}
         </p>
 
         {(verifyError || captureError) && (
-          <div className="flex items-start gap-3 p-4 bg-red-50 border border-red-200 rounded-lg mb-6">
-            <AlertCircle className="w-5 h-5 text-red-600 mt-0.5 flex-shrink-0" />
-            <p className="text-sm text-red-700">{verifyError ?? captureError}</p>
+          <div className="flex items-start gap-3 p-3.5 bg-danger-50 border border-danger-200 rounded-lg mb-5 animate-slide-down">
+            <AlertCircle className="w-4 h-4 text-danger-700 mt-0.5 flex-shrink-0" />
+            <p className="text-sm text-danger-800">{verifyError ?? captureError}</p>
           </div>
         )}
 
-        <div className="relative bg-gray-900 rounded-xl overflow-hidden mb-6 aspect-video flex items-center justify-center">
+        <div className="relative bg-ink-950 rounded-xl overflow-hidden mb-6 aspect-video ring-1 ring-ink-900/60">
           <video
             ref={videoRef}
             autoPlay
             muted
             playsInline
-            className="w-full h-full object-cover"
+            className="w-full h-full object-cover transform scale-x-[-1]"
             aria-label="Camera feed for identity verification"
           />
+
+          <div className="pointer-events-none absolute inset-0 bg-gradient-to-t from-black/40 to-transparent" />
+
           {(isVerifying || captureStatus === 'capturing' || captureStatus === 'processing') && (
-            <div className="absolute inset-0 bg-black/50 flex items-center justify-center">
+            <div className="absolute inset-0 bg-ink-950/80 backdrop-blur-sm flex items-center justify-center">
               <div className="text-white text-center">
-                <Loader2 className="w-8 h-8 animate-spin mx-auto mb-2" />
-                <p>{captureStatus === 'processing' ? 'Processing…' : 'Analyzing face…'}</p>
+                <Loader2 className="w-8 h-8 animate-spin mx-auto mb-2 text-brand-300" />
+                <p className="text-sm font-medium">
+                  {captureStatus === 'processing' ? 'Processing…' : 'Analyzing face…'}
+                </p>
               </div>
             </div>
           )}
-          {/* Face guide overlay */}
+
           <div className="absolute inset-0 flex items-center justify-center pointer-events-none">
-            <div className="w-48 h-56 border-2 border-white/40 rounded-full opacity-60" />
+            <div className="w-48 h-56 border-2 border-dashed border-white/55 rounded-full" />
+          </div>
+
+          <div className="absolute top-2.5 left-2.5 inline-flex items-center gap-1.5 px-2 py-1 rounded-md bg-black/40 backdrop-blur-sm">
+            <span className="w-1.5 h-1.5 rounded-full bg-danger-500 animate-pulse-soft" />
+            <span className="text-2xs font-semibold uppercase tracking-wider text-white/90">
+              Live
+            </span>
           </div>
         </div>
 
@@ -223,17 +248,17 @@ export const VerifyIdentity = () => {
           <button
             onClick={handleCaptureReference}
             disabled={captureStatus === 'capturing' || captureStatus === 'processing'}
-            className="w-full py-3 bg-blue-600 text-white rounded-lg font-semibold hover:bg-blue-700 transition-colors disabled:bg-blue-300 disabled:cursor-not-allowed flex items-center justify-center gap-2"
+            className="btn btn-lg btn-primary w-full"
           >
             {captureStatus === 'capturing' || captureStatus === 'processing' ? (
               <>
-                <Loader2 className="w-5 h-5 animate-spin" />
+                <Loader2 className="w-4 h-4 animate-spin" />
                 {captureStatus === 'processing' ? 'Saving…' : 'Capturing…'}
               </>
             ) : (
               <>
-                <Camera className="w-5 h-5" />
-                Capture &amp; Verify
+                <Camera className="w-4 h-4" />
+                Capture &amp; verify
               </>
             )}
           </button>
@@ -243,25 +268,29 @@ export const VerifyIdentity = () => {
           <button
             onClick={() => handleVerify()}
             disabled={isVerifying}
-            className="w-full py-3 bg-blue-600 text-white rounded-lg font-semibold hover:bg-blue-700 transition-colors disabled:bg-blue-300 disabled:cursor-not-allowed flex items-center justify-center gap-2"
+            className="btn btn-lg btn-primary w-full"
           >
             {isVerifying ? (
               <>
-                <Loader2 className="w-5 h-5 animate-spin" />
+                <Loader2 className="w-4 h-4 animate-spin" />
                 Verifying…
               </>
             ) : (
               <>
-                {step === 'failed' ? <RefreshCw className="w-5 h-5" /> : <ShieldCheck className="w-5 h-5" />}
-                {step === 'failed' ? 'Retry Verification' : 'Confirm Identity'}
+                {step === 'failed' ? (
+                  <RefreshCw className="w-4 h-4" />
+                ) : (
+                  <ShieldCheck className="w-4 h-4" />
+                )}
+                {step === 'failed' ? 'Retry verification' : 'Confirm identity'}
               </>
             )}
           </button>
         )}
 
         {step === 'failed' && (
-          <p className="text-sm text-gray-500 mt-4 text-center">
-            Tip: Ensure good lighting and face the camera directly.
+          <p className="text-xs text-ink-500 mt-4 text-center">
+            Tip: ensure good lighting and face the camera directly.
           </p>
         )}
       </div>

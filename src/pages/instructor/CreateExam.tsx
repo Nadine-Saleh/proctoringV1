@@ -174,93 +174,93 @@ export const CreateExam = () => {
   };
 
   return (
-    <div className="min-h-screen bg-gradient-to-br from-gray-50 to-blue-50">
+    <div className="min-h-screen bg-ink-50 grid-spotlight">
       <div className="max-w-5xl mx-auto px-4 sm:px-6 lg:px-8 py-12">
         <div className="mb-8">
-          <h1 className="text-4xl font-bold text-gray-900 mb-2">Create New Exam</h1>
-          <p className="text-lg text-gray-600">Design your exam with questions and proctoring settings</p>
+          <h1 className="text-4xl font-bold text-ink-900 mb-2">Create New Exam</h1>
+          <p className="text-lg text-ink-600">Design your exam with questions and proctoring settings</p>
         </div>
 
         {error && (
-          <div className="mb-6 p-4 bg-red-50 border border-red-200 rounded-lg flex items-start gap-3">
-            <AlertCircle className="w-5 h-5 text-red-600 mt-0.5 flex-shrink-0" />
+          <div className="mb-6 p-4 bg-danger-50 border border-danger-200 rounded-lg flex items-start gap-3">
+            <AlertCircle className="w-5 h-5 text-danger-600 mt-0.5 flex-shrink-0" />
             <div>
               <h3 className="font-medium text-red-900">Error</h3>
-              <p className="text-sm text-red-700">{error}</p>
+              <p className="text-sm text-danger-700">{error}</p>
             </div>
           </div>
         )}
 
         {success && (
-          <div className="mb-6 p-4 bg-green-50 border border-green-200 rounded-lg flex items-start gap-3">
-            <CheckCircle className="w-5 h-5 text-green-600 mt-0.5 flex-shrink-0" />
+          <div className="mb-6 p-4 bg-success-50 border border-success-200 rounded-lg flex items-start gap-3">
+            <CheckCircle className="w-5 h-5 text-success-600 mt-0.5 flex-shrink-0" />
             <div>
-              <h3 className="font-medium text-green-900">Success</h3>
-              <p className="text-sm text-green-700">{success}</p>
+              <h3 className="font-medium text-success-700">Success</h3>
+              <p className="text-sm text-success-700">{success}</p>
             </div>
           </div>
         )}
 
-        <div className="bg-white rounded-xl shadow-sm border border-gray-200 p-8 mb-6">
-          <h2 className="text-2xl font-semibold text-gray-900 mb-6">Exam Details</h2>
+        <div className="bg-white rounded-xl shadow-sm border border-ink-100 p-8 mb-6">
+          <h2 className="text-2xl font-semibold text-ink-900 mb-6">Exam Details</h2>
 
           <div className="grid grid-cols-1 md:grid-cols-2 gap-6 mb-6">
             <div>
-              <label className="block text-sm font-medium text-gray-700 mb-2">
-                Exam Title <span className="text-red-500">*</span>
+              <label className="block text-sm font-medium text-ink-700 mb-2">
+                Exam Title <span className="text-danger-500">*</span>
               </label>
               <input
                 type="text"
                 value={examTitle}
                 onChange={(e) => setExamTitle(e.target.value)}
                 placeholder="e.g., Data Structures Midterm"
-                className="w-full px-4 py-3 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-transparent transition-all"
+                className="w-full px-4 py-3 border border-ink-200 rounded-lg focus:ring-2 focus:ring-brand-700/30 focus:border-transparent transition-all"
               />
             </div>
 
             <div>
-              <label className="block text-sm font-medium text-gray-700 mb-2">Description</label>
+              <label className="block text-sm font-medium text-ink-700 mb-2">Description</label>
               <input
                 type="text"
                 value={description}
                 onChange={(e) => setDescription(e.target.value)}
                 placeholder="Optional exam description"
-                className="w-full px-4 py-3 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-transparent transition-all"
+                className="w-full px-4 py-3 border border-ink-200 rounded-lg focus:ring-2 focus:ring-brand-700/30 focus:border-transparent transition-all"
               />
             </div>
           </div>
 
           <div className="grid grid-cols-1 md:grid-cols-2 gap-6 mb-6">
             <div>
-              <label className="block text-sm font-medium text-gray-700 mb-2">
-                Starts At <span className="text-red-500">*</span>
+              <label className="block text-sm font-medium text-ink-700 mb-2">
+                Starts At <span className="text-danger-500">*</span>
               </label>
               <input
                 type="datetime-local"
                 value={startsAt}
                 onChange={(e) => setStartsAt(e.target.value)}
-                className="w-full px-4 py-3 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-transparent transition-all"
+                className="w-full px-4 py-3 border border-ink-200 rounded-lg focus:ring-2 focus:ring-brand-700/30 focus:border-transparent transition-all"
               />
             </div>
 
             <div>
-              <label className="block text-sm font-medium text-gray-700 mb-2">
-                Duration (minutes) <span className="text-red-500">*</span>
+              <label className="block text-sm font-medium text-ink-700 mb-2">
+                Duration (minutes) <span className="text-danger-500">*</span>
               </label>
               <div className="relative">
-                <Clock className="absolute left-3 top-1/2 transform -translate-y-1/2 w-5 h-5 text-gray-400" />
+                <Clock className="absolute left-3 top-1/2 transform -translate-y-1/2 w-5 h-5 text-ink-400" />
                 <input
                   type="number"
                   value={duration}
                   onChange={(e) => setDuration(parseInt(e.target.value) || 0)}
-                  className="w-full pl-11 pr-4 py-3 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-transparent transition-all"
+                  className="w-full pl-11 pr-4 py-3 border border-ink-200 rounded-lg focus:ring-2 focus:ring-brand-700/30 focus:border-transparent transition-all"
                 />
               </div>
             </div>
           </div>
 
           <div className="border-t pt-6">
-            <h3 className="text-lg font-semibold text-gray-900 mb-4">Proctoring Policy</h3>
+            <h3 className="text-lg font-semibold text-ink-900 mb-4">Proctoring Policy</h3>
 
             <div className="space-y-4">
               <div className="flex items-center">
@@ -269,16 +269,16 @@ export const CreateExam = () => {
                   id="visualEvidence"
                   checked={visualEvidenceAllowed}
                   onChange={(e) => setVisualEvidenceAllowed(e.target.checked)}
-                  className="w-4 h-4 text-blue-600 rounded focus:ring-2 focus:ring-blue-500"
+                  className="w-4 h-4 text-brand-700 rounded focus:ring-2 focus:ring-brand-700/30"
                 />
-                <label htmlFor="visualEvidence" className="ml-3 text-sm font-medium text-gray-700">
+                <label htmlFor="visualEvidence" className="ml-3 text-sm font-medium text-ink-700">
                   Allow Visual Evidence Capture
                 </label>
               </div>
 
               <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
                 <div>
-                  <label className="block text-sm font-medium text-gray-700 mb-2">
+                  <label className="block text-sm font-medium text-ink-700 mb-2">
                     Warning Threshold (0-100)
                   </label>
                   <input
@@ -287,11 +287,11 @@ export const CreateExam = () => {
                     max="100"
                     value={warningThreshold}
                     onChange={(e) => setWarningThreshold(parseInt(e.target.value) || 0)}
-                    className="w-full px-4 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500"
+                    className="w-full px-4 py-2 border border-ink-200 rounded-lg focus:ring-2 focus:ring-brand-700/30"
                   />
                 </div>
                 <div>
-                  <label className="block text-sm font-medium text-gray-700 mb-2">
+                  <label className="block text-sm font-medium text-ink-700 mb-2">
                     Critical Threshold (0-100)
                   </label>
                   <input
@@ -300,14 +300,14 @@ export const CreateExam = () => {
                     max="100"
                     value={criticalThreshold}
                     onChange={(e) => setCriticalThreshold(parseInt(e.target.value) || 0)}
-                    className="w-full px-4 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500"
+                    className="w-full px-4 py-2 border border-ink-200 rounded-lg focus:ring-2 focus:ring-brand-700/30"
                   />
                 </div>
               </div>
 
               <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
                 <div>
-                  <label className="block text-sm font-medium text-gray-700 mb-2">
+                  <label className="block text-sm font-medium text-ink-700 mb-2">
                     Critical Sustain Seconds
                   </label>
                   <input
@@ -315,11 +315,11 @@ export const CreateExam = () => {
                     min="1"
                     value={criticalSustainSeconds}
                     onChange={(e) => setCriticalSustainSeconds(parseInt(e.target.value) || 1)}
-                    className="w-full px-4 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500"
+                    className="w-full px-4 py-2 border border-ink-200 rounded-lg focus:ring-2 focus:ring-brand-700/30"
                   />
                 </div>
                 <div>
-                  <label className="block text-sm font-medium text-gray-700 mb-2">
+                  <label className="block text-sm font-medium text-ink-700 mb-2">
                     Max Verification Attempts
                   </label>
                   <input
@@ -327,14 +327,14 @@ export const CreateExam = () => {
                     min="1"
                     value={maxVerificationAttempts}
                     onChange={(e) => setMaxVerificationAttempts(parseInt(e.target.value) || 1)}
-                    className="w-full px-4 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500"
+                    className="w-full px-4 py-2 border border-ink-200 rounded-lg focus:ring-2 focus:ring-brand-700/30"
                   />
                 </div>
               </div>
 
               <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
                 <div>
-                  <label className="block text-sm font-medium text-gray-700 mb-2">
+                  <label className="block text-sm font-medium text-ink-700 mb-2">
                     Peripheral Max / Minute (s)
                   </label>
                   <input
@@ -342,11 +342,11 @@ export const CreateExam = () => {
                     min="1"
                     value={peripheralMaxCumulativeMin}
                     onChange={(e) => setPeripheralMaxCumulativeMin(parseInt(e.target.value) || 1)}
-                    className="w-full px-4 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500"
+                    className="w-full px-4 py-2 border border-ink-200 rounded-lg focus:ring-2 focus:ring-brand-700/30"
                   />
                 </div>
                 <div>
-                  <label className="block text-sm font-medium text-gray-700 mb-2">
+                  <label className="block text-sm font-medium text-ink-700 mb-2">
                     Away Max Continuous (s)
                   </label>
                   <input
@@ -354,7 +354,7 @@ export const CreateExam = () => {
                     min="1"
                     value={awayMaxContinuousSeconds}
                     onChange={(e) => setAwayMaxContinuousSeconds(parseInt(e.target.value) || 1)}
-                    className="w-full px-4 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500"
+                    className="w-full px-4 py-2 border border-ink-200 rounded-lg focus:ring-2 focus:ring-brand-700/30"
                   />
                 </div>
               </div>
@@ -366,14 +366,14 @@ export const CreateExam = () => {
           {questions.map((question, qIndex) => (
             <div
               key={question.id}
-              className="bg-white rounded-xl shadow-sm border border-gray-200 p-8"
+              className="bg-white rounded-xl shadow-sm border border-ink-100 p-8"
             >
               <div className="flex items-start justify-between mb-6">
-                <h3 className="text-xl font-semibold text-gray-900">Question {qIndex + 1}</h3>
+                <h3 className="text-xl font-semibold text-ink-900">Question {qIndex + 1}</h3>
                 {questions.length > 1 && (
                   <button
                     onClick={() => removeQuestion(question.id)}
-                    className="text-red-600 hover:text-red-700 p-2 hover:bg-red-50 rounded-lg transition-colors"
+                    className="text-danger-600 hover:text-danger-700 p-2 hover:bg-danger-50 rounded-lg transition-colors"
                   >
                     <Trash2 className="w-5 h-5" />
                   </button>
@@ -381,7 +381,7 @@ export const CreateExam = () => {
               </div>
 
               <div className="mb-6">
-                <label className="block text-sm font-medium text-gray-700 mb-2">
+                <label className="block text-sm font-medium text-ink-700 mb-2">
                   Question Text
                 </label>
                 <textarea
@@ -389,12 +389,12 @@ export const CreateExam = () => {
                   onChange={(e) => updateQuestion(question.id, 'question', e.target.value)}
                   placeholder="Enter your question here..."
                   rows={3}
-                  className="w-full px-4 py-3 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-transparent transition-all resize-none"
+                  className="w-full px-4 py-3 border border-ink-200 rounded-lg focus:ring-2 focus:ring-brand-700/30 focus:border-transparent transition-all resize-none"
                 />
               </div>
 
               <div className="space-y-3">
-                <label className="block text-sm font-medium text-gray-700 mb-2">
+                <label className="block text-sm font-medium text-ink-700 mb-2">
                   Answer Options
                 </label>
                 {question.options.map((option, optIndex) => (
@@ -404,18 +404,18 @@ export const CreateExam = () => {
                       name={`correct-${question.id}`}
                       checked={question.correctAnswer === optIndex}
                       onChange={() => updateQuestion(question.id, 'correctAnswer', optIndex)}
-                      className="w-5 h-5 text-blue-600 focus:ring-2 focus:ring-blue-500"
+                      className="w-5 h-5 text-brand-700 focus:ring-2 focus:ring-brand-700/30"
                     />
                     <input
                       type="text"
                       value={option}
                       onChange={(e) => updateOption(question.id, optIndex, e.target.value)}
                       placeholder={`Option ${optIndex + 1}`}
-                      className="flex-1 px-4 py-3 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-transparent transition-all"
+                      className="flex-1 px-4 py-3 border border-ink-200 rounded-lg focus:ring-2 focus:ring-brand-700/30 focus:border-transparent transition-all"
                     />
                   </div>
                 ))}
-                <p className="text-xs text-gray-500 mt-2">
+                <p className="text-xs text-ink-500 mt-2">
                   Select the radio button to mark the correct answer
                 </p>
               </div>
@@ -427,7 +427,7 @@ export const CreateExam = () => {
           <button
             onClick={addQuestion}
             disabled={loading}
-            className="flex items-center space-x-2 px-6 py-3 border-2 border-dashed border-gray-300 rounded-lg text-gray-600 hover:border-blue-500 hover:text-blue-600 transition-colors disabled:opacity-50 disabled:cursor-not-allowed"
+            className="flex items-center space-x-2 px-6 py-3 border-2 border-dashed border-ink-200 rounded-lg text-ink-600 hover:border-blue-500 hover:text-brand-700 transition-colors disabled:opacity-50 disabled:cursor-not-allowed"
           >
             <Plus className="w-5 h-5" />
             <span className="font-medium">Add Question</span>
@@ -436,7 +436,7 @@ export const CreateExam = () => {
           <div className="flex items-center space-x-3">
             <button
               disabled={loading}
-              className="flex items-center space-x-2 px-6 py-3 border border-gray-300 rounded-lg text-gray-700 hover:bg-gray-50 transition-colors disabled:opacity-50 disabled:cursor-not-allowed"
+              className="flex items-center space-x-2 px-6 py-3 border border-ink-200 rounded-lg text-ink-700 hover:bg-ink-50 transition-colors disabled:opacity-50 disabled:cursor-not-allowed"
             >
               <Eye className="w-5 h-5" />
               <span className="font-medium">Preview</span>
@@ -444,7 +444,7 @@ export const CreateExam = () => {
             <button
               onClick={handleSave}
               disabled={loading}
-              className="flex items-center space-x-2 px-8 py-3 bg-blue-600 text-white rounded-lg hover:bg-blue-700 transition-colors disabled:bg-blue-400 disabled:cursor-not-allowed"
+              className="flex items-center space-x-2 px-8 py-3 bg-brand-700 text-white rounded-lg hover:bg-brand-800 transition-colors disabled:bg-ink-300 disabled:cursor-not-allowed"
             >
               <Save className="w-5 h-5" />
               <span className="font-semibold">{loading ? 'Publishing...' : 'Create & Publish'}</span>

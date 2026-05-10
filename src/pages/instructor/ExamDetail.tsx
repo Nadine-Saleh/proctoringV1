@@ -88,24 +88,24 @@ export const ExamDetail = () => {
 
   if (loading) {
     return (
-      <div className="min-h-screen bg-gradient-to-br from-gray-50 to-blue-50 flex items-center justify-center">
-        <div className="text-gray-500">Loading exam details...</div>
+      <div className="min-h-screen bg-ink-50 grid-spotlight flex items-center justify-center">
+        <div className="text-sm text-ink-500">Loading exam details…</div>
       </div>
     );
   }
 
   if (error || !exam) {
     return (
-      <div className="min-h-screen bg-gradient-to-br from-gray-50 to-blue-50 p-8">
+      <div className="min-h-screen bg-ink-50 grid-spotlight p-8">
         <div className="max-w-4xl mx-auto">
           <button
             onClick={() => navigate(-1)}
-            className="flex items-center space-x-2 text-blue-600 hover:text-blue-700 mb-6"
+            className="inline-flex items-center gap-2 text-brand-700 hover:text-brand-800 mb-6 text-sm font-medium"
           >
-            <ArrowLeft className="w-5 h-5" />
+            <ArrowLeft className="w-4 h-4" />
             <span>Back</span>
           </button>
-          <div className="bg-red-50 border border-red-200 rounded-lg p-4 text-red-700">
+          <div className="bg-danger-50 border border-danger-200 rounded-xl p-4 text-sm text-danger-800">
             {error || 'Exam not found'}
           </div>
         </div>
@@ -113,112 +113,128 @@ export const ExamDetail = () => {
     );
   }
 
+  const statusPill =
+    exam.status === 'published'
+      ? 'pill pill-success'
+      : exam.status === 'draft'
+      ? 'pill pill-brand'
+      : 'pill pill-neutral';
+
   return (
-    <div className="min-h-screen bg-gradient-to-br from-gray-50 to-blue-50">
-      <div className="max-w-4xl mx-auto px-4 sm:px-6 lg:px-8 py-12">
+    <div className="min-h-screen bg-ink-50 grid-spotlight">
+      <div className="max-w-4xl mx-auto px-4 sm:px-6 lg:px-8 py-10">
         <button
           onClick={() => navigate(-1)}
-          className="flex items-center space-x-2 text-blue-600 hover:text-blue-700 mb-6"
+          className="inline-flex items-center gap-2 text-brand-700 hover:text-brand-800 mb-6 text-sm font-medium"
         >
-          <ArrowLeft className="w-5 h-5" />
-          <span>Back to Dashboard</span>
+          <ArrowLeft className="w-4 h-4" />
+          <span>Back to dashboard</span>
         </button>
 
-        <div className="bg-white rounded-xl shadow-sm border border-gray-200 p-8 mb-6">
-          <div className="flex items-start justify-between mb-6">
-            <div>
-              <h1 className="text-4xl font-bold text-gray-900 mb-2">{exam.title}</h1>
+        <div className="card p-8 mb-6 animate-fade-in-up">
+          <div className="flex items-start justify-between gap-4 mb-6">
+            <div className="min-w-0">
+              <h1 className="text-3xl font-semibold text-ink-900 tracking-tight2 mb-1">
+                {exam.title}
+              </h1>
               {exam.description && (
-                <p className="text-lg text-gray-600">{exam.description}</p>
+                <p className="text-ink-600">{exam.description}</p>
               )}
             </div>
-            <span
-              className={`inline-flex px-4 py-2 rounded-full text-sm font-semibold border ${
-                exam.status === 'published'
-                  ? 'bg-green-100 text-green-700 border-green-200'
-                  : exam.status === 'draft'
-                  ? 'bg-blue-100 text-blue-700 border-blue-200'
-                  : 'bg-gray-100 text-gray-700 border-gray-200'
-              }`}
-            >
+            <span className={statusPill}>
               {exam.status.charAt(0).toUpperCase() + exam.status.slice(1)}
             </span>
           </div>
 
           <div className="grid grid-cols-1 md:grid-cols-2 gap-6 mb-8">
             <div>
-              <div className="flex items-center space-x-2 text-gray-600 mb-2">
-                <Calendar className="w-5 h-5" />
-                <span className="text-sm font-medium">Starts At</span>
+              <div className="flex items-center gap-2 text-ink-500 mb-2">
+                <Calendar className="w-4 h-4" />
+                <span className="text-2xs font-semibold uppercase tracking-wider">
+                  Starts at
+                </span>
               </div>
-              <p className="text-lg text-gray-900">{formatDate(exam.starts_at)}</p>
+              <p className="text-base font-medium text-ink-900">{formatDate(exam.starts_at)}</p>
               {exam.status === 'published' && (() => {
                 const now = Date.now();
                 const start = new Date(exam.starts_at).getTime();
                 const end = start + exam.duration_minutes * 60_000;
                 const isOpen = now >= start && now <= end;
-                const label = now < start
-                  ? <span className="text-amber-600">Window not yet open</span>
-                  : now > end
-                  ? <span className="text-red-600">Window has closed</span>
-                  : <span className="text-green-600">Window is open — students can join</span>;
+                const label =
+                  now < start ? (
+                    <span className="text-warning-700 font-medium">Window not yet open</span>
+                  ) : now > end ? (
+                    <span className="text-danger-700 font-medium">Window has closed</span>
+                  ) : (
+                    <span className="text-success-700 font-medium">
+                      Window is open — students can join
+                    </span>
+                  );
                 return (
-                  <div className="mt-1">
+                  <div className="mt-2">
                     <div className="flex items-center gap-2">
                       <p className="text-sm">{label}</p>
                       {!isOpen && (
                         <button
                           onClick={handleResetWindow}
                           disabled={resetting}
-                          className="flex items-center gap-1 text-xs text-blue-600 hover:text-blue-700 disabled:opacity-50"
+                          className="inline-flex items-center gap-1 text-xs text-brand-700 hover:text-brand-800 disabled:opacity-50 font-medium"
                         >
-                          <RefreshCw className="w-3 h-3" />
+                          <RefreshCw className={`w-3 h-3 ${resetting ? 'animate-spin' : ''}`} />
                           {resetting ? 'Resetting…' : 'Reset to now'}
                         </button>
                       )}
                     </div>
-                    {resetError && <p className="text-xs text-red-600 mt-1">{resetError}</p>}
+                    {resetError && (
+                      <p className="text-xs text-danger-700 mt-1">{resetError}</p>
+                    )}
                   </div>
                 );
               })()}
             </div>
 
             <div>
-              <div className="flex items-center space-x-2 text-gray-600 mb-2">
-                <Clock className="w-5 h-5" />
-                <span className="text-sm font-medium">Duration</span>
+              <div className="flex items-center gap-2 text-ink-500 mb-2">
+                <Clock className="w-4 h-4" />
+                <span className="text-2xs font-semibold uppercase tracking-wider">
+                  Duration
+                </span>
               </div>
-              <p className="text-lg text-gray-900">{exam.duration_minutes} minutes</p>
+              <p className="text-base font-medium text-ink-900 tabular-nums">
+                {exam.duration_minutes} minutes
+              </p>
             </div>
           </div>
 
           {exam.status === 'published' && exam.access_code && (
-            <div className="bg-blue-50 rounded-lg p-6 border border-blue-200">
-              <h2 className="text-lg font-semibold text-gray-900 mb-4">Access Code</h2>
-              <div className="flex items-center space-x-4">
+            <div className="rounded-xl bg-brand-50/60 border border-brand-100 p-5">
+              <h2 className="text-2xs font-semibold uppercase tracking-wider text-brand-700 mb-3">
+                Access code
+              </h2>
+              <div className="flex flex-col sm:flex-row items-stretch sm:items-center gap-4">
                 <div className="flex-1">
-                  <p className="text-sm text-gray-600 mb-2">Share this code with your students</p>
-                  <div className="bg-white border-2 border-blue-300 rounded-lg p-4 font-mono text-center text-2xl font-bold text-blue-600">
+                  <p className="text-sm text-ink-600 mb-2">Share this code with your students.</p>
+                  <div className="bg-white border border-brand-200 rounded-lg p-4 font-mono text-center text-2xl font-semibold text-brand-700 tracking-[0.4em]">
                     {exam.access_code}
                   </div>
                 </div>
                 <button
                   onClick={handleCopyAccessCode}
-                  className={`flex items-center space-x-2 px-6 py-3 rounded-lg font-medium transition-all ${
+                  className={`btn btn-md ${
                     copied
-                      ? 'bg-green-100 text-green-700 border border-green-200'
-                      : 'bg-blue-600 text-white hover:bg-blue-700'
+                      ? 'bg-success-50 text-success-700 ring-1 ring-success-200'
+                      : 'btn-primary'
                   }`}
                 >
                   {copied ? (
                     <>
-                      <Check className="w-5 h-5" />
-                      <span>Copied!</span>
+                      <Check className="w-4 h-4" />
+                      <span>Copied</span>
                     </>
                   ) : (
                     <>
-                      <Copy className="w-5 h-5" />
-                      <span>Copy Code</span>
+                      <Copy className="w-4 h-4" />
+                      <span>Copy code</span>
                     </>
                   )}
                 </button>
@@ -227,36 +243,30 @@ export const ExamDetail = () => {
           )}
         </div>
 
-        <div className="grid grid-cols-1 md:grid-cols-3 gap-6">
-          <div className="bg-white rounded-xl shadow-sm border border-gray-200 p-6">
-            <div className="flex items-center space-x-3 mb-4">
-              <Users className="w-6 h-6 text-blue-600" />
-              <h3 className="text-lg font-semibold text-gray-900">Students Joined</h3>
+        <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
+          {[
+            { label: 'Students joined', Icon: Users, tone: 'bg-brand-50 text-brand-700' },
+            { label: 'Submissions', Icon: FileText, tone: 'bg-success-50 text-success-700' },
+            { label: 'In progress', Icon: Clock, tone: 'bg-info-50 text-info-700' },
+          ].map(({ label, Icon, tone }) => (
+            <div key={label} className="card p-5">
+              <div className="flex items-center justify-between mb-3">
+                <span className="text-2xs font-semibold uppercase tracking-wider text-ink-500">
+                  {label}
+                </span>
+                <div className={`w-8 h-8 rounded-lg flex items-center justify-center ${tone}`}>
+                  <Icon className="w-4 h-4" />
+                </div>
+              </div>
+              <p className="text-3xl font-semibold text-ink-900 tabular-nums tracking-tight2">0</p>
             </div>
-            <p className="text-3xl font-bold text-blue-600">0</p>
-          </div>
-
-          <div className="bg-white rounded-xl shadow-sm border border-gray-200 p-6">
-            <div className="flex items-center space-x-3 mb-4">
-              <FileText className="w-6 h-6 text-green-600" />
-              <h3 className="text-lg font-semibold text-gray-900">Submissions</h3>
-            </div>
-            <p className="text-3xl font-bold text-green-600">0</p>
-          </div>
-
-          <div className="bg-white rounded-xl shadow-sm border border-gray-200 p-6">
-            <div className="flex items-center space-x-3 mb-4">
-              <Clock className="w-6 h-6 text-purple-600" />
-              <h3 className="text-lg font-semibold text-gray-900">In Progress</h3>
-            </div>
-            <p className="text-3xl font-bold text-purple-600">0</p>
-          </div>
+          ))}
         </div>
 
         {exam.status === 'draft' && (
-          <div className="mt-6 p-4 bg-yellow-50 border border-yellow-200 rounded-lg">
-            <p className="text-yellow-800">
-              This exam is still in draft. You need to publish it to generate an access code for students.
+          <div className="mt-6 p-4 rounded-xl bg-warning-50 border border-warning-200">
+            <p className="text-sm text-warning-900">
+              This exam is still a draft. Publish it to generate an access code for students.
             </p>
           </div>
         )}

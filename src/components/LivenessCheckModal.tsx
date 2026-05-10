@@ -139,28 +139,32 @@ export const LivenessCheckModal = ({
   }
 
   return (
-    <div className="fixed inset-0 bg-black/80 flex items-center justify-center z-[9999] p-4" style={{ backgroundColor: 'rgba(0,0,0,0.9)' }}>
-      <div className="bg-white rounded-2xl shadow-2xl max-w-md w-full overflow-hidden max-h-[90vh] flex flex-col" style={{ minHeight: '300px' }}>
+    <div className="modal-backdrop">
+      <div className="modal-card max-w-md max-h-[92vh] flex flex-col">
         {/* Header */}
-        <div className="bg-gradient-to-r from-blue-600 to-blue-700 px-6 py-4 flex-shrink-0">
-          <div className="flex items-center space-x-3">
-            <UserCheck className="w-6 h-6 text-white" />
-            <h2 className="text-xl font-bold text-white">Liveness Verification</h2>
+        <div className="bg-brand-gradient px-6 py-5 flex-shrink-0">
+          <div className="flex items-center gap-3">
+            <div className="w-10 h-10 rounded-lg bg-white/15 ring-1 ring-white/20 backdrop-blur-sm flex items-center justify-center">
+              <UserCheck className="w-5 h-5 text-white" />
+            </div>
+            <div>
+              <div className="text-2xs font-semibold uppercase tracking-wider text-brand-200">
+                Step 2 of 3
+              </div>
+              <h2 className="text-lg font-semibold text-white tracking-tight2">
+                Identity Verification
+              </h2>
+            </div>
           </div>
-          <p className="text-blue-100 mt-1 text-sm">
-            Verify your identity before starting the exam
+          <p className="text-brand-100 mt-2.5 text-sm leading-relaxed">
+            Quick liveness check to verify it's really you taking the exam.
           </p>
         </div>
 
         {/* Content */}
         <div className="p-6 overflow-y-auto flex-1">
-          {/* Debug Info */}
-          {/* <div className="mb-4 p-3 bg-yellow-50 border border-yellow-200 rounded text-xs font-mono text-yellow-800">
-            <strong>Debug:</strong> {debugInfo} | cameraReady: {cameraReady ? 'yes' : 'no'} | video element: {localVideoRef.current ? 'yes' : 'no'}
-          </div> */}
-
           {/* Video Container */}
-          <div className="relative aspect-video bg-gray-900 rounded-lg overflow-hidden mb-4 border-2 border-blue-500">
+          <div className="relative aspect-video bg-ink-950 rounded-xl overflow-hidden mb-5 ring-1 ring-ink-900/60">
             <video
               ref={setVideoRef}
               autoPlay
@@ -172,143 +176,185 @@ export const LivenessCheckModal = ({
 
             {/* Camera error display */}
             {cameraError && (
-              <div className="absolute inset-0 bg-red-900/80 flex items-center justify-center">
+              <div className="absolute inset-0 bg-danger-950/85 backdrop-blur-sm flex items-center justify-center">
                 <div className="text-center text-white p-4">
-                  <XCircle className="w-12 h-12 mx-auto mb-2 text-red-400" />
-                  <p className="text-base font-semibold mb-1">Camera Error</p>
-                  <p className="text-xs text-red-200">{cameraError}</p>
+                  <div className="w-12 h-12 mx-auto mb-3 rounded-full bg-danger-500/15 ring-1 ring-danger-500/40 flex items-center justify-center">
+                    <XCircle className="w-5 h-5 text-danger-300" />
+                  </div>
+                  <p className="text-sm font-semibold mb-1">Camera error</p>
+                  <p className="text-xs text-danger-200">{cameraError}</p>
                 </div>
               </div>
             )}
 
             {/* Loading indicator */}
             {!cameraReady && !cameraError && (
-              <div className="absolute inset-0 bg-black/60 flex items-center justify-center">
+              <div className="absolute inset-0 bg-ink-950/85 backdrop-blur-sm flex items-center justify-center">
                 <div className="text-center text-white">
-                  <div className="w-10 h-10 border-4 border-blue-500 border-t-transparent rounded-full animate-spin mx-auto mb-2" />
-                  <p className="text-xs">Setting up camera...</p>
+                  <div className="relative w-12 h-12 mx-auto mb-3">
+                    <div className="absolute inset-0 rounded-full border-2 border-white/15" />
+                    <div className="absolute inset-0 rounded-full border-2 border-t-brand-300 animate-spin" />
+                  </div>
+                  <p className="text-xs font-medium tracking-wide uppercase text-white/80">
+                    Setting up camera
+                  </p>
                 </div>
               </div>
             )}
 
-            {/* Overlay for initial state - only show before camera starts */}
+            {/* Initial state */}
             {!cameraReady && !isChecking && !isPassed && !isFailed && !cameraError && (
-              <div className="absolute inset-0 bg-black/40 flex items-center justify-center pointer-events-none">
-                <div className="text-center text-white p-4">
-                  <Camera className="w-12 h-12 mx-auto mb-2 text-gray-300" />
-                  <p className="text-base font-semibold">Camera Preview</p>
+              <div className="absolute inset-0 bg-ink-950/40 flex items-center justify-center pointer-events-none">
+                <div className="text-center text-white">
+                  <Camera className="w-10 h-10 mx-auto mb-2 text-white/60" />
+                  <p className="text-sm font-medium">Camera preview</p>
                 </div>
               </div>
             )}
 
-            {/* Show status badge */}
-            <div className="absolute top-4 right-4 z-10">
-              <div className={`px-3 py-1 rounded-full text-sm font-bold ${isChecking ? 'bg-blue-600 text-white animate-pulse' :
-                isPassed ? 'bg-green-600 text-white' :
-                  isFailed ? 'bg-red-600 text-white' :
-                    'bg-gray-600 text-white'
-                }`}>
-                {isChecking ? 'CHECKING...' : isPassed ? 'PASSED' : isFailed ? 'FAILED' : 'READY'}
+            {/* Vignette */}
+            <div className="pointer-events-none absolute inset-0 bg-gradient-to-t from-black/50 to-transparent" />
+
+            {/* Status pill */}
+            <div className="absolute top-2.5 right-2.5 z-10">
+              <div
+                className={`px-2.5 py-1 rounded-md text-2xs font-semibold uppercase tracking-wider backdrop-blur-sm ${
+                  isChecking
+                    ? 'bg-brand-700/85 text-white animate-pulse-soft'
+                    : isPassed
+                    ? 'bg-success-600/85 text-white'
+                    : isFailed
+                    ? 'bg-danger-600/85 text-white'
+                    : 'bg-ink-900/70 text-white/90'
+                }`}
+              >
+                {isChecking ? 'Checking…' : isPassed ? 'Passed' : isFailed ? 'Failed' : 'Ready'}
               </div>
             </div>
 
-            {/* Camera indicator */}
-            <div className="absolute top-4 left-4 z-10">
-              <div className="bg-black/50 text-white px-2 py-1 rounded text-xs flex items-center">
-                <div className="w-2 h-2 bg-red-500 rounded-full mr-2 animate-pulse" />
-                Camera Active
+            {/* Live indicator */}
+            <div className="absolute top-2.5 left-2.5 z-10">
+              <div className="inline-flex items-center gap-1.5 px-2 py-1 rounded-md bg-black/40 backdrop-blur-sm">
+                <span className="w-1.5 h-1.5 rounded-full bg-danger-500 animate-pulse-soft" />
+                <span className="text-2xs font-semibold uppercase tracking-wider text-white/90">
+                  Camera Active
+                </span>
               </div>
             </div>
 
             {isChecking && (
               <>
                 {/* Progress overlay */}
-                <div className="absolute bottom-0 left-0 right-0 h-1 bg-gray-700">
+                <div className="absolute bottom-0 left-0 right-0 h-1 bg-black/40">
                   <div
-                    className="h-full bg-blue-500 transition-all duration-300"
+                    className="h-full bg-brand-gradient transition-all duration-300"
                     style={{ width: `${progress}%` }}
                   />
                 </div>
 
                 {/* Face frame guide */}
-                <div className="absolute inset-0 flex items-center justify-center">
-                  <div className="w-48 h-48 border-2 border-white/50 rounded-lg animate-pulse" />
-                </div>
-
-                {/* Status indicator */}
-                <div className="absolute top-4 right-4">
-                  <div className="bg-blue-600 text-white px-3 py-1 rounded-full text-sm font-semibold animate-pulse">
-                    Verifying...
+                <div className="absolute inset-0 flex items-center justify-center pointer-events-none">
+                  <div className="relative w-44 h-52 rounded-2xl ring-2 ring-dashed ring-white/55 animate-pulse-soft">
+                    <span className="absolute -top-1 -left-1 w-3 h-3 border-t-2 border-l-2 border-white/80 rounded-tl-md" />
+                    <span className="absolute -top-1 -right-1 w-3 h-3 border-t-2 border-r-2 border-white/80 rounded-tr-md" />
+                    <span className="absolute -bottom-1 -left-1 w-3 h-3 border-b-2 border-l-2 border-white/80 rounded-bl-md" />
+                    <span className="absolute -bottom-1 -right-1 w-3 h-3 border-b-2 border-r-2 border-white/80 rounded-br-md" />
                   </div>
                 </div>
               </>
             )}
 
             {isPassed && (
-              <div className="absolute inset-0 bg-green-500/30 flex items-center justify-center">
-                <div className="text-center text-white p-4">
-                  <CheckCircle className="w-16 h-16 mx-auto mb-3" />
-                  <p className="text-xl font-bold mb-1">Verification Successful!</p>
-                  <p className="text-xs text-green-100">
-                    Your identity has been verified
-                  </p>
+              <div className="absolute inset-0 bg-success-600/40 backdrop-blur-[2px] flex items-center justify-center">
+                <div className="text-center text-white p-4 animate-scale-in">
+                  <div className="w-16 h-16 mx-auto mb-3 rounded-full bg-success-500 ring-4 ring-white/30 flex items-center justify-center">
+                    <CheckCircle className="w-8 h-8" />
+                  </div>
+                  <p className="text-lg font-semibold mb-1 tracking-tight2">Verified</p>
+                  <p className="text-xs text-success-50/90">Identity confirmed</p>
                 </div>
               </div>
             )}
 
             {isFailed && (
-              <div className="absolute inset-0 bg-red-500/30 flex items-center justify-center">
-                <div className="text-center text-white p-4">
-                  <XCircle className="w-16 h-16 mx-auto mb-3" />
-                  <p className="text-xl font-bold mb-1">Verification Failed</p>
-                  <p className="text-xs text-red-100">
-                    Please try again or contact support
-                  </p>
+              <div className="absolute inset-0 bg-danger-600/40 backdrop-blur-[2px] flex items-center justify-center">
+                <div className="text-center text-white p-4 animate-scale-in">
+                  <div className="w-16 h-16 mx-auto mb-3 rounded-full bg-danger-500 ring-4 ring-white/30 flex items-center justify-center">
+                    <XCircle className="w-8 h-8" />
+                  </div>
+                  <p className="text-lg font-semibold mb-1 tracking-tight2">Verification failed</p>
+                  <p className="text-xs text-danger-50/90">Try again or contact support</p>
                 </div>
               </div>
             )}
           </div>
 
           {/* Instructions */}
-          <div className={`p-3 rounded-lg mb-4 ${isFailed
-            ? 'bg-red-50 border border-red-200'
-            : isPassed
-              ? 'bg-green-50 border border-green-200'
-              : 'bg-blue-50 border border-blue-200'
-            }`}>
-            <div className="flex items-start space-x-3">
-              {isFailed ? (
-                <XCircle className="w-5 h-5 text-red-600 flex-shrink-0 mt-0.5" />
-              ) : isPassed ? (
-                <CheckCircle className="w-5 h-5 text-green-600 flex-shrink-0 mt-0.5" />
-              ) : (
-                <div className="mt-0.5">
-                  {!currentStep ? (
-                    <Camera className="w-5 h-5 text-blue-600" />
-                  ) : currentStep.type === 'pose' ? (
-                    <RefreshCw className="w-5 h-5 text-blue-600" />
-                  ) : currentStep.type === 'expression' ? (
-                    <CheckCircle className="w-5 h-5 text-blue-600" />
-                  ) : (
-                    <Camera className="w-5 h-5 text-blue-600" />
-                  )}
-                </div>
-              )}
-              <div className="flex-1">
-                <div className="flex justify-between items-center">
-                  <p className={`font-semibold text-sm ${isFailed ? 'text-red-800' : isPassed ? 'text-green-800' : 'text-blue-800'
-                    }`}>
-                    {isFailed ? 'Verification Failed' : isPassed ? 'Success' :
-                      isChecking ? `Step ${stepIndex + 1} of ${totalSteps}` : 'Ready'}
+          <div
+            className={`p-4 rounded-xl mb-5 border ${
+              isFailed
+                ? 'bg-danger-50 border-danger-200'
+                : isPassed
+                ? 'bg-success-50 border-success-200'
+                : 'bg-brand-50/60 border-brand-100'
+            }`}
+          >
+            <div className="flex items-start gap-3">
+              <div
+                className={`w-8 h-8 rounded-lg flex items-center justify-center flex-shrink-0 ${
+                  isFailed
+                    ? 'bg-danger-100 text-danger-700'
+                    : isPassed
+                    ? 'bg-success-100 text-success-700'
+                    : 'bg-brand-100 text-brand-700'
+                }`}
+              >
+                {isFailed ? (
+                  <XCircle className="w-4 h-4" />
+                ) : isPassed ? (
+                  <CheckCircle className="w-4 h-4" />
+                ) : !currentStep ? (
+                  <Camera className="w-4 h-4" />
+                ) : currentStep.type === 'pose' ? (
+                  <RefreshCw className="w-4 h-4" />
+                ) : (
+                  <Camera className="w-4 h-4" />
+                )}
+              </div>
+              <div className="flex-1 min-w-0">
+                <div className="flex items-center justify-between gap-2">
+                  <p
+                    className={`text-2xs font-semibold uppercase tracking-wider ${
+                      isFailed
+                        ? 'text-danger-700'
+                        : isPassed
+                        ? 'text-success-700'
+                        : 'text-brand-700'
+                    }`}
+                  >
+                    {isFailed
+                      ? 'Verification failed'
+                      : isPassed
+                      ? 'Success'
+                      : isChecking
+                      ? `Step ${stepIndex + 1} of ${totalSteps}`
+                      : 'Ready'}
                   </p>
                   {isChecking && totalSteps > 0 && (
-                    <span className="text-xs font-medium text-blue-600 bg-blue-100 px-2 py-0.5 rounded-full">
-                      {Math.round(((stepIndex) / totalSteps) * 100)}% Complete
+                    <span className="text-2xs font-mono tabular-nums text-brand-700 bg-brand-100 px-2 py-0.5 rounded-full">
+                      {Math.round((stepIndex / totalSteps) * 100)}%
                     </span>
                   )}
                 </div>
-                <p className={`text-base font-bold mt-1 ${isFailed ? 'text-red-700' : isPassed ? 'text-green-700' : 'text-blue-900'
-                  }`}>
+                <p
+                  className={`text-sm font-medium mt-1 ${
+                    isFailed
+                      ? 'text-danger-900'
+                      : isPassed
+                      ? 'text-success-900'
+                      : 'text-ink-900'
+                  }`}
+                >
                   {instruction}
                 </p>
               </div>
@@ -317,64 +363,55 @@ export const LivenessCheckModal = ({
 
           {/* Requirements */}
           {!isChecking && !isPassed && !isFailed && (
-            <div className="mb-4">
-              <h3 className="font-semibold text-gray-900 mb-2 text-sm">Requirements:</h3>
-              <ul className="space-y-1 text-xs text-gray-600">
-                <li className="flex items-center space-x-2">
-                  <CheckCircle className="w-3 h-3 text-green-600" />
-                  <span>Position your face clearly in front of the camera</span>
-                </li>
-                <li className="flex items-center space-x-2">
-                  <CheckCircle className="w-3 h-3 text-green-600" />
-                  <span>Blink naturally during the verification</span>
-                </li>
-                <li className="flex items-center space-x-2">
-                  <CheckCircle className="w-3 h-3 text-green-600" />
-                  <span>Move your head slightly as prompted</span>
-                </li>
-                <li className="flex items-center space-x-2">
-                  <CheckCircle className="w-3 h-3 text-green-600" />
-                  <span>Ensure good lighting on your face</span>
-                </li>
+            <div className="mb-5">
+              <h3 className="text-2xs font-semibold uppercase tracking-wider text-ink-500 mb-2">
+                Before you start
+              </h3>
+              <ul className="space-y-1.5 text-sm text-ink-700">
+                {[
+                  'Position your face clearly in front of the camera',
+                  'Blink naturally during the verification',
+                  'Move your head slightly as prompted',
+                  'Ensure good lighting on your face',
+                ].map((item) => (
+                  <li key={item} className="flex items-start gap-2.5">
+                    <CheckCircle className="w-4 h-4 text-success-600 flex-shrink-0 mt-0.5" />
+                    <span>{item}</span>
+                  </li>
+                ))}
               </ul>
             </div>
           )}
 
           {/* Action Buttons */}
-          <div className="flex items-center justify-center space-x-4">
+          <div>
             {!isChecking && !isPassed && !isFailed && (
-              <button
-                onClick={onStartCheck}
-                className="flex items-center space-x-2 px-6 py-2.5 bg-blue-600 text-white rounded-lg hover:bg-blue-700 font-semibold transition-colors text-sm"
-              >
+              <button onClick={onStartCheck} className="btn btn-md btn-primary w-full">
                 <Camera className="w-4 h-4" />
-                <span>Start Verification</span>
+                <span>Start verification</span>
               </button>
             )}
 
             {isChecking && (
-              <div className="text-center">
-                <p className="text-xs text-gray-500">Please wait while we verify your identity...</p>
+              <div className="text-center text-xs text-ink-500">
+                Please wait while we verify your identity…
               </div>
             )}
 
             {isFailed && (
-              <button
-                onClick={onRetry}
-                className="flex items-center space-x-2 px-6 py-2.5 bg-blue-600 text-white rounded-lg hover:bg-blue-700 font-semibold transition-colors text-sm"
-              >
+              <button onClick={onRetry} className="btn btn-md btn-primary w-full">
                 <RefreshCw className="w-4 h-4" />
-                <span>Try Again</span>
+                <span>Try again</span>
               </button>
             )}
 
             {isPassed && onContinue && (
               <button
                 onClick={onContinue}
-                className="flex items-center space-x-2 px-6 py-2.5 bg-green-600 text-white rounded-lg hover:bg-green-700 font-semibold transition-colors text-sm"
+                className="btn btn-md w-full bg-success-600 text-white shadow-soft hover:bg-success-700"
               >
                 <CheckCircle className="w-4 h-4" />
-                <span>Start Exam</span>
+                <span>Start exam</span>
               </button>
             )}
           </div>
