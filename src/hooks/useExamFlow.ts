@@ -8,6 +8,8 @@ import { useExamSession } from './useExamSession';
 import { useExamAnswers } from './useExamAnswers';
 import { useViolationTracker } from './useViolationTracker';
 import { useTabFocusTracker } from './useTabFocusTracker';
+import { usePoseDetection } from './usePoseDetection';
+import { useMicrophoneContext } from '../context/MicrophoneContext';
 import {
   IdentityVerificationService,
   type StartSessionResponse,
@@ -32,6 +34,42 @@ const DEFAULT_POLICY: ProctoringPolicy = {
 };
 
 const CLOSED_SESSION_STATUSES = new Set(['submitted', 'auto_submitted', 'terminated']);
+
+const STEP_STORAGE_PREFIX = 'proctoring_steps_';
+const STEP_STORAGE_EXAM_KEY = 'current_exam_id';
+type StepName = 'distance' | 'liveness' | 'microphone';
+type StepsRecord = Partial<Record<StepName, boolean>>;
+
+const readStoredSteps = (examId: string): StepsRecord => {
+  try {
+    const stored = localStorage.getItem(`${STEP_STORAGE_PREFIX}${examId}`);
+    return stored ? (JSON.parse(stored) as StepsRecord) : {};
+  } catch {
+    return {};
+  }
+};
+
+const writeStoredStep = (examId: string, step: StepName) => {
+  try {
+    const key = `${STEP_STORAGE_PREFIX}${examId}`;
+    const steps = readStoredSteps(examId);
+    steps[step] = true;
+    localStorage.setItem(key, JSON.stringify(steps));
+    localStorage.setItem(STEP_STORAGE_EXAM_KEY, examId);
+  } catch (e) {
+    console.warn('[Exam] Failed to save step:', step, e);
+  }
+};
+
+const clearStoredSteps = (examId: string) => {
+  try {
+    localStorage.removeItem(`${STEP_STORAGE_PREFIX}${examId}`);
+    const stored = localStorage.getItem(STEP_STORAGE_EXAM_KEY);
+    if (stored === examId) localStorage.removeItem(STEP_STORAGE_EXAM_KEY);
+  } catch (e) {
+    console.warn('[Exam] Failed to clear storage:', e);
+  }
+};
 
 const PER_EVENT_BANNER_TTL_MS = 4000;
 const DISTANCE_RANGE_MIN_CM = 30;
@@ -109,10 +147,12 @@ export const useExamFlow = () => {
   const [timeRemaining, setTimeRemaining] = useState(currentExamDuration * 60);
   const [showLivenessCheck, setShowLivenessCheck] = useState(false);
   const [showDistanceSetup, setShowDistanceSetup] = useState(true);
+  const [showMicrophonePermission, setShowMicrophonePermission] = useState(false);
   const [examStarted, setExamStarted] = useState(false);
   const [gazeStatus, setGazeStatus] = useState<'center' | 'looking-away'>('center');
   const [warningBanner, setWarningBanner] = useState<WarningBannerState | null>(null);
   const [sessionCalibration, setSessionCalibration] = useState<SessionCalibration | null>(null);
+  const [combinedVideoElement, setCombinedVideoElement] = useState<HTMLVideoElement | null>(null);
 
   const {
     status,
@@ -157,6 +197,25 @@ export const useExamFlow = () => {
 
   const liveness = useLivenessCheck();
   const combinedVideoRef = useRef<HTMLVideoElement | null>(null);
+
+  const {
+    isModelLoaded: poseModelLoaded,
+    isDetecting: poseDetecting,
+    frameStatus: poseFrameStatus,
+    statusMessage: poseStatusMessage,
+    startDetection: startPoseDetection,
+    stopDetection: stopPoseDetection,
+    loadingProgress: poseLoadingProgress,
+  } = usePoseDetection();
+
+  const {
+    status: micStatus,
+    isRecording: micIsRecording,
+    isStreamReady: micIsStreamReady,
+    streamHealthy: micStreamHealthy,
+  } = useMicrophoneContext();
+
+  const micActive = micStatus.microphone && micIsRecording && micIsStreamReady && micStreamHealthy;
 
   const gazeDistanceCm = gazeSample
     ? Math.round(DISTANCE_RANGE_MIN_CM + (1 - gazeSample.faceDistance) * DISTANCE_RANGE_SPAN_CM)
@@ -210,6 +269,20 @@ export const useExamFlow = () => {
   }, [examStarted, gazeModelsLoaded, status.camera, gazeRunning, startGazeTracking]);
 
   useEffect(() => {
+    if (
+      examStarted &&
+      poseModelLoaded &&
+      status.camera &&
+      !poseDetecting &&
+      combinedVideoElement
+    ) {
+      startPoseDetection(combinedVideoElement);
+    }
+  }, [examStarted, poseModelLoaded, status.camera, poseDetecting, combinedVideoElement, startPoseDetection]);
+
+  useEffect(() => () => stopPoseDetection(), [stopPoseDetection]);
+
+  useEffect(() => {
     setGazeStatus(gazeZone === 'on_screen' ? 'center' : 'looking-away');
   }, [gazeZone]);
 
@@ -252,6 +325,7 @@ export const useExamFlow = () => {
   const setCombinedVideoRef = useCallback(
     (element: HTMLVideoElement | null) => {
       combinedVideoRef.current = element;
+      setCombinedVideoElement(element);
       proctoringVideoRef(element);
       gazeVideoRef(element);
     },
@@ -359,6 +433,7 @@ export const useExamFlow = () => {
       clearTimeout(watchdog);
 
       if (result.success) {
+        if (currentExamId) clearStoredSteps(currentExamId);
         setShowSubmissionModal(false);
         setIsSubmitting(false);
         navigate(`/exam/${targetSessionId}/results`, {
@@ -398,19 +473,55 @@ export const useExamFlow = () => {
           }
         }
       }
+      if (currentExamId) writeStoredStep(currentExamId, 'distance');
       setShowDistanceSetup(false);
       setShowLivenessCheck(true);
     },
-    [sessionId],
+    [sessionId, currentExamId],
   );
 
   const handleLivenessComplete = useCallback(async () => {
     if (liveness.isPassed) {
+      if (currentExamId) writeStoredStep(currentExamId, 'liveness');
       setShowLivenessCheck(false);
+      setShowMicrophonePermission(true);
+    }
+  }, [liveness.isPassed, currentExamId]);
+
+  const handleMicrophoneComplete = useCallback(() => {
+    if (currentExamId) writeStoredStep(currentExamId, 'microphone');
+    setShowMicrophonePermission(false);
+    setExamStarted(true);
+    startTimer();
+  }, [currentExamId, startTimer]);
+
+  const stepsRestoredRef = useRef(false);
+  useEffect(() => {
+    if (!currentExamId || stepsRestoredRef.current) return;
+    stepsRestoredRef.current = true;
+
+    const storedExamId = localStorage.getItem(STEP_STORAGE_EXAM_KEY);
+    if (storedExamId && storedExamId !== currentExamId) {
+      clearStoredSteps(storedExamId);
+      return;
+    }
+
+    const steps = readStoredSteps(currentExamId);
+    if (steps.microphone) {
+      setShowDistanceSetup(false);
+      setShowLivenessCheck(false);
+      setShowMicrophonePermission(false);
       setExamStarted(true);
       startTimer();
+    } else if (steps.liveness) {
+      setShowDistanceSetup(false);
+      setShowLivenessCheck(false);
+      setShowMicrophonePermission(true);
+    } else if (steps.distance) {
+      setShowDistanceSetup(false);
+      setShowLivenessCheck(true);
     }
-  }, [liveness.isPassed, startTimer]);
+  }, [currentExamId, startTimer]);
 
   const handleLivenessRetry = useCallback(() => {
     liveness.resetCheck();
@@ -448,18 +559,30 @@ export const useExamFlow = () => {
     examStarted,
     showDistanceSetup,
     showLivenessCheck,
+    showMicrophonePermission,
     handleSetOptimalDistance,
     handleLivenessComplete,
     handleLivenessRetry,
+    handleMicrophoneComplete,
     liveness,
     setLivenessVideoRef: liveness.videoRef,
 
     status,
     setCombinedVideoRef,
+    combinedVideoElement,
     retryCamera,
 
     gazeRunning,
     gazeStatus,
+
+    poseDetecting,
+    poseModelLoaded,
+    poseFrameStatus,
+    poseStatusMessage,
+    poseLoadingProgress,
+
+    micActive,
+    micStreamHealthy,
 
     faceDistanceCm,
     sessionCalibration,

@@ -1,5 +1,6 @@
 import { BrowserRouter, Routes, Route, Navigate } from 'react-router-dom';
 import { AppProvider, useApp } from './context/AppContext';
+import { MicrophoneProvider } from './context/MicrophoneContext';
 import { Navigation } from './components/Navigation';
 import { ProtectedRoute } from './components/ProtectedRoute';
 import { Login } from './pages/auth/Login';
@@ -162,7 +163,9 @@ function App() {
   return (
     <BrowserRouter>
       <AppProvider>
-        <AppContent />
+        <MicrophoneProvider>
+          <AppContent />
+        </MicrophoneProvider>
       </AppProvider>
     </BrowserRouter>
   );

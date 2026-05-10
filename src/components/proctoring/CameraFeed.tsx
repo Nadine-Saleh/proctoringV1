@@ -1,14 +1,15 @@
 import { CameraOff, Video } from 'lucide-react';
-import type { RefCallback } from 'react';
+import type { ReactNode, RefCallback } from 'react';
 import type { ProctoringStatus } from '../../hooks/useProctoring';
 
 interface CameraFeedProps {
   status: ProctoringStatus;
   videoRef: RefCallback<HTMLVideoElement>;
   onRetry: () => void;
+  overlay?: ReactNode;
 }
 
-export const CameraFeed = ({ status, videoRef, onRetry }: CameraFeedProps) => (
+export const CameraFeed = ({ status, videoRef, onRetry, overlay }: CameraFeedProps) => (
   <div className="rounded-lg aspect-video mb-4 bg-black relative overflow-hidden">
     <video
       ref={videoRef}
@@ -17,6 +18,8 @@ export const CameraFeed = ({ status, videoRef, onRetry }: CameraFeedProps) => (
       playsInline
       className={`w-full h-full object-cover transform scale-x-[-1] transition-opacity ${status.camera ? 'opacity-100' : 'opacity-0'}`}
     />
+
+    {overlay && <div className="absolute inset-0 z-10 pointer-events-none">{overlay}</div>}
 
     {status.loading && !status.errorMessage && (
       <div className="absolute inset-0 flex items-center justify-center bg-black/50">
