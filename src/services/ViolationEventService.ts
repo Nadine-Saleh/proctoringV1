@@ -36,6 +36,15 @@ interface BatchEvent {
   };
 }
 
+// Normalize any severity value to an integer — the DB column is integer.
+const toSafeSeverity = (value: any): number => {
+  if (typeof value === 'number') return value;
+  if (value === 'critical') return 20;
+  if (value === 'high') return 15;
+  if (value === 'medium') return 10;
+  return 5; // 'low' or unknown
+};
+
 const IDB_DB_NAME = 'proctoring_offline_queue';
 const IDB_STORE   = 'violation_events';
 
@@ -100,16 +109,18 @@ async function callRecordBatch(
   });
   if (error) {
     const typedError = error as PostgrestErrorLike;
-    // Surface the full Postgres error (code, details, hint) so 400s are diagnosable.
-    console.error('[ViolationEventService] record_violation_batch failed', {
-      message: typedError.message,
-      code: typedError.code,
-      details: typedError.details,
-      hint: typedError.hint,
-      sessionId,
-      eventCount: events.length,
-      sampleType: events[0]?.type,
-    });
+    // Inline the message so it's visible in the console without expanding the object.
+    // `code` is the Postgres error code; `details`/`hint` contain the constraint or column name.
+    console.error(
+      `[ViolationEventService] record_violation_batch failed: ${typedError.message}` +
+        ` | code=${typedError.code ?? 'n/a'}` +
+        ` | details=${typedError.details ?? 'n/a'}` +
+        ` | hint=${typedError.hint ?? 'n/a'}` +
+        ` | session=${sessionId}` +
+        ` | events=${events.length}` +
+        ` | sampleType=${events[0]?.type ?? 'n/a'}` +
+        ` | sampleSeverity=${events[0]?.severity ?? 'n/a'}`
+    );
     return { data: null, error: typedError.message };
   }
   return { data: data as RecordViolationBatchResponse, error: null };
@@ -130,10 +141,11 @@ export class ViolationEventService {
     if (inputs.length === 0) return { success: true, events: [] };
 
     const sessionId = inputs[0].session_id;
+
     const events: BatchEvent[] = inputs.map(input => ({
       client_event_id: input.client_event_id,
       type: input.type as string,
-      severity: typeof input.severity === 'number' ? input.severity : 10,
+      severity: toSafeSeverity(input.severity),
       client_captured_at: input.client_captured_at,
       metadata: (input.metadata ?? {}) as Record<string, unknown>,
     }));
@@ -141,7 +153,6 @@ export class ViolationEventService {
     const { data, error } = await callRecordBatch(sessionId, events);
 
     if (error || !data) {
-      // Persist to IndexedDB for later replay
       for (const ev of events) {
         await idbEnqueue({ sessionId, event: ev }).catch(() => {});
       }
@@ -151,10 +162,6 @@ export class ViolationEventService {
     return { success: true, events: [], batchResponse: data };
   }
 
-  /**
-   * Submit a batch via the RPC and return the full response (score, thresholds, alerts).
-   * Used by useViolationTracker to update CheatingScoreTracker.
-   */
   static async submitBatch(
     sessionId: string,
     events: BatchEvent[],
@@ -163,10 +170,15 @@ export class ViolationEventService {
   ): Promise<RecordViolationBatchResponse | null> {
     if (!sessionId || events.length === 0) return null;
 
-    const { data, error } = await callRecordBatch(sessionId, events);
+    const safeEvents = events.map(e => ({
+      ...e,
+      severity: toSafeSeverity(e.severity)
+    }));
+
+    const { data, error } = await callRecordBatch(sessionId, safeEvents);
 
     if (error || !data) {
-      for (const ev of events) {
+      for (const ev of safeEvents) {
         await idbEnqueue({ sessionId, event: ev }).catch(() => {});
       }
       onOffline?.();
@@ -177,14 +189,6 @@ export class ViolationEventService {
     return data;
   }
 
-  /**
-   * Drain IndexedDB offline queue, grouping by sessionId and replaying via RPC.
-   * Call this on reconnect.
-   *
-   * Events that hit a permanent server-side error (session no longer in_progress,
-   * session missing, wrong owner, exam window closed) are dropped from the queue
-   * so they do not replay on every page load.
-   */
   static async drainOfflineQueue(
     onSuccess?: (res: RecordViolationBatchResponse) => void
   ): Promise<void> {
@@ -197,7 +201,6 @@ export class ViolationEventService {
 
     if (pending.length === 0) return;
 
-    // Group by sessionId
     const bySession = new Map<string, Array<{ key: IDBValidKey; event: BatchEvent }>>();
     for (const { key, item } of pending) {
       const arr = bySession.get(item.sessionId) ?? [];
@@ -214,13 +217,18 @@ export class ViolationEventService {
     ]);
 
     for (const [sessionId, entries] of bySession) {
-      const events = entries.map(e => e.event);
+      const fixedEntries = entries.map(e => ({
+        key: e.key,
+        event: { ...e.event, severity: toSafeSeverity(e.event.severity) }
+      }));
+      
+      const events = fixedEntries.map(e => e.event);
       const chunks: BatchEvent[][] = [];
       for (let i = 0; i < events.length; i += 50) chunks.push(events.slice(i, i + 50));
 
       let offset = 0;
       for (const chunk of chunks) {
-        const keysForChunk = entries.slice(offset, offset + chunk.length).map(e => e.key);
+        const keysForChunk = fixedEntries.slice(offset, offset + chunk.length).map(e => e.key);
         offset += chunk.length;
 
         const { data, error } = await callRecordBatch(sessionId, chunk);
@@ -229,14 +237,11 @@ export class ViolationEventService {
           for (const key of keysForChunk) await idbDelete(key).catch(() => {});
           onSuccess?.(data);
         } else if (error && PERMANENT_ERRORS.has(error)) {
-          // Orphaned events — the target session will never accept them again.
-          // Drop them so they stop failing on every mount.
           console.warn(
             `[ViolationEventService] Dropping ${chunk.length} queued events for session ${sessionId}: ${error}`
           );
           for (const key of keysForChunk) await idbDelete(key).catch(() => {});
         }
-        // Transient errors (network, batch_too_large, etc.): leave in queue for next drain.
       }
     }
   }
@@ -335,7 +340,7 @@ export class ViolationEventService {
       for (const event of data as Array<{
         type: string | null;
         violation_type: string | null;
-        severity: number;
+        severity: number | string;
         client_captured_at: string | null;
         occurred_at: string | null;
       }>) {
@@ -349,14 +354,21 @@ export class ViolationEventService {
           if (new Date(occurredAt) > new Date(existing.last_occurrence)) {
             existing.last_occurrence = occurredAt;
           }
-          if (event.severity > existing.severity) {
-            existing.severity = event.severity;
+          // Handle both number and string severity for display
+          const sevNum = typeof event.severity === 'string' 
+            ? (event.severity === 'critical' ? 20 : event.severity === 'high' ? 15 : event.severity === 'medium' ? 10 : 5)
+            : event.severity;
+          if (sevNum > existing.severity) {
+            existing.severity = sevNum;
           }
         } else {
+          const sevNum = typeof event.severity === 'string' 
+            ? (event.severity === 'critical' ? 20 : event.severity === 'high' ? 15 : event.severity === 'medium' ? 10 : 5)
+            : event.severity;
           typeMap.set(violationType, {
             violation_type: violationType as ViolationSummary['violation_type'],
             count: 1,
-            severity: event.severity,
+            severity: sevNum,
             first_occurrence: occurredAt,
             last_occurrence: occurredAt,
           });
@@ -364,6 +376,44 @@ export class ViolationEventService {
       }
 
       return { success: true, summaries: Array.from(typeMap.values()) };
+    } catch (err) {
+      return { success: false, error: err instanceof Error ? err.message : 'Unknown error' };
+    }
+  }
+
+  static async reviewViolation(
+    violationId: string,
+    isReviewed: boolean,
+    note?: string
+  ): Promise<{ success: boolean; error?: string }> {
+    try {
+      const { data, error } = await supabase.rpc('review_violation', {
+        p_violation_id: violationId,
+        p_is_reviewed: isReviewed,
+        p_note: note ?? null,
+      });
+      if (error) return { success: false, error: error.message };
+      if (!data) return { success: false, error: 'Violation not found' };
+      return { success: true };
+    } catch (err) {
+      return { success: false, error: err instanceof Error ? err.message : 'Unknown error' };
+    }
+  }
+
+  static async overrideSubmissionScore(
+    sessionId: string,
+    overrideScore: number | null,
+    note?: string
+  ): Promise<{ success: boolean; error?: string }> {
+    try {
+      const { data, error } = await supabase.rpc('override_submission_score', {
+        p_session_id: sessionId,
+        p_override_score: overrideScore,
+        p_note: note ?? null,
+      });
+      if (error) return { success: false, error: error.message };
+      if (!data) return { success: false, error: 'Submission not found' };
+      return { success: true };
     } catch (err) {
       return { success: false, error: err instanceof Error ? err.message : 'Unknown error' };
     }
@@ -379,9 +429,16 @@ export class ViolationEventService {
       if (error) return { success: false, error: error.message };
 
       const counts: Record<string, number> = { low: 0, medium: 0, high: 0, critical: 0 };
-      for (const event of data as { severity: number }[]) {
-        const label = event.severity >= 20 ? 'critical' : event.severity >= 15 ? 'high' : event.severity >= 10 ? 'medium' : 'low';
-        counts[label] = (counts[label] || 0) + 1;
+      for (const event of data as { severity: number | string }[]) {
+        let label: string;
+        if (typeof event.severity === 'string') {
+          label = event.severity;
+        } else {
+          label = event.severity >= 20 ? 'critical' : event.severity >= 15 ? 'high' : event.severity >= 10 ? 'medium' : 'low';
+        }
+        if (label in counts) {
+          counts[label] = (counts[label] || 0) + 1;
+        }
       }
       return { success: true, counts };
     } catch (err) {

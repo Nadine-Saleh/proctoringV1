@@ -1,6 +1,7 @@
 import { useEffect, useState } from 'react';
 import { useParams, useNavigate } from 'react-router-dom';
 import { supabase } from '../../lib/supabase/client';
+import { ViolationEventService } from '../../services/ViolationEventService';
 import { EvidenceSnippetService } from '../../services/EvidenceSnippetService';
 import {
   ArrowLeft,
@@ -10,7 +11,10 @@ import {
   Clock,
   Award,
   ShieldAlert,
-  Play
+  Play,
+  Edit2,
+  RotateCcw,
+  MessageSquare,
 } from 'lucide-react';
 
 interface ViolationEvent {
@@ -20,6 +24,8 @@ interface ViolationEvent {
   occurred_at: string;
   description: string | null;
   metadata: Record<string, unknown> | null;
+  is_reviewed: boolean;
+  instructor_note: string | null;
   evidence_artifacts?: Array<{ id: string; storage_path: string }>;
 }
 
@@ -35,6 +41,8 @@ interface SubmissionData {
   auto_graded_max: number;
   final_grade: number | null;
   final_cheating_score: number;
+  instructor_override_score: number | null;
+  instructor_note: string | null;
   calibration_skipped: boolean;
   optimal_distance_cm: number | null;
   distance_tolerance_cm: number | null;
@@ -62,6 +70,18 @@ export const SubmissionDetail = () => {
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
 
+  // Score override state
+  const [showOverrideForm, setShowOverrideForm] = useState(false);
+  const [overrideScore, setOverrideScore] = useState('');
+  const [overrideNote, setOverrideNote] = useState('');
+  const [overrideSaving, setOverrideSaving] = useState(false);
+  const [overrideError, setOverrideError] = useState<string | null>(null);
+
+  // Per-violation review state: id → { saving, showNote, noteText }
+  const [reviewStates, setReviewStates] = useState<
+    Record<string, { saving: boolean; showNote: boolean; noteText: string }>
+  >({});
+
   useEffect(() => {
     if (!examId || !sessionId) return;
 
@@ -70,7 +90,6 @@ export const SubmissionDetail = () => {
       setError(null);
 
       try {
-        // Load submission via list_exam_submissions RPC
         const { data: submissions, error: rpcErr } = await supabase.rpc('list_exam_submissions', {
           p_exam_id: examId,
         });
@@ -85,17 +104,28 @@ export const SubmissionDetail = () => {
         }
         setSubmission(match);
 
-        // Load violation events for this session
         const { data: events } = await supabase
           .from('violation_events')
-          .select('id, violation_type, severity, occurred_at, client_captured_at, description, metadata, evidence_artifacts(id, storage_path)')
+          .select(
+            'id, violation_type, severity, occurred_at, client_captured_at, description, metadata, is_reviewed, instructor_note, evidence_artifacts(id, storage_path)'
+          )
           .eq('session_id', sessionId)
           .order('occurred_at', { ascending: true });
 
         const evArr = (events as ViolationEvent[] | null) ?? [];
         setViolations(evArr);
 
-        // Resolve signed playback URLs for evidence artifacts
+        // Init per-violation review state
+        const initStates: typeof reviewStates = {};
+        for (const ev of evArr) {
+          initStates[ev.id] = {
+            saving: false,
+            showNote: false,
+            noteText: ev.instructor_note ?? '',
+          };
+        }
+        setReviewStates(initStates);
+
         const paths = evArr
           .flatMap(ev => ev.evidence_artifacts ?? [])
           .map(a => a.storage_path)
@@ -114,6 +144,82 @@ export const SubmissionDetail = () => {
 
     load();
   }, [examId, sessionId]);
+
+  const handleToggleReview = async (ev: ViolationEvent) => {
+    const newReviewed = !ev.is_reviewed;
+    const note = reviewStates[ev.id]?.noteText || undefined;
+
+    setReviewStates(prev => ({
+      ...prev,
+      [ev.id]: { ...prev[ev.id], saving: true },
+    }));
+
+    const result = await ViolationEventService.reviewViolation(ev.id, newReviewed, note);
+
+    if (result.success) {
+      setViolations(prev =>
+        prev.map(v =>
+          v.id === ev.id
+            ? { ...v, is_reviewed: newReviewed, instructor_note: note ?? null }
+            : v
+        )
+      );
+    }
+
+    setReviewStates(prev => ({
+      ...prev,
+      [ev.id]: { ...prev[ev.id], saving: false, showNote: false },
+    }));
+  };
+
+  const handleSaveOverride = async () => {
+    if (!sessionId) return;
+    const score = overrideScore === '' ? null : parseFloat(overrideScore);
+    if (score !== null && (isNaN(score) || score < 0 || score > 100)) {
+      setOverrideError('Score must be between 0 and 100.');
+      return;
+    }
+
+    setOverrideSaving(true);
+    setOverrideError(null);
+
+    const result = await ViolationEventService.overrideSubmissionScore(
+      sessionId,
+      score,
+      overrideNote || undefined
+    );
+
+    if (result.success) {
+      setSubmission(prev =>
+        prev
+          ? {
+              ...prev,
+              instructor_override_score: score,
+              instructor_note: overrideNote || null,
+            }
+          : prev
+      );
+      setShowOverrideForm(false);
+      setOverrideScore('');
+      setOverrideNote('');
+    } else {
+      setOverrideError(result.error ?? 'Failed to save override.');
+    }
+
+    setOverrideSaving(false);
+  };
+
+  const handleRemoveOverride = async () => {
+    if (!sessionId) return;
+    setOverrideSaving(true);
+    const result = await ViolationEventService.overrideSubmissionScore(sessionId, null);
+    if (result.success) {
+      setSubmission(prev =>
+        prev ? { ...prev, instructor_override_score: null, instructor_note: null } : prev
+      );
+    }
+    setOverrideSaving(false);
+  };
 
   if (loading) {
     return (
@@ -137,9 +243,16 @@ export const SubmissionDetail = () => {
     );
   }
 
-  const scorePercent = submission.auto_graded_max > 0
-    ? Math.round((submission.auto_graded_score / submission.auto_graded_max) * 100)
-    : 0;
+  const scorePercent =
+    submission.auto_graded_max > 0
+      ? Math.round((submission.auto_graded_score / submission.auto_graded_max) * 100)
+      : 0;
+
+  const effectiveRiskScore =
+    submission.instructor_override_score ?? submission.final_cheating_score;
+  const isOverridden = submission.instructor_override_score !== null;
+
+  const reviewedCount = violations.filter(v => v.is_reviewed).length;
 
   return (
     <div className="min-h-screen bg-gray-50">
@@ -167,18 +280,39 @@ export const SubmissionDetail = () => {
             </div>
             <div className="flex items-center gap-4 flex-wrap">
               <div className="text-center">
-                <p className="text-xs text-gray-500 mb-1 flex items-center gap-1"><Award className="w-3 h-3" /> Grade</p>
+                <p className="text-xs text-gray-500 mb-1 flex items-center gap-1">
+                  <Award className="w-3 h-3" /> Grade
+                </p>
                 <p className="text-xl font-bold text-gray-900">{scorePercent}%</p>
-                <p className="text-xs text-gray-400">{submission.auto_graded_score} / {submission.auto_graded_max} pts</p>
-              </div>
-              <div className="text-center">
-                <p className="text-xs text-gray-500 mb-1 flex items-center gap-1"><ShieldAlert className="w-3 h-3" /> Risk Score</p>
-                <p className={`text-xl font-bold ${submission.final_cheating_score >= 70 ? 'text-red-600' : submission.final_cheating_score >= 40 ? 'text-amber-600' : 'text-green-600'}`}>
-                  {Math.round(submission.final_cheating_score)}
+                <p className="text-xs text-gray-400">
+                  {submission.auto_graded_score} / {submission.auto_graded_max} pts
                 </p>
               </div>
               <div className="text-center">
-                <p className="text-xs text-gray-500 mb-1 flex items-center gap-1"><Clock className="w-3 h-3" /> Submitted</p>
+                <p className="text-xs text-gray-500 mb-1 flex items-center gap-1">
+                  <ShieldAlert className="w-3 h-3" /> Risk Score
+                </p>
+                <p
+                  className={`text-xl font-bold ${
+                    effectiveRiskScore >= 70
+                      ? 'text-red-600'
+                      : effectiveRiskScore >= 40
+                      ? 'text-amber-600'
+                      : 'text-green-600'
+                  }`}
+                >
+                  {Math.round(effectiveRiskScore)}
+                </p>
+                {isOverridden && (
+                  <p className="text-xs text-indigo-500">
+                    overridden from {Math.round(submission.final_cheating_score)}
+                  </p>
+                )}
+              </div>
+              <div className="text-center">
+                <p className="text-xs text-gray-500 mb-1 flex items-center gap-1">
+                  <Clock className="w-3 h-3" /> Submitted
+                </p>
                 <p className="text-sm font-medium text-gray-700">
                   {new Date(submission.submitted_at).toLocaleString()}
                 </p>
@@ -188,15 +322,117 @@ export const SubmissionDetail = () => {
           </div>
         </div>
 
-        {/* T084a — Calibration baseline notice */}
+        {/* Score override panel */}
+        <div className="bg-white rounded-xl shadow-sm border border-gray-200 p-5 mb-6">
+          <div className="flex items-center justify-between mb-2">
+            <h2 className="font-semibold text-gray-900 text-sm">Instructor Risk Score Override</h2>
+            <div className="flex gap-2">
+              {isOverridden && (
+                <button
+                  onClick={handleRemoveOverride}
+                  disabled={overrideSaving}
+                  className="flex items-center gap-1 text-xs text-gray-500 hover:text-red-600 disabled:opacity-50"
+                >
+                  <RotateCcw className="w-3 h-3" /> Remove override
+                </button>
+              )}
+              {!showOverrideForm && (
+                <button
+                  onClick={() => {
+                    setOverrideScore(
+                      submission.instructor_override_score != null
+                        ? String(Math.round(submission.instructor_override_score))
+                        : ''
+                    );
+                    setOverrideNote(submission.instructor_note ?? '');
+                    setShowOverrideForm(true);
+                  }}
+                  className="flex items-center gap-1 text-xs text-indigo-600 hover:text-indigo-800"
+                >
+                  <Edit2 className="w-3 h-3" /> {isOverridden ? 'Edit override' : 'Set override'}
+                </button>
+              )}
+            </div>
+          </div>
+
+          {isOverridden && !showOverrideForm && (
+            <p className="text-sm text-gray-600">
+              Score overridden to{' '}
+              <strong>{Math.round(submission.instructor_override_score!)}</strong>
+              {submission.instructor_note && (
+                <span className="text-gray-400"> — "{submission.instructor_note}"</span>
+              )}
+            </p>
+          )}
+
+          {!isOverridden && !showOverrideForm && (
+            <p className="text-xs text-gray-400">
+              Final score is {Math.round(submission.final_cheating_score)} (peak during exam). You
+              can override it after reviewing the violations below.
+            </p>
+          )}
+
+          {showOverrideForm && (
+            <div className="mt-3 space-y-3">
+              <div className="flex items-center gap-3">
+                <div>
+                  <label className="block text-xs font-medium text-gray-700 mb-1">
+                    New score (0–100)
+                  </label>
+                  <input
+                    type="number"
+                    min={0}
+                    max={100}
+                    value={overrideScore}
+                    onChange={e => setOverrideScore(e.target.value)}
+                    placeholder="e.g. 25"
+                    className="w-28 px-3 py-1.5 border border-gray-300 rounded-lg text-sm focus:ring-2 focus:ring-indigo-400 focus:outline-none"
+                  />
+                </div>
+                <div className="flex-1">
+                  <label className="block text-xs font-medium text-gray-700 mb-1">
+                    Reason (optional)
+                  </label>
+                  <input
+                    type="text"
+                    value={overrideNote}
+                    onChange={e => setOverrideNote(e.target.value)}
+                    placeholder="e.g. Reviewed — violations appear accidental"
+                    className="w-full px-3 py-1.5 border border-gray-300 rounded-lg text-sm focus:ring-2 focus:ring-indigo-400 focus:outline-none"
+                  />
+                </div>
+              </div>
+              {overrideError && (
+                <p className="text-xs text-red-600">{overrideError}</p>
+              )}
+              <div className="flex gap-2">
+                <button
+                  onClick={handleSaveOverride}
+                  disabled={overrideSaving}
+                  className="px-4 py-1.5 rounded-lg bg-indigo-600 text-white text-sm font-medium hover:bg-indigo-700 disabled:opacity-50"
+                >
+                  {overrideSaving ? 'Saving…' : 'Save'}
+                </button>
+                <button
+                  onClick={() => setShowOverrideForm(false)}
+                  className="px-4 py-1.5 rounded-lg bg-gray-100 text-gray-700 text-sm font-medium hover:bg-gray-200"
+                >
+                  Cancel
+                </button>
+              </div>
+            </div>
+          )}
+        </div>
+
+        {/* Calibration notice */}
         {submission.calibration_skipped ? (
           <div className="bg-orange-50 border border-orange-200 rounded-xl p-4 mb-6 flex items-start gap-3">
             <ArrowLeftRight className="w-5 h-5 text-orange-500 flex-shrink-0 mt-0.5" />
             <div>
               <p className="font-semibold text-orange-800">Calibration skipped</p>
               <p className="text-sm text-orange-700 mt-0.5">
-                Distance violations were measured against the conservative default of 50 cm ± 20 cm.
-                Distance-derived violations should be discounted during adjudication (FR-013b / FR-028).
+                Distance violations were measured against the default 50 cm ± 20 cm. Discount
+                distance-related violations during review.
               </p>
             </div>
           </div>
@@ -212,8 +448,15 @@ export const SubmissionDetail = () => {
 
         {/* Violation timeline */}
         <div className="bg-white rounded-xl shadow-sm border border-gray-200 overflow-hidden">
-          <div className="px-6 py-4 border-b border-gray-200">
-            <h2 className="font-semibold text-gray-900">Violation Timeline ({violations.length})</h2>
+          <div className="px-6 py-4 border-b border-gray-200 flex items-center justify-between">
+            <h2 className="font-semibold text-gray-900">
+              Violation Timeline ({violations.length})
+            </h2>
+            {violations.length > 0 && (
+              <span className="text-xs text-gray-500">
+                {reviewedCount} / {violations.length} reviewed
+              </span>
+            )}
           </div>
 
           {violations.length === 0 ? (
@@ -223,49 +466,118 @@ export const SubmissionDetail = () => {
             </div>
           ) : (
             <div className="divide-y divide-gray-100">
-              {violations.map(ev => (
-                <div key={ev.id} className="px-6 py-4">
-                  <div className="flex items-start justify-between gap-3">
-                    <div className="flex-1">
-                      <div className="flex items-center gap-2 mb-1">
-                        <span className={`inline-block px-2 py-0.5 rounded text-xs font-medium border ${getSeverityColor(ev.severity)}`}>
-                          {formatViolationType(ev.violation_type)}
-                        </span>
-                        <span className="text-xs text-gray-400">
-                          {new Date(ev.occurred_at).toLocaleTimeString()}
-                        </span>
+              {violations.map(ev => {
+                const rs = reviewStates[ev.id] ?? {
+                  saving: false,
+                  showNote: false,
+                  noteText: ev.instructor_note ?? '',
+                };
+
+                return (
+                  <div
+                    key={ev.id}
+                    className={`px-6 py-4 transition-colors ${ev.is_reviewed ? 'bg-gray-50' : ''}`}
+                  >
+                    <div className="flex items-start justify-between gap-3">
+                      <div className="flex-1">
+                        <div className="flex items-center gap-2 mb-1 flex-wrap">
+                          <span
+                            className={`inline-block px-2 py-0.5 rounded text-xs font-medium border ${getSeverityColor(ev.severity)}`}
+                          >
+                            {formatViolationType(ev.violation_type)}
+                          </span>
+                          <span className="text-xs text-gray-400">
+                            {new Date(ev.occurred_at).toLocaleTimeString()}
+                          </span>
+                          {ev.is_reviewed && (
+                            <span className="flex items-center gap-1 text-xs text-green-600 font-medium">
+                              <CheckCircle className="w-3 h-3" /> Reviewed
+                            </span>
+                          )}
+                        </div>
+
+                        {ev.description && (
+                          <p className="text-sm text-gray-600">{ev.description}</p>
+                        )}
+
+                        {ev.instructor_note && (
+                          <p className="text-xs text-indigo-600 mt-1 flex items-center gap-1">
+                            <MessageSquare className="w-3 h-3" /> {ev.instructor_note}
+                          </p>
+                        )}
+
+                        {/* Note input (shown when adding/editing note) */}
+                        {rs.showNote && (
+                          <div className="mt-2">
+                            <input
+                              type="text"
+                              value={rs.noteText}
+                              onChange={e =>
+                                setReviewStates(prev => ({
+                                  ...prev,
+                                  [ev.id]: { ...prev[ev.id], noteText: e.target.value },
+                                }))
+                              }
+                              placeholder="Add a note (optional)"
+                              className="w-full max-w-sm px-3 py-1.5 border border-gray-300 rounded-lg text-xs focus:ring-2 focus:ring-indigo-400 focus:outline-none"
+                            />
+                          </div>
+                        )}
                       </div>
-                      {ev.description && (
-                        <p className="text-sm text-gray-600">{ev.description}</p>
-                      )}
-                      {ev.metadata && Object.keys(ev.metadata).length > 0 && (
-                        <p className="text-xs text-gray-400 mt-1">
-                          {Object.entries(ev.metadata)
-                            .map(([k, v]) => `${k}: ${v}`)
-                            .join(' · ')}
-                        </p>
-                      )}
-                    </div>
-                    {/* Evidence playback */}
-                    {ev.evidence_artifacts?.map(artifact => {
-                      const url = playbackUrls.get(artifact.storage_path);
-                      if (!url) return null;
-                      return (
-                        <a
-                          key={artifact.id}
-                          href={url}
-                          target="_blank"
-                          rel="noreferrer"
-                          className="flex items-center gap-1 text-xs text-indigo-600 hover:underline flex-shrink-0"
+
+                      <div className="flex items-center gap-2 flex-shrink-0">
+                        {/* Evidence playback */}
+                        {ev.evidence_artifacts?.map(artifact => {
+                          const url = playbackUrls.get(artifact.storage_path);
+                          if (!url) return null;
+                          return (
+                            <a
+                              key={artifact.id}
+                              href={url}
+                              target="_blank"
+                              rel="noreferrer"
+                              className="flex items-center gap-1 text-xs text-indigo-600 hover:underline"
+                            >
+                              <Play className="w-3.5 h-3.5" /> View
+                            </a>
+                          );
+                        })}
+
+                        {/* Note toggle */}
+                        <button
+                          onClick={() =>
+                            setReviewStates(prev => ({
+                              ...prev,
+                              [ev.id]: { ...prev[ev.id], showNote: !prev[ev.id]?.showNote },
+                            }))
+                          }
+                          className="text-gray-400 hover:text-indigo-600 p-1 rounded"
+                          title="Add/edit note"
                         >
-                          <Play className="w-3.5 h-3.5" />
-                          View
-                        </a>
-                      );
-                    })}
+                          <MessageSquare className="w-3.5 h-3.5" />
+                        </button>
+
+                        {/* Mark reviewed / unreviewed */}
+                        <button
+                          onClick={() => handleToggleReview(ev)}
+                          disabled={rs.saving}
+                          className={`px-3 py-1 rounded-lg text-xs font-medium transition-colors disabled:opacity-50 ${
+                            ev.is_reviewed
+                              ? 'bg-gray-200 text-gray-600 hover:bg-gray-300'
+                              : 'bg-green-100 text-green-700 hover:bg-green-200 border border-green-200'
+                          }`}
+                        >
+                          {rs.saving
+                            ? '…'
+                            : ev.is_reviewed
+                            ? 'Mark unreviewed'
+                            : 'Mark reviewed'}
+                        </button>
+                      </div>
+                    </div>
                   </div>
-                </div>
-              ))}
+                );
+              })}
             </div>
           )}
         </div>

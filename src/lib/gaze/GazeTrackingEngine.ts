@@ -464,7 +464,7 @@ export class GazeTrackingEngine {
     
     const eyeOffset = this.calculateAverageEyeOffset(leftPupilPos, rightPupilPos);
     const gazeAngle = this.calculateScreenCenterAngle(headPose, eyeOffset);
-    const zone = this.determineGazeZone(gazeAngle, leftPupilPos, rightPupilPos);
+    const zone = this.determineGazeZone(leftPupilPos, rightPupilPos);
     
     // Check blinking
     const isBlinking = leftEyeOpen < this.config.blinkThreshold && 
@@ -496,7 +496,6 @@ export class GazeTrackingEngine {
   }
 
   private determineGazeZone(
-    gazeAngle: number,
     leftPupil: { x: number; y: number } | null,
     rightPupil: { x: number; y: number } | null
   ): GazeZone['id'] {
@@ -504,9 +503,33 @@ export class GazeTrackingEngine {
       return 'no_face';
     }
 
-    if (gazeAngle < 15) return 'on_screen';
-    if (gazeAngle <= 45) return 'peripheral';
-    return 'away';
+    // Iris-only classification. Head pose is intentionally ignored — only the
+    // iris offset relative to the calibrated screen-edge thresholds determines
+    // the zone. Multipliers shape the bands:
+    //   peripheral ≈ 1.8× threshold (iris just past the screen edge)
+    //   away       ≈ 2.8× threshold (iris clearly outside the laptop frame)
+    const eyeOffsetX = (leftPupil.x + rightPupil.x) / 2;
+    const eyeOffsetY = (leftPupil.y + rightPupil.y) / 2;
+
+    const cal = this.calibration;
+    const PERIPHERAL_MULT = 1.8;
+    const AWAY_MULT = 2.8;
+
+    const irisPeripheral =
+      eyeOffsetX < cal.leftThreshold * PERIPHERAL_MULT ||
+      eyeOffsetX > cal.rightThreshold * PERIPHERAL_MULT ||
+      eyeOffsetY < cal.upThreshold * PERIPHERAL_MULT ||
+      eyeOffsetY > cal.downThreshold * PERIPHERAL_MULT;
+
+    const irisAway =
+      eyeOffsetX < cal.leftThreshold * AWAY_MULT ||
+      eyeOffsetX > cal.rightThreshold * AWAY_MULT ||
+      eyeOffsetY < cal.upThreshold * AWAY_MULT ||
+      eyeOffsetY > cal.downThreshold * AWAY_MULT;
+
+    if (irisAway) return 'away';
+    if (irisPeripheral) return 'peripheral';
+    return 'on_screen';
   }
 
   private calculateAverageEyeOffset(

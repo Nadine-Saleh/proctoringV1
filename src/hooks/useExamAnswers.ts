@@ -17,7 +17,6 @@ interface UseExamAnswersReturn {
 
   // Time tracking per question
   questionTimes: Map<string, number>; // questionId -> seconds spent
-  currentQuestionStartTime: number;
 
   // Actions
   selectAnswer: (questionId: string, optionIndex: number) => void;
@@ -41,7 +40,10 @@ export function useExamAnswers(totalQuestions: number): UseExamAnswersReturn {
 
   // Time tracking
   const [questionTimes, setQuestionTimes] = useState<Map<string, number>>(new Map());
-  const [currentQuestionStartTime, setCurrentQuestionStartTime] = useState(0);
+  // Held in a ref (not state) because nothing renders from it and storing it as
+  // state previously made setCurrentQuestion's identity flip every call, which
+  // looped the useEffect in useExamFlow that calls it.
+  const currentQuestionStartTimeRef = useRef(0);
   const currentQuestionIdRef = useRef<string | null>(null);
 
   // Sync state
@@ -51,11 +53,24 @@ export function useExamAnswers(totalQuestions: number): UseExamAnswersReturn {
   // Track dirty answers (need to be synced)
   const dirtyAnswersRef = useRef<Set<string>>(new Set());
 
+  // Debounced auto-sync
+  const syncTimeoutRef = useRef<ReturnType<typeof setTimeout> | null>(null);
+  const scheduleSync = useCallback(() => {
+    if (syncTimeoutRef.current) {
+      clearTimeout(syncTimeoutRef.current);
+    }
+
+    syncTimeoutRef.current = setTimeout(() => {
+      // Sync will be triggered by the component when sessionId is available
+      // This just clears the timeout
+    }, 5000);
+  }, []);
+
   // Track start time when question becomes active
   const setCurrentQuestion = useCallback((questionId: string | null) => {
     // Save time spent on previous question
-    if (currentQuestionIdRef.current && currentQuestionStartTime > 0) {
-      const timeSpent = Math.floor((Date.now() - currentQuestionStartTime) / 1000);
+    if (currentQuestionIdRef.current && currentQuestionStartTimeRef.current > 0) {
+      const timeSpent = Math.floor((Date.now() - currentQuestionStartTimeRef.current) / 1000);
       setQuestionTimes(prev => {
         const updated = new Map(prev);
         const prevTime = updated.get(currentQuestionIdRef.current!) ?? 0;
@@ -66,12 +81,8 @@ export function useExamAnswers(totalQuestions: number): UseExamAnswersReturn {
 
     // Set new question start time
     currentQuestionIdRef.current = questionId;
-    if (questionId) {
-      setCurrentQuestionStartTime(Date.now());
-    } else {
-      setCurrentQuestionStartTime(0);
-    }
-  }, [currentQuestionStartTime]);
+    currentQuestionStartTimeRef.current = questionId ? Date.now() : 0;
+  }, []);
 
   /**
    * Select an answer for a question
@@ -150,6 +161,7 @@ export function useExamAnswers(totalQuestions: number): UseExamAnswersReturn {
       const answersToSync: Array<{
         session_id: string;
         question_id: string;
+        answer: { selected_answer: string | null };
         selected_answer: string | null;
         time_spent_seconds: number | null;
         answer_order: number;
@@ -159,11 +171,13 @@ export function useExamAnswers(totalQuestions: number): UseExamAnswersReturn {
       for (const questionId of dirtyAnswersRef.current) {
         const optionIndex = answers.get(questionId);
         const timeSpent = questionTimes.get(questionId) ?? null;
+        const selectedAnswer = optionIndex !== undefined ? String(optionIndex) : null;
 
         answersToSync.push({
           session_id: sessionId,
           question_id: questionId,
-          selected_answer: optionIndex !== undefined ? String(optionIndex) : null,
+          answer: { selected_answer: selectedAnswer },
+          selected_answer: selectedAnswer,
           time_spent_seconds: timeSpent,
           answer_order: order++,
         });
@@ -189,19 +203,6 @@ export function useExamAnswers(totalQuestions: number): UseExamAnswersReturn {
     }
   }, [answers, questionTimes]);
 
-  // Debounced auto-sync
-  const syncTimeoutRef = useRef<ReturnType<typeof setTimeout> | null>(null);
-  const scheduleSync = useCallback(() => {
-    if (syncTimeoutRef.current) {
-      clearTimeout(syncTimeoutRef.current);
-    }
-
-    syncTimeoutRef.current = setTimeout(() => {
-      // Sync will be triggered by the component when sessionId is available
-      // This just clears the timeout
-    }, 5000);
-  }, []);
-
   /**
    * Reset all answer state
    */
@@ -209,7 +210,7 @@ export function useExamAnswers(totalQuestions: number): UseExamAnswersReturn {
     setAnswers(new Map());
     setAnsweredCount(0);
     setQuestionTimes(new Map());
-    setCurrentQuestionStartTime(0);
+    currentQuestionStartTimeRef.current = 0;
     currentQuestionIdRef.current = null;
     dirtyAnswersRef.current.clear();
     setSyncError(null);
@@ -234,7 +235,6 @@ export function useExamAnswers(totalQuestions: number): UseExamAnswersReturn {
 
     // Time tracking
     questionTimes,
-    currentQuestionStartTime,
 
     // Actions
     selectAnswer,
