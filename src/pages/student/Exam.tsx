@@ -8,6 +8,7 @@ import { ExamHeader } from '../../components/layout/ExamHeader';
 import { WarningBanner } from '../../components/layout/WarningBanner';
 import { QuestionPanel } from '../../components/questions/QuestionPanel';
 import { ProctoringSidebar } from '../../components/proctoring/ProctoringSidebar';
+
 import { useExamFlow } from '../../hooks/useExamFlow';
 
 const LoadingScreen = ({ message }: { message: string }) => (
