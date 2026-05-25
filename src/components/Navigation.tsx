@@ -1,6 +1,13 @@
 import { Link, useLocation } from 'react-router-dom';
 import { useApp } from '../context/AppContext';
-import { Home, FileText, BarChart3, Shield, LogOut } from 'lucide-react';
+import {
+  Home,
+  FileText,
+  BarChart3,
+  Shield,
+  LogOut,
+  Crown,
+} from 'lucide-react';
 
 interface NavigationProps {
   onSignOut?: () => void;
@@ -13,9 +20,14 @@ interface NavLink {
   icon: typeof Home;
 }
 
-export const Navigation = ({ onSignOut, userName }: NavigationProps) => {
+export const Navigation = ({
+  onSignOut,
+  userName,
+}: NavigationProps) => {
   const { role } = useApp();
   const location = useLocation();
+
+  const isAdmin = localStorage.getItem('isAdmin') === 'true';
 
   const studentLinks: NavLink[] = [
     { to: '/', label: 'Home', icon: Home },
@@ -29,9 +41,19 @@ export const Navigation = ({ onSignOut, userName }: NavigationProps) => {
     { to: '/instructor/proctoring', label: 'Proctoring', icon: Shield },
   ];
 
-  const links = role === 'student' ? studentLinks : instructorLinks;
+  const adminLinks: NavLink[] = [
+    { to: '/admin', label: 'Admin Dashboard', icon: Crown },
+  ];
+
+  const links = isAdmin
+    ? adminLinks
+    : role === 'student'
+    ? studentLinks
+    : instructorLinks;
 
   const getInitials = () => {
+    if (isAdmin) return 'AD';
+
     if (userName) {
       return userName
         .split(' ')
@@ -40,7 +62,22 @@ export const Navigation = ({ onSignOut, userName }: NavigationProps) => {
         .toUpperCase()
         .slice(0, 2);
     }
+
     return role === 'student' ? 'S' : 'I';
+  };
+
+  const handleLogout = () => {
+    // admin logout
+    if (isAdmin) {
+      localStorage.removeItem('isAdmin');
+      window.location.href = '/login';
+      return;
+    }
+
+    // normal user logout
+    if (onSignOut) {
+      onSignOut();
+    }
   };
 
   return (
@@ -48,16 +85,35 @@ export const Navigation = ({ onSignOut, userName }: NavigationProps) => {
       <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8">
         <div className="flex justify-between items-center h-16">
           <div className="flex items-center gap-8">
-            <Link to={role === 'student' ? '/' : '/instructor'} className="flex items-center gap-2.5">
+            <Link
+              to={
+                isAdmin
+                  ? '/admin'
+                  : role === 'student'
+                  ? '/'
+                  : '/instructor'
+              }
+              className="flex items-center gap-2.5"
+            >
               <div className="relative w-9 h-9 rounded-lg bg-brand-gradient flex items-center justify-center shadow-soft">
-                <Shield className="w-4.5 h-4.5 text-white" />
+                {isAdmin ? (
+                  <Crown className="w-4.5 h-4.5 text-white" />
+                ) : (
+                  <Shield className="w-4.5 h-4.5 text-white" />
+                )}
               </div>
+
               <div className="leading-tight">
                 <div className="text-base font-semibold text-ink-900 tracking-tight2">
                   Examify
                 </div>
+
                 <div className="text-2xs uppercase tracking-wider text-brand-700 font-semibold -mt-0.5">
-                  {role === 'student' ? 'Student' : 'Instructor'}
+                  {isAdmin
+                    ? 'Admin Panel'
+                    : role === 'student'
+                    ? 'Student'
+                    : 'Instructor'}
                 </div>
               </div>
             </Link>
@@ -65,10 +121,15 @@ export const Navigation = ({ onSignOut, userName }: NavigationProps) => {
             <div className="hidden md:flex items-center gap-1 bg-ink-50 p-1 rounded-lg border border-ink-100">
               {links.map((link) => {
                 const Icon = link.icon;
+
                 const isActive =
-                  link.to === '/' || link.to === '/instructor'
+                  link.to === '/' ||
+                  link.to === '/instructor' ||
+                  link.to === '/admin' ||
+                  link.to === '/results'
                     ? location.pathname === link.to
                     : location.pathname.startsWith(link.to);
+
                 return (
                   <Link
                     key={link.to}
@@ -92,20 +153,37 @@ export const Navigation = ({ onSignOut, userName }: NavigationProps) => {
           </div>
 
           <div className="flex items-center gap-3">
-            {userName && (
+            {userName && !isAdmin && (
               <div className="hidden sm:block text-right leading-tight mr-1">
                 <div className="text-sm font-medium text-ink-900 truncate max-w-[140px]">
                   {userName}
                 </div>
-                <div className="text-2xs text-ink-500 capitalize">{role}</div>
+
+                <div className="text-2xs text-ink-500 capitalize">
+                  {role}
+                </div>
               </div>
             )}
+
+            {isAdmin && (
+              <div className="hidden sm:block text-right leading-tight mr-1">
+                <div className="text-sm font-medium text-red-600">
+                  System Admin
+                </div>
+
+                <div className="text-2xs text-ink-500">
+                  Full Access
+                </div>
+              </div>
+            )}
+
             <div className="w-9 h-9 rounded-full bg-brand-gradient flex items-center justify-center text-white font-semibold text-sm shadow-soft ring-2 ring-white">
               {getInitials()}
             </div>
-            {onSignOut && (
+
+            {(onSignOut || isAdmin) && (
               <button
-                onClick={onSignOut}
+                onClick={handleLogout}
                 className="inline-flex items-center justify-center w-9 h-9 rounded-lg text-ink-500 hover:text-danger-700 hover:bg-danger-50 transition-colors"
                 title="Sign out"
                 aria-label="Sign out"
