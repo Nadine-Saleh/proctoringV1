@@ -70,6 +70,7 @@ export class IdentityVerificationService {
     videoEl: HTMLVideoElement
   ): Promise<Float32Array | null> {
     await this.loadFaceApiModels();
+<<<<<<< HEAD
 
     const faceapi = await import('face-api.js');
 
@@ -118,10 +119,27 @@ export class IdentityVerificationService {
    */
   static async joinExam(
     accessCode: string
+=======
+    const faceapi = await import('face-api.js');
+
+    const detection = await faceapi
+      .detectSingleFace(videoEl, new faceapi.TinyFaceDetectorOptions())
+      .withFaceLandmarks(true)
+      .withFaceDescriptor();
+
+    if (!detection) return null;
+    return detection.descriptor;
+  }
+
+  static async joinExam(
+    accessCode: string,
+    freshCapture = false
+>>>>>>> 34973dc7a6f854660fffbd19207aa301fb818fc0
   ): Promise<{ success: boolean; data?: JoinExamResponse; error?: string }> {
     try {
       const { data, error } = await supabase.rpc('join_exam', {
         p_access_code: accessCode.toUpperCase(),
+<<<<<<< HEAD
         p_fresh_capture: false,
       });
 
@@ -173,11 +191,24 @@ export class IdentityVerificationService {
    * وظيفتها تحفظ face embedding مرة واحدة فقط.
    * ممنوع استخدامها قبل الامتحان.
    */
+=======
+        p_fresh_capture: freshCapture,
+      });
+
+      if (error) return { success: false, error: error.message };
+      return { success: true, data: data as JoinExamResponse };
+    } catch (err) {
+      return { success: false, error: err instanceof Error ? err.message : 'Unknown error' };
+    }
+  }
+
+>>>>>>> 34973dc7a6f854660fffbd19207aa301fb818fc0
   static async saveReferenceEmbedding(
     embedding: Float32Array,
     qualityScore: number
   ): Promise<{ success: boolean; error?: string }> {
     try {
+<<<<<<< HEAD
       // qualityScore مش موجود كعمود في جدول student_faces
       // سايبينه عشان أي كود بينادي الدالة دي ما يتكسرش
       void qualityScore;
@@ -223,6 +254,25 @@ export class IdentityVerificationService {
    * بتبعت صورة/embedding جديد للمقارنة مع القديم.
    * لا تحفظ reference جديدة.
    */
+=======
+      const { data: { user } } = await supabase.auth.getUser();
+      if (!user) return { success: false, error: 'Not authenticated' };
+
+      const { error } = await supabase.from('student_face_references').upsert({
+        student_id: user.id,
+        embedding: Array.from(embedding),
+        quality_score: qualityScore,
+        captured_at: new Date().toISOString(),
+      });
+
+      if (error) return { success: false, error: error.message };
+      return { success: true };
+    } catch (err) {
+      return { success: false, error: err instanceof Error ? err.message : 'Unknown error' };
+    }
+  }
+
+>>>>>>> 34973dc7a6f854660fffbd19207aa301fb818fc0
   static async verifyIdentity(
     sessionId: string,
     embedding: Float32Array
@@ -233,6 +283,7 @@ export class IdentityVerificationService {
         p_embedding: Array.from(embedding),
       });
 
+<<<<<<< HEAD
       if (error) {
         return { success: false, error: error.message };
       }
@@ -243,6 +294,12 @@ export class IdentityVerificationService {
         success: false,
         error: err instanceof Error ? err.message : 'Unknown error',
       };
+=======
+      if (error) return { success: false, error: error.message };
+      return { success: true, data: data as VerificationResponse };
+    } catch (err) {
+      return { success: false, error: err instanceof Error ? err.message : 'Unknown error' };
+>>>>>>> 34973dc7a6f854660fffbd19207aa301fb818fc0
     }
   }
 
@@ -256,6 +313,7 @@ export class IdentityVerificationService {
         p_calibration: calibration,
       });
 
+<<<<<<< HEAD
       if (error) {
         return { success: false, error: error.message };
       }
@@ -266,6 +324,12 @@ export class IdentityVerificationService {
         success: false,
         error: err instanceof Error ? err.message : 'Unknown error',
       };
+=======
+      if (error) return { success: false, error: error.message };
+      return { success: true, data: data as StartSessionResponse };
+    } catch (err) {
+      return { success: false, error: err instanceof Error ? err.message : 'Unknown error' };
+>>>>>>> 34973dc7a6f854660fffbd19207aa301fb818fc0
     }
   }
 
@@ -287,6 +351,7 @@ export class IdentityVerificationService {
   }> {
     try {
       const { data, error } = await supabase.rpc('list_my_sessions');
+<<<<<<< HEAD
 
       if (error) {
         return { success: false, error: error.message };
@@ -301,3 +366,12 @@ export class IdentityVerificationService {
     }
   }
 }
+=======
+      if (error) return { success: false, error: error.message };
+      return { success: true, sessions: data as any[] };
+    } catch (err) {
+      return { success: false, error: err instanceof Error ? err.message : 'Unknown error' };
+    }
+  }
+}
+>>>>>>> 34973dc7a6f854660fffbd19207aa301fb818fc0
