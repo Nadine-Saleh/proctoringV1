@@ -101,7 +101,7 @@ export const useFaceDetection = (props: UseFaceDetectionProps = {}): UseFaceDete
       livenessModuleRef.current.on(LivenessEvent.VERIFICATION_COMPLETE, verificationCompleteHandler);
 
       // Store handlers for cleanup
-      (livenessModuleRef.current as Record<string, unknown>)._handlers = {
+      (livenessModuleRef.current as unknown as Record<string, unknown>)._handlers = {
         stepStartedHandler,
         stepPassedHandler,
         progressUpdatedHandler,
@@ -112,7 +112,7 @@ export const useFaceDetection = (props: UseFaceDetectionProps = {}): UseFaceDete
 
     return () => {
       // Cleanup event listeners
-      if (livenessModuleRef.current && (livenessModuleRef.current as Record<string, unknown>)._handlers) {
+      if (livenessModuleRef.current && (livenessModuleRef.current as unknown as Record<string, unknown>)._handlers) {
         // We don't have a way to remove handlers without storing them separately, 
         // so we'll skip removal in this simplified implementation
       }

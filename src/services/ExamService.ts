@@ -8,6 +8,7 @@ export interface Exam {
   description: string | null;
   starts_at: string;
   duration_minutes: number;
+  duration?: number;
   status: 'draft' | 'published' | 'closed';
   proctoring_policy: ProctoringPolicy;
   access_code: string | null;

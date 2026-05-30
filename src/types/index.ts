@@ -62,7 +62,7 @@ export interface ProctoringEvent {
   type: ProctoringEventType;
   severity: ProctoringSeverity;
   description: string;
-  evidenceImage?: string;
+ evidenceImage?: string | null;
 }
 
 export type ProctoringEventType =

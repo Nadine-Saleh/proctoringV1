@@ -289,7 +289,7 @@ export const useLivenessCheck = (): UseLivenessCheckReturn => {
               expressions: d.expressions
             }));
 
-            livenessModuleRef.current.processFrame(mappedDetections as unknown[]);
+            livenessModuleRef.current.processFrame(mappedDetections as any);
           }
         }
       } catch (err) {
@@ -313,7 +313,7 @@ export const useLivenessCheck = (): UseLivenessCheckReturn => {
       };
 
       const onTimeout = (data?: unknown) => {
-        const stepName = (data as Record<string, unknown>)?.step ? ((data as Record<string, { step?: { name?: string } }>).step?.name || 'current') : 'current';
+       const stepName = (data as { step?: { name?: string } })?.step?.name || 'current';
         handleCompletion(false, `Step "${stepName}" timed out. Please try again.`);
         cleanupModuleListeners();
       };

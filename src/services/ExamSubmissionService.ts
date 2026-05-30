@@ -192,7 +192,9 @@ export class ExamSubmissionService {
         .eq('id', session_id)
         .single();
       sessionErr = fallback.error;
-      sessionRow = fallback.data;
+     sessionRow = fallback.data
+  ? { ...fallback.data, peak_cheating_score: fallback.data.live_cheating_score ?? 0 }
+  : null;
     }
 
     if (sessionErr || !sessionRow) {
