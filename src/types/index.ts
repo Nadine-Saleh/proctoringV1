@@ -62,13 +62,18 @@ export interface ProctoringEvent {
   type: ProctoringEventType;
   severity: ProctoringSeverity;
   description: string;
+  evidenceImage?: string;
 }
 
-export type ProctoringEventType = 
+export type ProctoringEventType =
   | 'face_not_detected'
   | 'multiple_faces'
   | 'tab_switch'
-  | 'phone_detected';
+  | 'phone_detected'
+  | 'looking_away'
+  | 'eye_closure'
+  | 'rapid_eye_movement'
+  | 'excessive_blinking';
 
 export type ProctoringSeverity = 'low' | 'medium' | 'high' | 'critical';
 
