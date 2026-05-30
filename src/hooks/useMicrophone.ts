@@ -102,7 +102,7 @@ export const useMicrophone = (): UseMicrophoneReturn => {
         if (permissionState === 'denied') {
           throw new Error('Microphone permission is blocked in browser settings. Please enable it in site settings.');
         }
-      } catch (permErr) {
+      } catch (_permErr) {
         // Some browsers don't support permissions query, continue anyway
         log('Permission query not supported, proceeding with getUserMedia');
       }
