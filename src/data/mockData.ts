@@ -66,7 +66,7 @@ export const mockProctoringEvents: ProctoringEvent[] = [
     type: 'face_not_detected',
     severity: 'high',
     description: 'Student face not detected for 8 seconds',
-    evidenceImage: null
+   
   },
   {
     id: 2,

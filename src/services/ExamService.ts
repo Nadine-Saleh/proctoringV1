@@ -1,7 +1,7 @@
 import { supabase } from '../lib/supabase/client';
 import type { ProctoringPolicy } from '../types/examSession';
 
-interface Exam {
+export interface Exam {
   id: string;
   instructor_id: string;
   title: string;
