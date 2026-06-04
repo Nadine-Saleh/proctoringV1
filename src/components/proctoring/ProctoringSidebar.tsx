@@ -35,8 +35,6 @@ interface ProctoringSidebarProps {
   poseDetecting?: boolean;
   poseFrameValid?: boolean;
   poseLoadingProgress?: string;
-  micActive?: boolean;
-  micStreamHealthy?: boolean;
 }
 
 export const ProctoringSidebar = ({
@@ -60,8 +58,6 @@ export const ProctoringSidebar = ({
   poseDetecting,
   poseFrameValid,
   poseLoadingProgress,
-  micActive,
-  micStreamHealthy,
 }: ProctoringSidebarProps) => (
   <aside
     className="w-[400px] flex-shrink-0 flex flex-col bg-white border-l border-ink-100 shadow-[-1px_0_24px_-12px_rgba(17,12,14,0.08)]"
@@ -125,8 +121,6 @@ export const ProctoringSidebar = ({
           poseDetecting={poseDetecting}
           poseFrameValid={poseFrameValid}
           poseLoadingProgress={poseLoadingProgress}
-          micActive={micActive}
-          micStreamHealthy={micStreamHealthy}
         />
       </div>
 

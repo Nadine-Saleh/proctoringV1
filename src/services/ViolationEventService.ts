@@ -28,12 +28,13 @@ interface BatchEvent {
   severity: number;
   client_captured_at: string;
   metadata: Record<string, unknown>;
+  evidence_image?: string | null;
   evidence?: {
     captured: boolean;
     bucket_path: string;
     content_type: string;
     byte_length: number;
-  };
+  } | null;
 }
 
 // Normalize any severity value to an integer — the DB column is integer.
@@ -148,6 +149,8 @@ export class ViolationEventService {
       severity: toSafeSeverity(input.severity),
       client_captured_at: input.client_captured_at,
       metadata: (input.metadata ?? {}) as Record<string, unknown>,
+      evidence_image: input.evidence_image ?? null,
+      evidence: input.evidence ?? null,
     }));
 
     const { data, error } = await callRecordBatch(sessionId, events);

@@ -16,7 +16,6 @@ import {
   ShieldCheck,
   Shield,
   ScanFace,
-  Mic,
   AlertTriangle,
   ChevronDown,
   GraduationCap,
@@ -375,9 +374,6 @@ function HeroVisual() {
                   <div className="px-2 py-1 bg-brand-500/10 border border-brand-500/20 rounded text-[9px] font-bold text-brand-400 uppercase tracking-wider">
                     Gaze Tracking Active
                   </div>
-                  <div className="px-2 py-1 bg-white/5 border border-white/10 rounded text-[9px] font-bold text-ink-300 uppercase tracking-wider">
-                    Audio Spatialized
-                  </div>
                 </div>
               </div>
             </div>
@@ -450,10 +446,6 @@ function HeroVisual() {
             <div className="mt-auto pt-6 border-t border-white/5 space-y-4">
               <div className="text-[10px] font-bold text-ink-500 uppercase tracking-widest">Active Alerts</div>
               <div className="space-y-3">
-                <div className="flex gap-3 items-center opacity-40">
-                  <div className="w-1.5 h-1.5 rounded-full bg-success-500" />
-                  <div className="text-[10px] font-medium text-white truncate">Mic check passed</div>
-                </div>
                 <div className="flex gap-3 items-center opacity-40">
                   <div className="w-1.5 h-1.5 rounded-full bg-success-500" />
                   <div className="text-[10px] font-medium text-white truncate">Env calibrated</div>
@@ -635,11 +627,6 @@ function Features() {
       body: 'Aggregation of 40+ behavioral signals into a singular, defensible integrity score. Full decision provenance included.',
     },
     {
-      icon: Mic,
-      title: 'Spatial Audio Analysis',
-      body: 'Differential audio processing identifies secondary voices and non-ambient whispering within the local environment.',
-    },
-    {
       icon: AlertTriangle,
       title: 'Dynamic Violation Logic',
       body: 'Customizable policy engines allow institutions to define violation thresholds per exam, per department, or per faculty.',
@@ -733,7 +720,7 @@ function ProductShowcase() {
     {
       icon: Activity,
       title: 'Evidence-First Review',
-      body: 'Every AI flag is linked to a cryptographic evidence packet, including gaze heatmaps and timestamped audio captures.',
+      body: 'Every AI flag is linked to a cryptographic evidence packet, including gaze heatmaps and high-resolution snapshots.',
     },
     {
       icon: FileCheck,
