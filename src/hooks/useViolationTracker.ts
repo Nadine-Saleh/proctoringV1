@@ -107,11 +107,13 @@ export function useViolationTracker(
       metadata: input.metadata ?? {},
       evidence_artifact_id: input.evidence_artifact_id ?? null,
       evidence_image: input.evidence_image ?? null,
+      evidence: input.evidence ?? null,
       exam_id: examId,
       student_id: studentId,
       violation_type: input.violation_type,
       occurred_at: clientCapturedAt,
-severity: typeof input.severity === 'number' ? input.severity : 5,      description: input.description,
+      severity: typeof input.severity === 'number' ? input.severity : 5,
+      description: input.description,
       duration_ms: input.duration_ms,
     };
 
@@ -124,6 +126,7 @@ severity: typeof input.severity === 'number' ? input.severity : 5,      descript
       client_captured_at: clientCapturedAt,
       server_recorded_at: new Date().toISOString(),
       evidence_artifact_id: input.evidence_artifact_id ?? null,
+      evidence: input.evidence ?? null,
       metadata: input.metadata ?? {},
       created_at: new Date().toISOString(),
       violation_type: type,

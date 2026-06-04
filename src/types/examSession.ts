@@ -59,7 +59,6 @@ export const VIOLATION_TAXONOMY = {
   multiple_persons: { severity: 25, description: 'Multiple persons detected in frame (legacy)' },
   tab_focus_lost: { severity: 10, description: 'Browser tab lost focus (legacy)' },
   camera_unavailable: { severity: 25, description: 'Camera became unavailable (legacy)' },
-  audio_anomaly: { severity: 5, description: 'Unexpected audio detected (reserved for v2)' },
 } as const;
 
 export type ViolationType = keyof typeof VIOLATION_TAXONOMY;
@@ -125,6 +124,12 @@ export interface UpdateExamSessionInput {
 export interface ViolationEvent {
   description: string;
   evidence_image: string | null;
+  evidence?: {
+    captured: boolean;
+    bucket_path: string;
+    content_type: string;
+    byte_length: number;
+  } | null;
   occurred_at: string;
   violation_type: ViolationType;
   duration_ms?: number | null;
@@ -157,6 +162,12 @@ export interface CreateViolationEventInput {
   description?: string | null;
   evidence_artifact_id?: string | null;
   evidence_image?: string | null;
+  evidence?: {
+    captured: boolean;
+    bucket_path: string;
+    content_type: string;
+    byte_length: number;
+  } | null;
   metadata?: Record<string, unknown>;
 }
 

@@ -1,8 +1,9 @@
-import { useEffect, useState } from 'react';
+import { useEffect, useState, useMemo } from 'react';
 import { useParams, useNavigate } from 'react-router-dom';
 import { supabase } from '../../lib/supabase/client';
 import { ViolationEventService } from '../../services/ViolationEventService';
 import { EvidenceSnippetService } from '../../services/EvidenceSnippetService';
+import type { ViolationEvent } from '../../types/examSession';
 import {
   ArrowLeft,
   ArrowLeftRight,
@@ -11,23 +12,11 @@ import {
   Clock,
   Award,
   ShieldAlert,
-  Play,
   Edit2,
   RotateCcw,
   MessageSquare,
+  Camera,
 } from 'lucide-react';
-
-interface ViolationEvent {
-  id: string;
-  violation_type: string;
-  severity: number;
-  occurred_at: string;
-  description: string | null;
-  metadata: Record<string, unknown> | null;
-  is_reviewed: boolean;
-  instructor_note: string | null;
-  evidence_artifacts?: Array<{ id: string; storage_path: string }>;
-}
 
 interface SubmissionData {
   submission_id: string;
@@ -60,13 +49,94 @@ const getSeverityColor = (sev: number) => {
   return 'bg-brand-100 text-brand-800 border-brand-200';
 };
 
+interface GroupedViolation {
+  id: string;
+  type: string;
+  severity: number;
+  startTime: string;
+  endTime: string;
+  durationMs: number;
+  description: string;
+  is_reviewed: boolean;
+  instructor_note: string | null;
+  evidence_image: string | null;
+  evidence?: ViolationEvent['evidence'];
+  eventIds: string[];
+}
+
+const groupViolations = (events: ViolationEvent[]): GroupedViolation[] => {
+  if (events.length === 0) return [];
+
+  // Sort by time ascending
+  const sorted = [...events].sort(
+    (a, b) => new Date(a.occurred_at).getTime() - new Date(b.occurred_at).getTime()
+  );
+
+  const groups: GroupedViolation[] = [];
+  let currentGroup: GroupedViolation | null = null;
+
+  for (const ev of sorted) {
+    const evTime = new Date(ev.occurred_at).getTime();
+    const evType = ev.violation_type || ev.type;
+
+    if (
+      currentGroup &&
+      currentGroup.type === evType &&
+      evTime - new Date(currentGroup.endTime).getTime() < 30000 // 30 second threshold for "consecutive"
+    ) {
+      // Merge into current group
+      currentGroup.endTime = ev.occurred_at;
+      currentGroup.durationMs =
+        new Date(currentGroup.endTime).getTime() - new Date(currentGroup.startTime).getTime();
+      currentGroup.eventIds.push(ev.id);
+      
+      // Prioritize evidence
+      if (!currentGroup.evidence_image && ev.evidence_image) {
+        currentGroup.evidence_image = ev.evidence_image;
+        currentGroup.id = ev.id; // Update ID to match evidence for URL lookup
+      }
+      if (!currentGroup.evidence && ev.evidence) {
+        currentGroup.evidence = ev.evidence;
+        currentGroup.id = ev.id;
+      }
+      
+      // If any in group is reviewed, mark group (or stay strict)
+      if (ev.is_reviewed) currentGroup.is_reviewed = true;
+      if (ev.instructor_note && !currentGroup.instructor_note) {
+        currentGroup.instructor_note = ev.instructor_note;
+      }
+    } else {
+      // Start new group
+      currentGroup = {
+        id: ev.id,
+        type: evType,
+        severity: ev.severity,
+        startTime: ev.occurred_at,
+        endTime: ev.occurred_at,
+        durationMs: ev.duration_ms || 0,
+        description: ev.description || '',
+        is_reviewed: ev.is_reviewed,
+        instructor_note: ev.instructor_note || null,
+        evidence_image: ev.evidence_image || null,
+        evidence: ev.evidence,
+        eventIds: [ev.id],
+      };
+      groups.push(currentGroup);
+    }
+  }
+
+  // Sort back to descending for timeline
+  return groups.sort((a, b) => new Date(b.startTime).getTime() - new Date(a.startTime).getTime());
+};
+
 export const SubmissionDetail = () => {
   const { examId, sessionId } = useParams<{ examId: string; sessionId: string }>();
   const navigate = useNavigate();
 
   const [submission, setSubmission] = useState<SubmissionData | null>(null);
   const [violations, setViolations] = useState<ViolationEvent[]>([]);
-  const [playbackUrls, setPlaybackUrls] = useState<Map<string, string>>(new Map());
+  const [evidenceUrls, setEvidenceUrls] = useState<Record<string, string>>({});
+  const [expandedEvidence, setExpandedEvidence] = useState<string | null>(null);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
 
@@ -81,6 +151,18 @@ export const SubmissionDetail = () => {
   const [reviewStates, setReviewStates] = useState<
     Record<string, { saving: boolean; showNote: boolean; noteText: string }>
   >({});
+
+  const groupedViolationsList = useMemo(() => groupViolations(violations), [violations]);
+
+  // Calculate risk breakdown
+  const riskBreakdown = useMemo(() => {
+    return violations.reduce((acc, ev) => {
+      const type = ev.violation_type || ev.type;
+      if (!acc[type]) acc[type] = 0;
+      acc[type] += ev.severity;
+      return acc;
+    }, {} as Record<string, number>);
+  }, [violations]);
 
   useEffect(() => {
     if (!examId || !sessionId) return;
@@ -104,16 +186,31 @@ export const SubmissionDetail = () => {
         }
         setSubmission(match);
 
-        const { data: events } = await supabase
-          .from('violation_events')
-          .select(
-            'id, violation_type, severity, occurred_at, client_captured_at, description, metadata, is_reviewed, instructor_note, evidence_artifacts(id, storage_path)'
-          )
-          .eq('session_id', sessionId)
-          .order('occurred_at', { ascending: true });
+        const result = await ViolationEventService.getBySession(sessionId);
+        if (!result.success) {
+          throw new Error(result.error || 'Failed to load violations');
+        }
 
-        const evArr = (events as ViolationEvent[] | null) ?? [];
+        const evArr = result.events ?? [];
+        console.info(
+          `[SubmissionDetail] loaded ${evArr.length} violation_events for session ${sessionId}`
+        );
         setViolations(evArr);
+
+        // Pre-fetch signed URLs for binary evidence artifacts
+        const artifacts = evArr.filter(ev => ev.evidence?.bucket_path);
+        if (artifacts.length > 0) {
+          const paths = artifacts.map(ev => ev.evidence!.bucket_path);
+          const urlMap = await EvidenceSnippetService.getPlaybackUrls(paths);
+          
+          // Map bucket_path -> event_id for easier lookup in UI
+          const idToUrl: Record<string, string> = {};
+          for (const ev of artifacts) {
+            const url = urlMap.get(ev.evidence!.bucket_path);
+            if (url) idToUrl[ev.id] = url;
+          }
+          setEvidenceUrls(idToUrl);
+        }
 
         // Init per-violation review state
         const initStates: typeof reviewStates = {};
@@ -125,16 +222,6 @@ export const SubmissionDetail = () => {
           };
         }
         setReviewStates(initStates);
-
-        const paths = evArr
-          .flatMap(ev => ev.evidence_artifacts ?? [])
-          .map(a => a.storage_path)
-          .filter(Boolean);
-
-        if (paths.length > 0) {
-          const urls = await EvidenceSnippetService.getPlaybackUrls(paths);
-          setPlaybackUrls(urls);
-        }
       } catch (err) {
         setError(err instanceof Error ? err.message : 'Failed to load submission');
       } finally {
@@ -322,6 +409,33 @@ export const SubmissionDetail = () => {
           </div>
         </div>
 
+        {/* Risk Breakdown Section */}
+        {Object.keys(riskBreakdown).length > 0 && (
+          <div className="bg-white rounded-xl shadow-sm border border-ink-100 p-5 mb-6">
+            <h2 className="font-semibold text-ink-900 text-sm mb-4 flex items-center gap-2">
+              <ShieldAlert className="w-4 h-4 text-brand-700" />
+              Risk Score Explanation
+            </h2>
+            <div className="space-y-2">
+              {Object.entries(riskBreakdown).map(([type, totalSeverity]) => (
+                <div key={type} className="flex items-center justify-between text-sm">
+                  <span className="text-ink-600">{formatViolationType(type)}</span>
+                  <span className="font-medium text-ink-900">+{totalSeverity}</span>
+                </div>
+              ))}
+              <div className="pt-2 border-t border-ink-100 flex items-center justify-between font-bold text-ink-900">
+                <span>Total Accumulated Severity</span>
+                <span className={effectiveRiskScore >= 70 ? 'text-danger-600' : 'text-brand-700'}>
+                  {Math.round(submission.final_cheating_score)}
+                </span>
+              </div>
+              <p className="text-[10px] text-ink-400 italic mt-2">
+                * Final Risk Score (currently {Math.round(effectiveRiskScore)}) is derived from accumulated severity with time-decay.
+              </p>
+            </div>
+          </div>
+        )}
+
         {/* Score override panel */}
         <div className="bg-white rounded-xl shadow-sm border border-ink-100 p-5 mb-6">
           <div className="flex items-center justify-between mb-2">
@@ -450,28 +564,30 @@ export const SubmissionDetail = () => {
         <div className="bg-white rounded-xl shadow-sm border border-ink-100 overflow-hidden">
           <div className="px-6 py-4 border-b border-ink-100 flex items-center justify-between">
             <h2 className="font-semibold text-ink-900">
-              Violation Timeline ({violations.length})
+              Violation Timeline ({groupedViolationsList.length} grouped)
             </h2>
             {violations.length > 0 && (
               <span className="text-xs text-ink-500">
-                {reviewedCount} / {violations.length} reviewed
+                {reviewedCount} / {violations.length} raw reviewed
               </span>
             )}
           </div>
 
-          {violations.length === 0 ? (
+          {groupedViolationsList.length === 0 ? (
             <div className="px-6 py-10 text-center">
               <CheckCircle className="w-10 h-10 text-green-400 mx-auto mb-3" />
               <p className="text-ink-500">No violations recorded for this session.</p>
             </div>
           ) : (
             <div className="divide-y divide-ink-100">
-              {violations.map(ev => {
+              {groupedViolationsList.map(ev => {
                 const rs = reviewStates[ev.id] ?? {
                   saving: false,
                   showNote: false,
                   noteText: ev.instructor_note ?? '',
                 };
+
+                const durationSec = Math.round(ev.durationMs / 1000);
 
                 return (
                   <div
@@ -484,11 +600,18 @@ export const SubmissionDetail = () => {
                           <span
                             className={`inline-block px-2 py-0.5 rounded text-xs font-medium border ${getSeverityColor(ev.severity)}`}
                           >
-                            {formatViolationType(ev.violation_type)}
+                            {formatViolationType(ev.type)}
                           </span>
                           <span className="text-xs text-ink-400">
-                            {new Date(ev.occurred_at).toLocaleTimeString()}
+                            {new Date(ev.startTime).toLocaleTimeString()}
+                            {ev.durationMs > 0 && ` — ${new Date(ev.endTime).toLocaleTimeString()}`}
                           </span>
+                          {ev.durationMs > 0 && (
+                            <span className="inline-flex items-center gap-1 px-2 py-0.5 rounded text-[10px] font-bold bg-ink-100 text-ink-700 uppercase tracking-tighter">
+                              <Clock className="w-2.5 h-2.5" />
+                              {durationSec} sec
+                            </span>
+                          )}
                           {ev.is_reviewed && (
                             <span className="flex items-center gap-1 text-xs text-success-600 font-medium">
                               <CheckCircle className="w-3 h-3" /> Reviewed
@@ -496,14 +619,34 @@ export const SubmissionDetail = () => {
                           )}
                         </div>
 
-                        {ev.description && (
-                          <p className="text-sm text-ink-600">{ev.description}</p>
-                        )}
+                        <p className="text-sm text-ink-600">
+                          {ev.description}
+                          {ev.eventIds.length > 1 && (
+                            <span className="text-xs text-ink-400 ml-2">
+                              ({ev.eventIds.length} consecutive events merged)
+                            </span>
+                          )}
+                        </p>
 
                         {ev.instructor_note && (
                           <p className="text-xs text-brand-700 mt-1 flex items-center gap-1">
                             <MessageSquare className="w-3 h-3" /> {ev.instructor_note}
                           </p>
+                        )}
+
+                        {/* Evidence preview */}
+                        {expandedEvidence === ev.id && (evidenceUrls[ev.id] || ev.evidence_image) && (
+                          <div className="mt-3 inline-block">
+                            <img
+                              src={evidenceUrls[ev.id] || ev.evidence_image!}
+                              alt="Violation evidence snapshot"
+                              className="max-w-xs rounded-lg border border-ink-200 shadow-sm"
+                            />
+                            <p className="text-xs text-ink-400 mt-1">
+                              Captured at {new Date(ev.startTime).toLocaleTimeString()}
+                              {evidenceUrls[ev.id] && " (Secure Storage)"}
+                            </p>
+                          </div>
                         )}
 
                         {/* Note input (shown when adding/editing note) */}
@@ -526,22 +669,18 @@ export const SubmissionDetail = () => {
                       </div>
 
                       <div className="flex items-center gap-2 flex-shrink-0">
-                        {/* Evidence playback */}
-                        {ev.evidence_artifacts?.map(artifact => {
-                          const url = playbackUrls.get(artifact.storage_path);
-                          if (!url) return null;
-                          return (
-                            <a
-                              key={artifact.id}
-                              href={url}
-                              target="_blank"
-                              rel="noreferrer"
-                              className="flex items-center gap-1 text-xs text-brand-700 hover:underline"
-                            >
-                              <Play className="w-3.5 h-3.5" /> View
-                            </a>
-                          );
-                        })}
+                        {/* Evidence snapshot */}
+                        {(evidenceUrls[ev.id] || ev.evidence_image) && (
+                          <button
+                            onClick={() =>
+                              setExpandedEvidence(prev => (prev === ev.id ? null : ev.id))
+                            }
+                            className="flex items-center gap-1 text-xs text-brand-700 hover:underline"
+                          >
+                            <Camera className="w-3.5 h-3.5" />
+                            {expandedEvidence === ev.id ? 'Hide' : 'Evidence'}
+                          </button>
+                        )}
 
                         {/* Note toggle */}
                         <button
@@ -559,7 +698,8 @@ export const SubmissionDetail = () => {
 
                         {/* Mark reviewed / unreviewed */}
                         <button
-                          onClick={() => handleToggleReview(ev)}
+                          // Use the first event in the group for the toggle
+                          onClick={() => handleToggleReview(violations.find(v => v.id === ev.id)!)}
                           disabled={rs.saving}
                           className={`px-3 py-1 rounded-lg text-xs font-medium transition-colors disabled:opacity-50 ${
                             ev.is_reviewed

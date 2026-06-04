@@ -22,7 +22,7 @@ test.describe('Real-time monitoring during exam', () => {
 
   test('instructor observes score update within 5 s of student tab-blur', async ({ browser }) => {
     const studentCtx = await browser.newContext({
-      permissions: ['camera', 'microphone'],
+      permissions: ['camera'],
     });
     const instructorCtx = await browser.newContext();
 

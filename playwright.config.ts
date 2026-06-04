@@ -20,7 +20,6 @@ export default defineConfig({
         launchArgs: [
           '--disable-blink-features=AutomationControlled',
           '--use-fake-device-for-media-stream',
-          '--use-file-for-fake-audio-capture=tests/fixtures/silence.wav',
           '--use-file-for-fake-video-capture=tests/fixtures/test-video.y4m',
         ],
       },

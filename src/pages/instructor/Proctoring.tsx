@@ -1,7 +1,8 @@
-import { useState, useEffect, useRef } from 'react';
+import { useState, useEffect, useRef, useMemo } from 'react';
 import { useApp } from '../../context/AppContext';
 import { supabase } from '../../lib/supabase/client';
 import { ViolationEventService, ExamSessionService } from '../../examSession';
+import { EvidenceSnippetService } from '../../services/EvidenceSnippetService';
 import type { ViolationEvent, ViolationSummary, ExamSessionSummary } from '../../types/examSession';
 import {
   AlertTriangle,
@@ -17,7 +18,8 @@ import {
   Bell,
   Zap,
   Activity,
-  ArrowLeftRight
+  ArrowLeftRight,
+  Camera
 } from 'lucide-react';
 
 interface LiveAlert {
@@ -36,6 +38,89 @@ interface LiveAlert {
   timestamp: string;
   acknowledged: boolean;
 }
+
+interface GroupedTimelineEvent {
+  id: string;
+  type: string;
+  severity: number;
+  startTime: string;
+  endTime: string;
+  durationMs: number;
+  description: string;
+  is_reviewed: boolean;
+  instructor_note: string | null;
+  evidence_image: string | null;
+  evidence?: ViolationEvent['evidence'];
+  eventIds: string[];
+  session_id: string;
+  student_id?: string;
+}
+
+const groupViolationsAcrossStudents = (events: ViolationEvent[]): GroupedTimelineEvent[] => {
+  if (events.length === 0) return [];
+
+  // Sort by time ascending
+  const sorted = [...events].sort(
+    (a, b) => new Date(a.occurred_at || a.client_captured_at).getTime() - 
+              new Date(b.occurred_at || b.client_captured_at).getTime()
+  );
+
+  const groups: GroupedTimelineEvent[] = [];
+  // Track last group per session_id and type
+  const lastGroupPerStudentType: Record<string, GroupedTimelineEvent> = {};
+
+  for (const ev of sorted) {
+    const evTime = new Date(ev.occurred_at || ev.client_captured_at).getTime();
+    const evType = ev.violation_type || ev.type;
+    const key = `${ev.session_id}:${evType}`;
+    
+    const currentGroup = lastGroupPerStudentType[key];
+
+    if (
+      currentGroup &&
+      evTime - new Date(currentGroup.endTime).getTime() < 30000 // 30 second threshold
+    ) {
+      // Merge into current group
+      currentGroup.endTime = ev.occurred_at || ev.client_captured_at;
+      currentGroup.durationMs =
+        new Date(currentGroup.endTime).getTime() - new Date(currentGroup.startTime).getTime();
+      currentGroup.eventIds.push(ev.id);
+      
+      if (!currentGroup.evidence_image && ev.evidence_image) {
+        currentGroup.evidence_image = ev.evidence_image;
+        currentGroup.id = ev.id;
+      }
+      if (!currentGroup.evidence && ev.evidence) {
+        currentGroup.evidence = ev.evidence;
+        currentGroup.id = ev.id;
+      }
+      if (ev.is_reviewed) currentGroup.is_reviewed = true;
+    } else {
+      // Start new group
+      const newGroup: GroupedTimelineEvent = {
+        id: ev.id,
+        type: evType,
+        severity: ev.severity,
+        startTime: ev.occurred_at || ev.client_captured_at,
+        endTime: ev.occurred_at || ev.client_captured_at,
+        durationMs: ev.duration_ms || 0,
+        description: ev.description || '',
+        is_reviewed: ev.is_reviewed,
+        instructor_note: ev.instructor_note || null,
+        evidence_image: ev.evidence_image || null,
+        evidence: ev.evidence,
+        eventIds: [ev.id],
+        session_id: ev.session_id,
+        student_id: ev.student_id,
+      };
+      groups.push(newGroup);
+      lastGroupPerStudentType[key] = newGroup;
+    }
+  }
+
+  // Sort back to descending for timeline
+  return groups.sort((a, b) => new Date(b.startTime).getTime() - new Date(a.startTime).getTime());
+};
 
 export const ProctoringReport = () => {
   const { user } = useApp();
@@ -57,10 +142,15 @@ export const ProctoringReport = () => {
   // Data state
   const [exams, setExams] = useState<Array<{ id: string; title: string }>>([]);
   const [violations, setViolations] = useState<ViolationEvent[]>([]);
+  const [evidenceUrls, setEvidenceUrls] = useState<Record<string, string>>({});
   const [summaries, setSummaries] = useState<Record<string, ViolationSummary[]>>({});
   const [sessions, setSessions] = useState<ExamSessionSummary[]>([]);
+  const [expandedEvidence, setExpandedEvidence] = useState<string | null>(null);
+  const [studentSearch, setStudentSearch] = useState('');
+  const [isGroupedByStudent, setIsGroupedByStudent] = useState(false);
   const sessionsRef = useRef<ExamSessionSummary[]>([]);
   const sessionScoresRef = useRef<Record<string, number>>({});
+  const violationsRef = useRef<ViolationEvent[]>([]);
 
   useEffect(() => {
     sessionsRef.current = sessions;
@@ -69,6 +159,10 @@ export const ProctoringReport = () => {
   useEffect(() => {
     sessionScoresRef.current = sessionScores;
   }, [sessionScores]);
+
+  useEffect(() => {
+    violationsRef.current = violations;
+  }, [violations]);
 
   // T063: Subscribe to Supabase Realtime oversight channel for the selected exam
   useEffect(() => {
@@ -90,6 +184,24 @@ export const ProctoringReport = () => {
         (payload) => {
           const row = payload.new as { id: string; live_cheating_score: number; status: string; student_id: string };
           setSessionScores(prev => ({ ...prev, [row.id]: row.live_cheating_score }));
+        }
+      )
+      .on(
+        'postgres_changes',
+        { event: 'INSERT', schema: 'public', table: 'violation_events' },
+        (payload) => {
+          const newEvent = payload.new as ViolationEvent;
+          // Only add if it belongs to one of our active sessions for this exam
+          const isOurSession = sessionsRef.current.some(s => s.session_id === newEvent.session_id);
+          if (isOurSession) {
+            setViolations(prev => {
+              // Deduplicate just in case
+              if (prev.some(v => v.id === newEvent.id || v.client_event_id === newEvent.client_event_id)) {
+                return prev;
+              }
+              return [newEvent, ...prev].slice(0, 1000);
+            });
+          }
         }
       )
       .on(
@@ -294,18 +406,125 @@ export const ProctoringReport = () => {
   const getViolationTimestamp = (violation: ViolationEvent) =>
     violation.occurred_at ?? violation.client_captured_at;
 
-  const getViolationStudentName = (violation: ViolationEvent) => {
+  const getViolationStudentName = (violation: ViolationEvent | GroupedTimelineEvent) => {
     const session = sessions.find(s => s.session_id === violation.session_id);
     if (session) return session.student_name;
     return violation.student_id ? getStudentName(violation.student_id) : 'Unknown Student';
   };
 
-  // Filter violations
-  const filteredViolations = violations.filter(v => {
-    if (severityFilter !== 'all' && getSeverityLabel(v.severity) !== severityFilter) return false;
-    if (typeFilter !== 'all' && getViolationType(v) !== typeFilter) return false;
-    return true;
-  });
+  const renderViolationRow = (violation: GroupedTimelineEvent) => (
+    <div key={violation.id} className="px-6 py-4 hover:bg-ink-50">
+      <div className="flex items-start space-x-4">
+        <div className="flex flex-col items-center space-y-2 mt-1">
+          {getSeverityIcon(getSeverityLabel(violation.severity))}
+        </div>
+
+        <div className="flex-1">
+          <div className="flex items-center space-x-3 mb-1 flex-wrap gap-y-1">
+            <h3 className="text-sm font-semibold text-ink-900">
+              {formatViolationType(violation.type)}
+            </h3>
+            <span className={`inline-flex px-2 py-0.5 rounded text-xs font-semibold border ${getSeverityColor(getSeverityLabel(violation.severity))}`}>
+              {getSeverityLabel(violation.severity)}
+            </span>
+            {violation.durationMs > 0 && (
+              <span className="inline-flex items-center px-2 py-0.5 rounded text-[10px] font-bold bg-ink-100 text-ink-700 uppercase tracking-tight">
+                <Clock className="w-3 h-3 mr-1" />
+                {Math.round(violation.durationMs / 1000)}s
+              </span>
+            )}
+            {violation.eventIds.length > 1 && (
+              <span className="text-[10px] px-2 py-0.5 bg-brand-50 text-brand-700 border border-brand-100 rounded font-bold uppercase tracking-tight">
+                {violation.eventIds.length} Alerts Merged
+              </span>
+            )}
+          </div>
+
+          {violation.description && (
+            <p className="text-sm text-ink-600 mb-2">
+              {violation.description}
+            </p>
+          )}
+
+          <div className="flex items-center space-x-4 text-xs text-ink-500">
+            <div className="flex items-center space-x-1">
+              <User className="w-3 h-3" />
+              <span>{getViolationStudentName(violation)}</span>
+            </div>
+            <div className="flex items-center space-x-1">
+              <Calendar className="w-3 h-3" />
+              <span>
+                {formatTimestamp(violation.startTime)}
+                {violation.durationMs > 0 && ` — ${new Date(violation.endTime).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' })}`}
+              </span>
+            </div>
+            {violation.is_reviewed && (
+              <span className="flex items-center space-x-1 text-success-600 font-medium">
+                <CheckCircle className="w-3 h-3" />
+                <span>Reviewed</span>
+              </span>
+            )}
+          </div>
+
+          {/* Evidence preview */}
+          {expandedEvidence === violation.id && (evidenceUrls[violation.id] || violation.evidence_image) && (
+            <div className="mt-3 inline-block animate-fade-in">
+              <img
+                src={evidenceUrls[violation.id] || violation.evidence_image!}
+                alt="Violation evidence snapshot"
+                className="max-w-xs rounded-lg border border-ink-200 shadow-sm"
+              />
+              {evidenceUrls[violation.id] && (
+                <p className="text-[10px] text-ink-400 mt-1 uppercase tracking-tight">Secure Storage Artifact</p>
+              )}
+            </div>
+          )}
+        </div>
+
+        <div className="flex-shrink-0">
+          {(evidenceUrls[violation.id] || violation.evidence_image) && (
+            <button
+              onClick={() => setExpandedEvidence(prev => (prev === violation.id ? null : violation.id))}
+              className="flex items-center gap-1 px-3 py-1 rounded-lg text-xs font-semibold bg-brand-50 text-brand-700 hover:bg-brand-100 border border-brand-100 transition-colors"
+              title={expandedEvidence === violation.id ? 'Hide evidence' : 'View evidence snapshot'}
+            >
+              <Camera className="w-3.5 h-3.5" />
+              <span>{expandedEvidence === violation.id ? 'Hide' : 'Evidence'}</span>
+            </button>
+          )}
+        </div>
+      </div>
+    </div>
+  );
+
+  // Group all violations first (anti-spam)
+  const groupedTimelineEvents = useMemo(() => {
+    return groupViolationsAcrossStudents(violations);
+  }, [violations]);
+
+  // Filter grouped violations
+  const filteredGroupedEvents = useMemo(() => {
+    return groupedTimelineEvents.filter(v => {
+      if (severityFilter !== 'all' && getSeverityLabel(v.severity) !== severityFilter) return false;
+      if (typeFilter !== 'all' && v.type !== typeFilter) return false;
+      if (studentSearch.trim() !== '') {
+        const name = getViolationStudentName(v)?.toLowerCase() || '';
+        if (!name.includes(studentSearch.toLowerCase())) return false;
+      }
+      return true;
+    });
+  }, [groupedTimelineEvents, severityFilter, typeFilter, studentSearch, sessions]);
+
+  // Group by student if enabled
+  const studentBuckets = useMemo(() => {
+    if (!isGroupedByStudent) return null;
+    return filteredGroupedEvents.reduce((acc, v) => {
+      const studentName = getViolationStudentName(v) || 'Unknown Student';
+      if (!acc[studentName]) acc[studentName] = [];
+      acc[studentName].push(v);
+      return acc;
+    }, {} as Record<string, GroupedTimelineEvent[]>);
+  }, [filteredGroupedEvents, isGroupedByStudent, sessions]);
 
   // Calculate stats
   const criticalCount = violations.filter(v => v.severity >= 20).length;
@@ -527,8 +746,18 @@ export const ProctoringReport = () => {
 
             {/* Filters */}
             <div className="bg-white rounded-xl shadow-sm border border-ink-100 p-4 mb-6">
-              <div className="flex items-center space-x-4">
+              <div className="flex flex-col md:flex-row gap-4">
                 <div className="relative flex-1">
+                  <User className="absolute left-3 top-1/2 transform -translate-y-1/2 w-5 h-5 text-ink-400" />
+                  <input
+                    type="text"
+                    placeholder="Search student name..."
+                    value={studentSearch}
+                    onChange={(e) => setStudentSearch(e.target.value)}
+                    className="w-full pl-11 pr-4 py-2 border border-ink-200 rounded-lg focus:ring-2 focus:ring-brand-700/30 focus:border-transparent"
+                  />
+                </div>
+                <div className="relative w-full md:w-48">
                   <Filter className="absolute left-3 top-1/2 transform -translate-y-1/2 w-5 h-5 text-ink-400" />
                   <select
                     value={severityFilter}
@@ -542,7 +771,7 @@ export const ProctoringReport = () => {
                     <option value="low">Low</option>
                   </select>
                 </div>
-                <div className="relative flex-1">
+                <div className="relative w-full md:w-48">
                   <Eye className="absolute left-3 top-1/2 transform -translate-y-1/2 w-5 h-5 text-ink-400" />
                   <select
                     value={typeFilter}
@@ -555,6 +784,16 @@ export const ProctoringReport = () => {
                     ))}
                   </select>
                 </div>
+                <button
+                  onClick={() => setIsGroupedByStudent(!isGroupedByStudent)}
+                  className={`px-4 py-2 rounded-lg font-medium border transition-all ${
+                    isGroupedByStudent 
+                      ? 'bg-brand-50 border-brand-200 text-brand-700' 
+                      : 'bg-white border-ink-200 text-ink-600 hover:bg-ink-50'
+                  }`}
+                >
+                  {isGroupedByStudent ? 'Ungroup' : 'Group by Student'}
+                </button>
               </div>
             </div>
 
@@ -664,71 +903,48 @@ export const ProctoringReport = () => {
 
             {/* Violation Timeline */}
             <div className="bg-white rounded-xl shadow-sm border border-ink-100 overflow-hidden">
-              <div className="px-6 py-4 border-b border-ink-100">
+              <div className="px-6 py-4 border-b border-ink-100 flex items-center justify-between">
                 <h2 className="text-xl font-semibold text-ink-900">Violation Timeline</h2>
+                <div className="flex items-center gap-2">
+                  <span className="text-sm text-ink-500">{filteredGroupedEvents.length} grouped events</span>
+                  <span className="text-[10px] text-ink-300 font-medium">({violations.length} total raw)</span>
+                </div>
               </div>
 
-              {filteredViolations.length === 0 ? (
+              {filteredGroupedEvents.length === 0 ? (
                 <div className="px-6 py-12 text-center">
                   <AlertCircle className="w-12 h-12 text-ink-400 mx-auto mb-4" />
                   <p className="text-ink-600">No violations match the selected filters</p>
                 </div>
-              ) : (
+              ) : isGroupedByStudent ? (
                 <div className="divide-y divide-ink-100">
-                  {filteredViolations.slice(0, 50).map((violation) => (
-                    <div key={violation.id} className="px-6 py-4 hover:bg-ink-50">
-                      <div className="flex items-start space-x-4">
-                        <div className="flex flex-col items-center space-y-2 mt-1">
-                          {getSeverityIcon(getSeverityLabel(violation.severity))}
+                  {Object.entries(studentBuckets || {}).map(([studentName, studentEvents]) => (
+                    <div key={studentName} className="group">
+                      <div className="px-6 py-3 bg-ink-50 border-y border-ink-100 flex items-center justify-between">
+                        <div className="flex items-center space-x-2">
+                          <User className="w-4 h-4 text-ink-500" />
+                          <span className="font-bold text-ink-900">{studentName}</span>
                         </div>
-
-                        <div className="flex-1">
-                          <div className="flex items-center space-x-3 mb-1">
-                            <h3 className="text-sm font-semibold text-ink-900">
-                              {formatViolationType(getViolationType(violation))}
-                            </h3>
-                            <span className={`inline-flex px-2 py-0.5 rounded text-xs font-semibold border ${getSeverityColor(getSeverityLabel(violation.severity))}`}>
-                              {getSeverityLabel(violation.severity)}
-                            </span>
-                            {violation.duration_ms && (
-                              <span className="inline-flex items-center px-2 py-0.5 rounded text-xs font-medium bg-ink-100 text-ink-700">
-                                <Clock className="w-3 h-3 mr-1" />
-                                {Math.round(violation.duration_ms / 1000)}s
-                              </span>
-                            )}
-                          </div>
-
-                          {violation.description && (
-                            <p className="text-sm text-ink-600 mb-2">{violation.description}</p>
-                          )}
-
-                          <div className="flex items-center space-x-4 text-xs text-ink-500">
-                            <div className="flex items-center space-x-1">
-                              <User className="w-3 h-3" />
-                              <span>{getViolationStudentName(violation)}</span>
-                            </div>
-                            <div className="flex items-center space-x-1">
-                              <Calendar className="w-3 h-3" />
-                              <span>{formatTimestamp(getViolationTimestamp(violation))}</span>
-                            </div>
-                            {violation.is_reviewed && (
-                              <span className="flex items-center space-x-1 text-success-600">
-                                <CheckCircle className="w-3 h-3" />
-                                <span>Reviewed</span>
-                              </span>
-                            )}
-                          </div>
-                        </div>
+                        <span className="text-xs font-semibold text-ink-500 uppercase tracking-wider">
+                          {studentEvents.length} events
+                        </span>
+                      </div>
+                      <div className="divide-y divide-ink-100">
+                        {studentEvents.map(event => renderViolationRow(event))}
                       </div>
                     </div>
                   ))}
                 </div>
+              ) : (
+                <div className="divide-y divide-ink-100">
+                  {filteredGroupedEvents.slice(0, 50).map((event) => renderViolationRow(event))}
+                </div>
               )}
 
-              {filteredViolations.length > 50 && (
+              {!isGroupedByStudent && filteredGroupedEvents.length > 50 && (
                 <div className="px-6 py-3 bg-ink-50 border-t border-ink-100 text-center">
                   <p className="text-sm text-ink-600">
-                    Showing 50 of {filteredViolations.length} violations
+                    Showing 50 of {filteredGroupedEvents.length} grouped violations
                   </p>
                 </div>
               )}

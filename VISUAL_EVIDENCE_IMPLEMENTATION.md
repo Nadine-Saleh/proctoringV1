@@ -12,104 +12,48 @@ Added visual evidence capture functionality to record camera snapshots when high
 - **Enhanced** logging to capture dimensions, file size, and quality metrics
 - **Default settings**: 320x240 resolution, 0.6 JPEG quality (optimized for storage)
 
-```typescript
-captureViolationSnapshot(options?: { 
-  maxWidth?: number; 
-  maxHeight?: number; 
-  quality?: number 
-}): Promise<string | null>
-```
+### 2. Integrated Evidence Artifacts via Supabase Storage
+- **Created** `EvidenceSnippetService` to handle uploading snapshots to private `evidence-snippets` bucket
+- **Updated** `useExamFlow.ts` to asynchronously upload snapshots on high-severity violations
+- **Uses** signed PUT URLs for secure client-side uploads
+- **Links** snapshots to the `evidence_artifacts` table for automated retention management
 
-### 2. Integrated Evidence Image in Violation Service (`src/services/ViolationEventService.ts`)
-- **Updated** `create()` method to include `evidence_image` field in database insert
-- **Updated** `createBatch()` method to include `evidence_image` in batch inserts
-- **Ensures** snapshots are persisted to the `violation_events` table
+### 3. Updated Violation RPC (`supabase/migrations/014_rpc_evidence_artifacts.sql`)
+- **Enhanced** `record_violation_batch` to support the `evidence` object payload
+- **Automated linkage**: The RPC now automatically inserts rows into `evidence_artifacts` and links them to `violation_events`
+- **Policy enforcement**: Rejects evidence if `visual_evidence_allowed` is false in the exam policy
 
-### 3. Updated Violation Tracker (`src/hooks/useViolationTracker.ts`)
-- **Modified** local event creation to explicitly include `evidence_image` field
-- **Ensures** evidence images are tracked in local state before syncing to server
+### 4. Updated Violation Tracker (`src/hooks/useViolationTracker.ts`)
+- **Modified** local event creation to include binary `evidence` metadata
+- **Ensures** storage paths and metadata are tracked alongside the violation
 
-### 4. Updated Exam Page (`src/pages/student/Exam.tsx`)
-- **Modified** gaze violation recording to use top-level `evidence_image` field
-- **Modified** proctoring violation recording to use top-level `evidence_image` field
-- **Updated** violation scoring mappings to use `v.evidence_image` instead of `v.metadata.evidence_image`
-- **Automatic capture**: Snapshots are automatically taken when severity is 'high' or 'critical'
-
-### 5. Verified Mock Data Structure (`src/data/mockData.ts`)
-- **Confirmed** `mockProctoringEvents` already includes `evidenceImage` field
-- **Structure**: Optional field with base64 encoded images or null values
+### 5. Updated Domain Types (`src/types/examSession.ts`)
+- **Added** `evidence` object to `ViolationEvent` and `CreateViolationEventInput` interfaces
+- **Consistent schema**: Matches the database and RPC expectations
 
 ## How It Works
 
 ### Violation Detection Flow
 1. **Violation occurs** (gaze tracking, face detection, tab switch, etc.)
-2. **Severity evaluated** - if 'high' or 'critical', snapshot is triggered
-3. **Snapshot captured** - current video frame captured as compressed JPEG base64
-4. **Violation recorded** - includes `evidence_image` field with base64 string
-5. **Batched to server** - sent to Supabase `violation_events` table
+2. **Severity evaluated** - if 'high' or 'critical' (severity >= 15), snapshot is triggered
+3. **Snapshot captured** - current video frame captured as compressed JPEG
+4. **Snapshot uploaded** - uploaded to Supabase Storage via `EvidenceSnippetService.upload`
+5. **Violation recorded** - recorded with `evidence` metadata (bucket path, content type, etc.)
+6. **Batched to server** - sent to Supabase via `record_violation_batch` RPC
+7. **Server linkage** - RPC inserts into `evidence_artifacts` and links to `violation_events`
 
 ### Snapshot Specifications
-- **Format**: JPEG (base64 encoded data URL)
-- **Resolution**: 320x240 pixels (maintains aspect ratio)
-- **Quality**: 0.6 (60% JPEG compression)
-- **Average size**: ~8-15 KB per snapshot
-- **Storage**: Stored as string in `evidence_image` column
-
-### Violation Types That Capture Snapshots
-Based on severity mapping:
-- `gaze_sustained_away` (high)
-- `face_not_detected` (high)  
-- `multiple_faces` (critical → high)
-- `tab_switch_prolonged` (high)
-- Any proctoring violation with severity 'high' or 'critical'
-
-## Database Schema
-
-The `violation_events` table should have:
-```sql
-evidence_image TEXT NULL  -- Stores base64 encoded JPEG snapshot
-```
-
-## Performance Considerations
-
-### Storage Impact
-- **Low severity violations**: No snapshot (saves storage)
-- **High/Critical violations**: ~10-15 KB per snapshot
-- **Estimated**: For 10 violations per exam, ~100-150 KB additional data
-
-### Network Impact
-- Snapshot capture is asynchronous and non-blocking
-- Violation recording continues without waiting for snapshot
-- Failed snapshot capture doesn't prevent violation logging
-
-### Browser Performance
-- Canvas operations are fast (<50ms)
-- No impact on video stream quality
-- Minimal CPU overhead
-
-## Testing Recommendations
-
-1. **Test snapshot capture**:
-   - Trigger a high-severity violation
-   - Check browser console for `[useProctoring] Violation snapshot captured` log
-   - Verify `evidence_image` field contains base64 string
-
-2. **Test database persistence**:
-   - Submit exam with violations
-   - Query `violation_events` table
-   - Verify `evidence_image` column has data
-
-3. **Test performance**:
-   - Monitor exam page responsiveness
-   - Check network tab for payload sizes
-   - Verify no video stream lag
+- **Format**: JPEG
+- **Storage**: Supabase Object Storage (private bucket)
+- **Database Link**: `evidence_artifact_id` column in `violation_events`
+- **Retention**: 14-day default window (managed via `expires_at` column)
 
 ## Future Enhancements
 
+- [x] Consider storing images in Supabase Storage instead of database
 - [ ] Add snapshot preview in instructor dashboard
 - [ ] Implement snapshot compression options per violation severity
 - [ ] Add snapshot gallery in violation reports
-- [ ] Consider storing images in Supabase Storage instead of database
 - [ ] Add snapshot timestamp verification
 - [ ] Implement snapshot deduplication for rapid violations
 
