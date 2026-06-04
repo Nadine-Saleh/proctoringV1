@@ -70,56 +70,159 @@ export class IdentityVerificationService {
     videoEl: HTMLVideoElement
   ): Promise<Float32Array | null> {
     await this.loadFaceApiModels();
+
     const faceapi = await import('face-api.js');
 
-    const detection = await faceapi
-      .detectSingleFace(videoEl, new faceapi.TinyFaceDetectorOptions())
+    const detections = await faceapi
+      .detectAllFaces(
+        videoEl,
+        new faceapi.TinyFaceDetectorOptions({
+          inputSize: 416,
+          scoreThreshold: 0.6,
+        })
+      )
       .withFaceLandmarks(true)
-      .withFaceDescriptor();
+      .withFaceDescriptors();
 
-    if (!detection) return null;
+    if (detections.length !== 1) {
+      console.warn('Face verification failed: expected exactly one face');
+      return null;
+    }
+
+    const detection = detections[0];
+
+    if (!detection) {
+      return null;
+    }
+
+    const box = detection.detection.box;
+
+    const videoWidth = videoEl.videoWidth;
+    const videoHeight = videoEl.videoHeight;
+
+    if (
+      box.width < videoWidth * 0.2 ||
+      box.height < videoHeight * 0.2
+    ) {
+      console.warn('Face verification failed: face too small');
+      return null;
+    }
+
     return detection.descriptor;
   }
 
+  /**
+   * دي بتتستخدم عند دخول الامتحان بالكود.
+   * مهم جدًا: p_fresh_capture لازم يفضل false
+   * عشان ما يطلبش reference capture جديدة قبل الامتحان.
+   */
   static async joinExam(
-    accessCode: string,
-    freshCapture = false
+    accessCode: string
   ): Promise<{ success: boolean; data?: JoinExamResponse; error?: string }> {
     try {
       const { data, error } = await supabase.rpc('join_exam', {
         p_access_code: accessCode.toUpperCase(),
-        p_fresh_capture: freshCapture,
+        p_fresh_capture: false,
       });
 
-      if (error) return { success: false, error: error.message };
+      if (error) {
+        return { success: false, error: error.message };
+      }
+
       return { success: true, data: data as JoinExamResponse };
     } catch (err) {
-      return { success: false, error: err instanceof Error ? err.message : 'Unknown error' };
+      return {
+        success: false,
+        error: err instanceof Error ? err.message : 'Unknown error',
+      };
     }
   }
 
+  /**
+   * بتشيك هل الطالب عنده face reference محفوظة قبل كده ولا لأ.
+   * دي تتستخدم بعد اللوجن.
+   */
+  static async hasReference(): Promise<boolean> {
+    try {
+      const {
+        data: { user },
+      } = await supabase.auth.getUser();
+
+      if (!user) return false;
+
+      const { data, error } = await supabase
+        .from('student_faces')
+        .select('student_id')
+        .eq('student_id', user.id)
+        .maybeSingle();
+
+      if (error) {
+        console.error('Error checking face reference:', error);
+        return false;
+      }
+
+      return !!data;
+    } catch (err) {
+      console.error('Error checking face reference:', err);
+      return false;
+    }
+  }
+
+  /**
+   * دي تتحط بعد اللوجن فقط.
+   * وظيفتها تحفظ face embedding مرة واحدة فقط.
+   * ممنوع استخدامها قبل الامتحان.
+   */
   static async saveReferenceEmbedding(
     embedding: Float32Array,
     qualityScore: number
   ): Promise<{ success: boolean; error?: string }> {
     try {
-      const { data: { user } } = await supabase.auth.getUser();
-      if (!user) return { success: false, error: 'Not authenticated' };
+      // qualityScore مش موجود كعمود في جدول student_faces
+      // سايبينه عشان أي كود بينادي الدالة دي ما يتكسرش
+      void qualityScore;
 
-      const { error } = await supabase.from('student_face_references').upsert({
+      const {
+        data: { user },
+      } = await supabase.auth.getUser();
+
+      if (!user) {
+        return { success: false, error: 'Not authenticated' };
+      }
+
+      const alreadyHasReference = await this.hasReference();
+
+      if (alreadyHasReference) {
+        return {
+          success: false,
+          error: 'Face reference already exists. Please verify identity instead.',
+        };
+      }
+
+      const { error } = await supabase.from('student_faces').insert({
         student_id: user.id,
-        embedding: Array.from(embedding),
-        quality_score: qualityScore,
-        captured_at: new Date().toISOString(),
+        face_image: '',
+        face_descriptor: Array.from(embedding),
       });
 
-      if (error) return { success: false, error: error.message };
+      if (error) {
+        return { success: false, error: error.message };
+      }
+
       return { success: true };
     } catch (err) {
-      return { success: false, error: err instanceof Error ? err.message : 'Unknown error' };
+      return {
+        success: false,
+        error: err instanceof Error ? err.message : 'Unknown error',
+      };
     }
   }
 
+  /**
+   * دي تستخدم قبل الامتحان فقط.
+   * بتبعت صورة/embedding جديد للمقارنة مع القديم.
+   * لا تحفظ reference جديدة.
+   */
   static async verifyIdentity(
     sessionId: string,
     embedding: Float32Array
@@ -130,10 +233,16 @@ export class IdentityVerificationService {
         p_embedding: Array.from(embedding),
       });
 
-      if (error) return { success: false, error: error.message };
+      if (error) {
+        return { success: false, error: error.message };
+      }
+
       return { success: true, data: data as VerificationResponse };
     } catch (err) {
-      return { success: false, error: err instanceof Error ? err.message : 'Unknown error' };
+      return {
+        success: false,
+        error: err instanceof Error ? err.message : 'Unknown error',
+      };
     }
   }
 
@@ -147,10 +256,16 @@ export class IdentityVerificationService {
         p_calibration: calibration,
       });
 
-      if (error) return { success: false, error: error.message };
+      if (error) {
+        return { success: false, error: error.message };
+      }
+
       return { success: true, data: data as StartSessionResponse };
     } catch (err) {
-      return { success: false, error: err instanceof Error ? err.message : 'Unknown error' };
+      return {
+        success: false,
+        error: err instanceof Error ? err.message : 'Unknown error',
+      };
     }
   }
 
@@ -172,10 +287,17 @@ export class IdentityVerificationService {
   }> {
     try {
       const { data, error } = await supabase.rpc('list_my_sessions');
-      if (error) return { success: false, error: error.message };
+
+      if (error) {
+        return { success: false, error: error.message };
+      }
+
       return { success: true, sessions: data as any[] };
     } catch (err) {
-      return { success: false, error: err instanceof Error ? err.message : 'Unknown error' };
+      return {
+        success: false,
+        error: err instanceof Error ? err.message : 'Unknown error',
+      };
     }
   }
 }

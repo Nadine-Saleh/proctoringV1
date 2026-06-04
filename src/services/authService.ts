@@ -27,49 +27,66 @@ export interface LoginData {
 export async function signup({ email, password, fullName, role }: SignupData) {
   try {
     if (password.length < 6) {
-      return { success: false, error: 'Password must be at least 6 characters long' };
+      return {
+        success: false,
+        error: 'Password must be at least 6 characters long',
+      };
     }
 
     const emailRegex = /^[^\s@]+@[^\s@]+\.[^\s@]+$/;
+
     if (!emailRegex.test(email)) {
-      return { success: false, error: 'Invalid email address' };
+      return {
+        success: false,
+        error: 'Invalid email address',
+      };
     }
 
     const { data: authData, error: authError } = await supabase.auth.signUp({
       email,
       password,
       options: {
-        data: { full_name: fullName, role },
+        data: {
+          full_name: fullName,
+          role,
+        },
         emailRedirectTo: window.location.origin,
       },
     });
 
     if (authError) {
-      return { success: false, error: authError.message };
+      return {
+        success: false,
+        error: authError.message,
+      };
     }
 
     if (!authData.user) {
-      return { success: false, error: 'Failed to create user account' };
+      return {
+        success: false,
+        error: 'Failed to create user account',
+      };
     }
 
-    const { error: profileError } = await supabase
-      .from('users')
-      .insert({
-        id: authData.user.id,
-        email,
-        full_name: fullName,
-        role,
-      } as any);
+    /*
+      مهم:
+      لا نعمل insert هنا في public.users.
+      Supabase trigger اسمه handle_new_user هو اللي هيعمل profile تلقائيًا
+      بعد إنشاء المستخدم في auth.users.
+      كده نتجنب RLS error أثناء signup.
+    */
 
-    if (profileError) {
-      return { success: false, error: `Failed to create profile: ${profileError.message}` };
-    }
-
-    return { success: true, user: authData.user };
+    return {
+      success: true,
+      user: authData.user,
+    };
   } catch (error) {
     return {
       success: false,
-      error: error instanceof Error ? error.message : 'An unexpected error occurred'
+      error:
+        error instanceof Error
+          ? error.message
+          : 'An unexpected error occurred',
     };
   }
 }
@@ -82,31 +99,49 @@ export async function login({ email, password }: LoginData) {
     });
 
     if (error) {
-      return { success: false, error: error.message };
+      return {
+        success: false,
+        error: error.message,
+      };
     }
 
-    return { success: true, user: data.user, session: data.session };
+    return {
+      success: true,
+      user: data.user,
+      session: data.session,
+    };
   } catch (error) {
     return {
       success: false,
-      error: error instanceof Error ? error.message : 'An unexpected error occurred'
+      error:
+        error instanceof Error
+          ? error.message
+          : 'An unexpected error occurred',
     };
   }
 }
 
 export async function logout() {
   const { error } = await supabase.auth.signOut();
+
   if (error) {
-    return { success: false, error: error.message };
+    return {
+      success: false,
+      error: error.message,
+    };
   }
-  return { success: true };
+
+  return {
+    success: true,
+  };
 }
 
 export async function getUserProfile(): Promise<UserProfile | null> {
   try {
-    // Use getSession() instead of getUser() for faster initial load
-    // it retrieves the session from local storage without necessarily a network request
-    const { data: { session }, error: sessionError } = await supabase.auth.getSession();
+    const {
+      data: { session },
+      error: sessionError,
+    } = await supabase.auth.getSession();
 
     if (sessionError || !session?.user) {
       return null;
@@ -114,14 +149,18 @@ export async function getUserProfile(): Promise<UserProfile | null> {
 
     const user = session.user;
 
-    // Fetch user profile from database
     const { data: dbData, error: dbError } = await supabase
       .from('users')
       .select('*')
       .eq('id', user.id)
       .maybeSingle();
 
-    if (dbError || !dbData) {
+    if (dbError) {
+      console.error('[authService] getUserProfile db error:', dbError);
+      return null;
+    }
+
+    if (!dbData) {
       return await createMissingProfile(user);
     }
 
@@ -135,7 +174,10 @@ export async function getUserProfile(): Promise<UserProfile | null> {
 async function createMissingProfile(user: any): Promise<UserProfile | null> {
   try {
     const userMetadata = user.user_metadata || {};
-    const fullName = userMetadata.full_name || user.email?.split('@')[0] || 'User';
+
+    const fullName =
+      userMetadata.full_name || user.email?.split('@')[0] || 'User';
+
     const role = userMetadata.role || 'student';
 
     const { data, error } = await supabase
@@ -150,20 +192,27 @@ async function createMissingProfile(user: any): Promise<UserProfile | null> {
       .single();
 
     if (error) {
+      console.error('[authService] createMissingProfile error:', error);
       return null;
     }
 
     return data as UserProfile;
-  } catch {
+  } catch (error) {
+    console.error('[authService] createMissingProfile exception:', error);
     return null;
   }
 }
 
 export async function updateUserProfile(updates: Partial<UserProfile>) {
-  const { data: { user } } = await supabase.auth.getUser();
+  const {
+    data: { user },
+  } = await supabase.auth.getUser();
 
   if (!user) {
-    return { success: false, error: 'Not authenticated' };
+    return {
+      success: false,
+      error: 'Not authenticated',
+    };
   }
 
   const { error } = await supabase
@@ -172,10 +221,15 @@ export async function updateUserProfile(updates: Partial<UserProfile>) {
     .eq('id', user.id);
 
   if (error) {
-    return { success: false, error: error.message };
+    return {
+      success: false,
+      error: error.message,
+    };
   }
 
-  return { success: true };
+  return {
+    success: true,
+  };
 }
 
 export async function resetPassword(email: string) {
@@ -184,10 +238,15 @@ export async function resetPassword(email: string) {
   });
 
   if (error) {
-    return { success: false, error: error.message };
+    return {
+      success: false,
+      error: error.message,
+    };
   }
 
-  return { success: true };
+  return {
+    success: true,
+  };
 }
 
 export async function updatePassword(newPassword: string) {
@@ -196,18 +255,29 @@ export async function updatePassword(newPassword: string) {
   });
 
   if (error) {
-    return { success: false, error: error.message };
+    return {
+      success: false,
+      error: error.message,
+    };
   }
 
-  return { success: true };
+  return {
+    success: true,
+  };
 }
 
 export async function checkAuth() {
-  const { data: { user } } = await supabase.auth.getUser();
+  const {
+    data: { user },
+  } = await supabase.auth.getUser();
+
   return user !== null;
 }
 
 export async function getSession() {
-  const { data: { session } } = await supabase.auth.getSession();
+  const {
+    data: { session },
+  } = await supabase.auth.getSession();
+
   return session;
 }

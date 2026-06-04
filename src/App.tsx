@@ -8,6 +8,7 @@ import { Landing } from './pages/Landing';
 import { StudentHome } from './pages/student/Home';
 import { JoinExam } from './pages/student/JoinExam';
 import { VerifyIdentity } from './pages/student/VerifyIdentity';
+import { FaceSetup } from './pages/student/FaceSetup';
 import { ReadyToStart } from './pages/student/ReadyToStart';
 import { Exam } from './pages/student/Exam';
 import { StudentResults } from './pages/student/Results';
@@ -51,6 +52,7 @@ function AppContent() {
   return (
     <div className="min-h-screen bg-ink-50">
       <Navigation onSignOut={signOut} userName={user?.full_name} />
+
       <Routes>
         <Route
           path="/"
@@ -60,6 +62,16 @@ function AppContent() {
             </ProtectedRoute>
           }
         />
+
+        <Route
+          path="/student/face-setup"
+          element={
+            <ProtectedRoute requiredRole="student">
+              <FaceSetup />
+            </ProtectedRoute>
+          }
+        />
+
         <Route
           path="/exam/join"
           element={
@@ -68,6 +80,7 @@ function AppContent() {
             </ProtectedRoute>
           }
         />
+
         <Route
           path="/exam/:sessionId/verify"
           element={
@@ -76,6 +89,7 @@ function AppContent() {
             </ProtectedRoute>
           }
         />
+
         <Route
           path="/exam/:sessionId/ready"
           element={
@@ -84,6 +98,7 @@ function AppContent() {
             </ProtectedRoute>
           }
         />
+
         <Route
           path="/exam/:sessionId"
           element={
@@ -92,6 +107,7 @@ function AppContent() {
             </ProtectedRoute>
           }
         />
+
         <Route
           path="/exam/:sessionId/results"
           element={
@@ -100,6 +116,7 @@ function AppContent() {
             </ProtectedRoute>
           }
         />
+
         <Route
           path="/instructor"
           element={
@@ -108,6 +125,7 @@ function AppContent() {
             </ProtectedRoute>
           }
         />
+
         <Route
           path="/instructor/exams/new"
           element={
@@ -116,6 +134,7 @@ function AppContent() {
             </ProtectedRoute>
           }
         />
+
         <Route
           path="/instructor/exams/:examId"
           element={
@@ -124,6 +143,7 @@ function AppContent() {
             </ProtectedRoute>
           }
         />
+
         <Route
           path="/instructor/results"
           element={
@@ -132,6 +152,7 @@ function AppContent() {
             </ProtectedRoute>
           }
         />
+
         <Route
           path="/instructor/exams/:examId/results/:sessionId"
           element={
@@ -140,6 +161,7 @@ function AppContent() {
             </ProtectedRoute>
           }
         />
+
         <Route
           path="/instructor/proctoring"
           element={
@@ -148,6 +170,7 @@ function AppContent() {
             </ProtectedRoute>
           }
         />
+
         <Route
           path="*"
           element={

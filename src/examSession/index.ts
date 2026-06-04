@@ -4,7 +4,7 @@
 // Convenience barrel file for Phase 2 exports
 
 // Services
-export { ExamSessionService } from '../services/examSessionService';
+export { ExamSessionService } from '../services/ExamSessionService';
 export { StudentAnswerService } from '../services/StudentAnswerService';
 export { ExamSubmissionService } from '../services/ExamSubmissionService';
 export { ViolationEventService } from '../services/ViolationEventService';

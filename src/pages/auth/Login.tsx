@@ -20,13 +20,14 @@ export function Login() {
       const result = await login({ email, password });
 
       if (!result.success) {
-        // Provide helpful error messages
         let errorMessage = result.error || 'Login failed';
 
         if (errorMessage.includes('Invalid login credentials')) {
-          errorMessage = 'Invalid email or password. Please check your credentials.';
+          errorMessage =
+            'Invalid email or password. Please check your credentials.';
         } else if (errorMessage.includes('Email not confirmed')) {
-          errorMessage = 'Please verify your email address before logging in.';
+          errorMessage =
+            'Please verify your email address before logging in.';
         }
 
         setError(errorMessage);
@@ -35,11 +36,12 @@ export function Login() {
 
       // Fetch user profile to determine redirect
       const userProfile = await getUserProfile();
-      const redirectPath = userProfile?.role === 'instructor' || userProfile?.role === 'admin'
-        ? '/instructor'
-        : '/';
 
-      // Redirect based on role
+      const redirectPath =
+        userProfile?.role === 'instructor' || userProfile?.role === 'admin'
+          ? '/instructor'
+          : '/student/face-setup';
+
       navigate(redirectPath);
     } catch (err) {
       setError('An unexpected error occurred. Please try again.');
@@ -116,7 +118,11 @@ export function Login() {
                   className="absolute right-2 top-1/2 -translate-y-1/2 p-2 text-ink-500 hover:text-ink-800 hover:bg-ink-50 rounded-md transition-colors"
                   aria-label={showPassword ? 'Hide password' : 'Show password'}
                 >
-                  {showPassword ? <EyeOff className="w-4 h-4" /> : <Eye className="w-4 h-4" />}
+                  {showPassword ? (
+                    <EyeOff className="w-4 h-4" />
+                  ) : (
+                    <Eye className="w-4 h-4" />
+                  )}
                 </button>
               </div>
             </div>
@@ -142,7 +148,10 @@ export function Login() {
 
           <div className="mt-6 text-center text-sm text-ink-600">
             Don't have an account?{' '}
-            <Link to="/signup" className="font-medium text-brand-700 hover:text-brand-800">
+            <Link
+              to="/signup"
+              className="font-medium text-brand-700 hover:text-brand-800"
+            >
               Sign up
             </Link>
           </div>

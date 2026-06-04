@@ -57,7 +57,7 @@ export function useReferenceCapture(): UseReferenceCaptureReturn {
         const embedding = await IdentityVerificationService.extractEmbedding(videoEl);
         if (!embedding) {
           setStatus('error');
-          setError('No face detected. Please ensure your face is clearly visible.');
+         setError('Please make sure exactly one clear face is visible, and stay close to the camera.');
           return false;
         }
         embeddings.push(embedding);

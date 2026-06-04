@@ -1,9 +1,8 @@
 import { useCallback, useEffect, useState } from 'react';
 import { useNavigate, Link, useLocation } from 'react-router-dom';
-import { Clock, FileText, Calendar, ChevronRight, AlertCircle, KeyRound, Loader2 } from 'lucide-react';
+import { Clock, FileText, Calendar, ChevronRight, AlertCircle, KeyRound } from 'lucide-react';
 import { IdentityVerificationService } from '../../services/IdentityVerificationService';
 import { useApp } from '../../context/AppContext';
-import { Exam as ExamType } from '../../types';
 
 interface SessionRow {
   session_id: string;
@@ -209,7 +208,7 @@ export const StudentHome = () => {
                           id: session.exam_id,
                           title: session.exam_title,
                           duration: session.duration_minutes,
-                        });
+                        }as any);
                         navigate(getSessionRoute(session));
                       }}
                       className="btn btn-md btn-primary w-full"

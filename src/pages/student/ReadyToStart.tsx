@@ -43,7 +43,7 @@ export const ReadyToStart = () => {
         description: joinData.exam.description,
         duration: joinData.exam.duration_minutes,
         proctoring_policy: joinData.exam.proctoring_policy,
-      });
+      }as any);
     }
 
     // start_exam_session is called inside Exam.tsx after distance calibration (T040a / FR-013a).
