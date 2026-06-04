@@ -145,6 +145,7 @@ export interface ViolationEvent {
   created_at: string;
   student_id?: string;
   is_reviewed?: boolean;
+  instructor_note?: string | null;
 }
 
 export interface CreateViolationEventInput {

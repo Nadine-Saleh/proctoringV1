@@ -16,6 +16,12 @@ import {
   RotateCcw,
   MessageSquare,
   Camera,
+  Mail,
+  Activity,
+  ChevronRight,
+  AlertTriangle,
+  History,
+  X
 } from 'lucide-react';
 
 interface SubmissionData {
@@ -49,6 +55,13 @@ const getSeverityColor = (sev: number) => {
   return 'bg-brand-100 text-brand-800 border-brand-200';
 };
 
+const getSeverityLabel = (sev: number) => {
+  if (sev >= 20) return 'Critical';
+  if (sev >= 15) return 'High';
+  if (sev >= 10) return 'Medium';
+  return 'Low';
+};
+
 interface GroupedViolation {
   id: string;
   type: string;
@@ -75,16 +88,27 @@ const groupViolations = (events: ViolationEvent[]): GroupedViolation[] => {
   const groups: GroupedViolation[] = [];
   let currentGroup: GroupedViolation | null = null;
 
+  const isDistanceType = (t: string) => t === 'face_too_close' || t === 'face_too_far' || t === 'distance_issue';
+
   for (const ev of sorted) {
     const evTime = new Date(ev.occurred_at).getTime();
     const evType = ev.violation_type || ev.type;
 
+    const canMerge = currentGroup && (
+      currentGroup.type === evType || 
+      (isDistanceType(currentGroup.type) && isDistanceType(evType))
+    );
+
     if (
       currentGroup &&
-      currentGroup.type === evType &&
+      canMerge &&
       evTime - new Date(currentGroup.endTime).getTime() < 30000 // 30 second threshold for "consecutive"
     ) {
       // Merge into current group
+      if (currentGroup.type !== evType && isDistanceType(currentGroup.type)) {
+        currentGroup.type = 'distance_issue';
+      }
+      
       currentGroup.endTime = ev.occurred_at;
       currentGroup.durationMs =
         new Date(currentGroup.endTime).getTime() - new Date(currentGroup.startTime).getTime();
@@ -105,6 +129,11 @@ const groupViolations = (events: ViolationEvent[]): GroupedViolation[] => {
       if (ev.instructor_note && !currentGroup.instructor_note) {
         currentGroup.instructor_note = ev.instructor_note;
       }
+
+      // ESCALATION LOGIC: If we have 3 or more sequential events and it's currently low risk, escalate to Medium
+      if (currentGroup.eventIds.length >= 3 && currentGroup.severity < 10) {
+        currentGroup.severity = 10; // 10 is the threshold for 'Medium'
+      }
     } else {
       // Start new group
       currentGroup = {
@@ -115,7 +144,7 @@ const groupViolations = (events: ViolationEvent[]): GroupedViolation[] => {
         endTime: ev.occurred_at,
         durationMs: ev.duration_ms || 0,
         description: ev.description || '',
-        is_reviewed: ev.is_reviewed,
+        is_reviewed: !!ev.is_reviewed,
         instructor_note: ev.instructor_note || null,
         evidence_image: ev.evidence_image || null,
         evidence: ev.evidence,
@@ -186,15 +215,12 @@ export const SubmissionDetail = () => {
         }
         setSubmission(match);
 
-        const result = await ViolationEventService.getBySession(sessionId);
+        const result = await ViolationEventService.getBySession(sessionId!);
         if (!result.success) {
           throw new Error(result.error || 'Failed to load violations');
         }
 
         const evArr = result.events ?? [];
-        console.info(
-          `[SubmissionDetail] loaded ${evArr.length} violation_events for session ${sessionId}`
-        );
         setViolations(evArr);
 
         // Pre-fetch signed URLs for binary evidence artifacts
@@ -203,7 +229,6 @@ export const SubmissionDetail = () => {
           const paths = artifacts.map(ev => ev.evidence!.bucket_path);
           const urlMap = await EvidenceSnippetService.getPlaybackUrls(paths);
           
-          // Map bucket_path -> event_id for easier lookup in UI
           const idToUrl: Record<string, string> = {};
           for (const ev of artifacts) {
             const url = urlMap.get(ev.evidence!.bucket_path);
@@ -232,7 +257,10 @@ export const SubmissionDetail = () => {
     load();
   }, [examId, sessionId]);
 
-  const handleToggleReview = async (ev: ViolationEvent) => {
+  const handleToggleReview = async (evId: string) => {
+    const ev = violations.find(v => v.id === evId);
+    if (!ev) return;
+    
     const newReviewed = !ev.is_reviewed;
     const note = reviewStates[ev.id]?.noteText || undefined;
 
@@ -310,20 +338,24 @@ export const SubmissionDetail = () => {
 
   if (loading) {
     return (
-      <div className="min-h-screen flex items-center justify-center">
-        <div className="w-10 h-10 border-4 border-brand-200 border-t-indigo-600 rounded-full animate-spin" />
+      <div className="min-h-screen bg-ink-50 grid-spotlight flex items-center justify-center">
+        <div className="text-center">
+          <div className="w-12 h-12 border-4 border-brand-100 border-t-brand-700 rounded-full animate-spin mx-auto mb-4" />
+          <p className="text-ink-600 font-medium">Retrieving submission forensics...</p>
+        </div>
       </div>
     );
   }
 
   if (error || !submission) {
     return (
-      <div className="min-h-screen flex items-center justify-center">
-        <div className="text-center">
-          <XCircle className="w-12 h-12 text-red-400 mx-auto mb-4" />
-          <p className="text-ink-700 font-semibold">{error ?? 'Submission not found'}</p>
-          <button onClick={() => navigate(-1)} className="mt-4 text-brand-700 hover:underline text-sm">
-            Go back
+      <div className="min-h-screen bg-ink-50 grid-spotlight flex items-center justify-center">
+        <div className="card p-12 text-center max-w-md mx-4">
+          <XCircle className="w-16 h-16 text-danger-400 mx-auto mb-4" />
+          <h2 className="text-xl font-bold text-ink-900 mb-2">Forensic Data Unavailable</h2>
+          <p className="text-ink-600 mb-8">{error ?? 'The requested submission record could not be located.'}</p>
+          <button onClick={() => navigate(-1)} className="btn btn-primary w-full">
+            Return to Results
           </button>
         </div>
       </div>
@@ -342,384 +374,419 @@ export const SubmissionDetail = () => {
   const reviewedCount = violations.filter(v => v.is_reviewed).length;
 
   return (
-    <div className="min-h-screen bg-ink-50">
-      <div className="max-w-4xl mx-auto px-4 py-8">
+    <div className="min-h-screen bg-ink-50 grid-spotlight">
+      <div className="max-w-5xl mx-auto px-4 sm:px-6 lg:px-8 py-12">
+        {/* Navigation */}
         <button
           onClick={() => navigate(-1)}
-          className="flex items-center gap-2 text-ink-600 hover:text-ink-900 mb-6 text-sm"
+          className="group inline-flex items-center gap-2 text-sm font-bold text-ink-500 hover:text-brand-700 transition-colors mb-10"
         >
-          <ArrowLeft className="w-4 h-4" /> Back to results
+          <ArrowLeft className="w-4 h-4 group-hover:-translate-x-1 transition-transform" />
+          <span>Back to Exam Results</span>
         </button>
 
-        <h1 className="text-2xl font-bold text-ink-900 mb-6">Submission Detail</h1>
+        <div className="mb-10 animate-fade-in-up">
+          <div className="text-2xs font-bold uppercase tracking-[0.2em] text-brand-700 mb-1">
+            Forensic Analysis
+          </div>
+          <h1 className="text-4xl font-bold text-ink-900 tracking-tight">Submission Detail</h1>
+        </div>
 
-        {/* Student + grade summary */}
-        <div className="bg-white rounded-xl shadow-sm border border-ink-100 p-6 mb-6">
-          <div className="flex items-start justify-between flex-wrap gap-4">
-            <div className="flex items-center gap-3">
-              <div className="w-10 h-10 rounded-full bg-brand-100 flex items-center justify-center text-brand-800 font-semibold">
-                {submission.student_name?.charAt(0) ?? '?'}
+        {/* Student Profile & Performance Hero */}
+        <div className="relative mb-8 p-8 rounded-3xl bg-white border border-ink-100 shadow-2xl shadow-ink-900/5 overflow-hidden animate-fade-in">
+          <div className="absolute top-0 right-0 w-64 h-64 bg-brand-50 rounded-full -translate-y-1/2 translate-x-1/2 blur-3xl opacity-50" />
+          
+          <div className="relative z-10 flex flex-col lg:flex-row lg:items-center justify-between gap-10">
+            <div className="flex items-center gap-6">
+              <div className="w-20 h-20 rounded-2xl bg-gradient-to-br from-brand-600 to-brand-800 flex items-center justify-center text-white font-black text-3xl shadow-xl shadow-brand-700/20">
+                {submission.student_name?.charAt(0).toUpperCase() ?? '?'}
               </div>
               <div>
-                <p className="font-semibold text-ink-900">{submission.student_name ?? 'Unknown'}</p>
-                <p className="text-sm text-ink-500">{submission.student_email}</p>
+                <h2 className="text-2xl font-bold text-ink-900 tracking-tight">{submission.student_name ?? 'Unknown Student'}</h2>
+                <div className="flex items-center gap-4 mt-2">
+                  <div className="flex items-center gap-1.5 text-sm text-ink-500 font-medium">
+                    <Mail className="w-4 h-4 text-ink-300" />
+                    {submission.student_email}
+                  </div>
+                  <div className="w-1 h-1 rounded-full bg-ink-200" />
+                  <div className="flex items-center gap-1.5 text-sm text-ink-500 font-medium uppercase tracking-widest">
+                    <Clock className="w-4 h-4 text-ink-300" />
+                    {new Date(submission.submitted_at).toLocaleDateString()}
+                  </div>
+                </div>
               </div>
             </div>
-            <div className="flex items-center gap-4 flex-wrap">
-              <div className="text-center">
-                <p className="text-xs text-ink-500 mb-1 flex items-center gap-1">
-                  <Award className="w-3 h-3" /> Grade
-                </p>
-                <p className="text-xl font-bold text-ink-900">{scorePercent}%</p>
-                <p className="text-xs text-ink-400">
-                  {submission.auto_graded_score} / {submission.auto_graded_max} pts
+
+            <div className="flex flex-wrap gap-4">
+              <div className="flex-1 min-w-[140px] p-5 rounded-2xl bg-ink-50 border border-ink-100 text-center group hover:bg-white hover:shadow-xl transition-all">
+                <div className="flex items-center justify-center gap-1.5 text-[10px] font-black uppercase tracking-widest text-ink-400 mb-1.5">
+                  <Award className="w-3 h-3" />
+                  Score
+                </div>
+                <p className="text-3xl font-black text-ink-900 tabular-nums tracking-tighter">{scorePercent}%</p>
+                <p className="text-[10px] text-ink-500 font-bold mt-1 uppercase tracking-tight">
+                  {submission.auto_graded_score} / {submission.auto_graded_max} PTS
                 </p>
               </div>
-              <div className="text-center">
-                <p className="text-xs text-ink-500 mb-1 flex items-center gap-1">
-                  <ShieldAlert className="w-3 h-3" /> Risk Score
-                </p>
-                <p
-                  className={`text-xl font-bold ${
-                    effectiveRiskScore >= 70
-                      ? 'text-danger-600'
-                      : effectiveRiskScore >= 40
-                      ? 'text-warning-600'
-                      : 'text-success-600'
-                  }`}
-                >
+
+              <div className="flex-1 min-w-[140px] p-5 rounded-2xl bg-ink-50 border border-ink-100 text-center group hover:bg-white hover:shadow-xl transition-all">
+                <div className="flex items-center justify-center gap-1.5 text-[10px] font-black uppercase tracking-widest text-ink-400 mb-1.5">
+                  <ShieldAlert className="w-3 h-3" />
+                  Risk Index
+                </div>
+                <p className={`text-3xl font-black tabular-nums tracking-tighter ${
+                  effectiveRiskScore >= 70 ? 'text-danger-600' : effectiveRiskScore >= 40 ? 'text-warning-600' : 'text-success-600'
+                }`}>
                   {Math.round(effectiveRiskScore)}
                 </p>
-                {isOverridden && (
-                  <p className="text-xs text-brand-600">
-                    overridden from {Math.round(submission.final_cheating_score)}
-                  </p>
-                )}
-              </div>
-              <div className="text-center">
-                <p className="text-xs text-ink-500 mb-1 flex items-center gap-1">
-                  <Clock className="w-3 h-3" /> Submitted
+                <p className="text-[10px] text-ink-500 font-bold mt-1 uppercase tracking-tight">
+                  {isOverridden ? 'Instructor Override' : 'Final Peak Score'}
                 </p>
-                <p className="text-sm font-medium text-ink-700">
-                  {new Date(submission.submitted_at).toLocaleString()}
-                </p>
-                <p className="text-xs text-ink-400">{submission.submit_reason.replace('_', ' ')}</p>
               </div>
             </div>
           </div>
         </div>
 
-        {/* Risk Breakdown Section */}
-        {Object.keys(riskBreakdown).length > 0 && (
-          <div className="bg-white rounded-xl shadow-sm border border-ink-100 p-5 mb-6">
-            <h2 className="font-semibold text-ink-900 text-sm mb-4 flex items-center gap-2">
-              <ShieldAlert className="w-4 h-4 text-brand-700" />
-              Risk Score Explanation
-            </h2>
-            <div className="space-y-2">
-              {Object.entries(riskBreakdown).map(([type, totalSeverity]) => (
-                <div key={type} className="flex items-center justify-between text-sm">
-                  <span className="text-ink-600">{formatViolationType(type)}</span>
-                  <span className="font-medium text-ink-900">+{totalSeverity}</span>
-                </div>
-              ))}
-              <div className="pt-2 border-t border-ink-100 flex items-center justify-between font-bold text-ink-900">
-                <span>Total Accumulated Severity</span>
-                <span className={effectiveRiskScore >= 70 ? 'text-danger-600' : 'text-brand-700'}>
-                  {Math.round(submission.final_cheating_score)}
-                </span>
-              </div>
-              <p className="text-[10px] text-ink-400 italic mt-2">
-                * Final Risk Score (currently {Math.round(effectiveRiskScore)}) is derived from accumulated severity with time-decay.
-              </p>
-            </div>
-          </div>
-        )}
-
-        {/* Score override panel */}
-        <div className="bg-white rounded-xl shadow-sm border border-ink-100 p-5 mb-6">
-          <div className="flex items-center justify-between mb-2">
-            <h2 className="font-semibold text-ink-900 text-sm">Instructor Risk Score Override</h2>
-            <div className="flex gap-2">
-              {isOverridden && (
-                <button
-                  onClick={handleRemoveOverride}
-                  disabled={overrideSaving}
-                  className="flex items-center gap-1 text-xs text-ink-500 hover:text-danger-600 disabled:opacity-50"
-                >
-                  <RotateCcw className="w-3 h-3" /> Remove override
-                </button>
-              )}
-              {!showOverrideForm && (
-                <button
-                  onClick={() => {
-                    setOverrideScore(
-                      submission.instructor_override_score != null
-                        ? String(Math.round(submission.instructor_override_score))
-                        : ''
-                    );
-                    setOverrideNote(submission.instructor_note ?? '');
-                    setShowOverrideForm(true);
-                  }}
-                  className="flex items-center gap-1 text-xs text-brand-700 hover:text-brand-800"
-                >
-                  <Edit2 className="w-3 h-3" /> {isOverridden ? 'Edit override' : 'Set override'}
-                </button>
-              )}
-            </div>
-          </div>
-
-          {isOverridden && !showOverrideForm && (
-            <p className="text-sm text-ink-600">
-              Score overridden to{' '}
-              <strong>{Math.round(submission.instructor_override_score!)}</strong>
-              {submission.instructor_note && (
-                <span className="text-ink-400"> — "{submission.instructor_note}"</span>
-              )}
-            </p>
-          )}
-
-          {!isOverridden && !showOverrideForm && (
-            <p className="text-xs text-ink-400">
-              Final score is {Math.round(submission.final_cheating_score)} (peak during exam). You
-              can override it after reviewing the violations below.
-            </p>
-          )}
-
-          {showOverrideForm && (
-            <div className="mt-3 space-y-3">
-              <div className="flex items-center gap-3">
-                <div>
-                  <label className="block text-xs font-medium text-ink-700 mb-1">
-                    New score (0–100)
-                  </label>
-                  <input
-                    type="number"
-                    min={0}
-                    max={100}
-                    value={overrideScore}
-                    onChange={e => setOverrideScore(e.target.value)}
-                    placeholder="e.g. 25"
-                    className="w-28 px-3 py-1.5 border border-ink-200 rounded-lg text-sm focus:ring-2 focus:ring-brand-700/30 focus:outline-none"
-                  />
-                </div>
-                <div className="flex-1">
-                  <label className="block text-xs font-medium text-ink-700 mb-1">
-                    Reason (optional)
-                  </label>
-                  <input
-                    type="text"
-                    value={overrideNote}
-                    onChange={e => setOverrideNote(e.target.value)}
-                    placeholder="e.g. Reviewed — violations appear accidental"
-                    className="w-full px-3 py-1.5 border border-ink-200 rounded-lg text-sm focus:ring-2 focus:ring-brand-700/30 focus:outline-none"
-                  />
-                </div>
-              </div>
-              {overrideError && (
-                <p className="text-xs text-danger-600">{overrideError}</p>
-              )}
-              <div className="flex gap-2">
-                <button
-                  onClick={handleSaveOverride}
-                  disabled={overrideSaving}
-                  className="px-4 py-1.5 rounded-lg bg-brand-700 text-white text-sm font-medium hover:bg-brand-800 disabled:opacity-50"
-                >
-                  {overrideSaving ? 'Saving…' : 'Save'}
-                </button>
-                <button
-                  onClick={() => setShowOverrideForm(false)}
-                  className="px-4 py-1.5 rounded-lg bg-ink-100 text-ink-700 text-sm font-medium hover:bg-ink-200"
-                >
-                  Cancel
-                </button>
-              </div>
-            </div>
-          )}
-        </div>
-
-        {/* Calibration notice */}
-        {submission.calibration_skipped ? (
-          <div className="bg-orange-50 border border-orange-200 rounded-xl p-4 mb-6 flex items-start gap-3">
-            <ArrowLeftRight className="w-5 h-5 text-orange-500 flex-shrink-0 mt-0.5" />
-            <div>
-              <p className="font-semibold text-orange-800">Calibration skipped</p>
-              <p className="text-sm text-orange-700 mt-0.5">
-                Distance violations were measured against the default 50 cm ± 20 cm. Discount
-                distance-related violations during review.
-              </p>
-            </div>
-          </div>
-        ) : submission.optimal_distance_cm != null ? (
-          <div className="bg-ink-50 border border-ink-100 rounded-xl p-4 mb-6 flex items-center gap-3">
-            <ArrowLeftRight className="w-5 h-5 text-ink-500" />
-            <p className="text-sm text-ink-700">
-              Distance baseline: <strong>{submission.optimal_distance_cm} cm</strong> ±{' '}
-              <strong>{submission.distance_tolerance_cm ?? '?'} cm</strong>
-            </p>
-          </div>
-        ) : null}
-
-        {/* Violation timeline */}
-        <div className="bg-white rounded-xl shadow-sm border border-ink-100 overflow-hidden">
-          <div className="px-6 py-4 border-b border-ink-100 flex items-center justify-between">
-            <h2 className="font-semibold text-ink-900">
-              Violation Timeline ({groupedViolationsList.length} grouped)
-            </h2>
-            {violations.length > 0 && (
-              <span className="text-xs text-ink-500">
-                {reviewedCount} / {violations.length} raw reviewed
-              </span>
-            )}
-          </div>
-
-          {groupedViolationsList.length === 0 ? (
-            <div className="px-6 py-10 text-center">
-              <CheckCircle className="w-10 h-10 text-green-400 mx-auto mb-3" />
-              <p className="text-ink-500">No violations recorded for this session.</p>
-            </div>
-          ) : (
-            <div className="divide-y divide-ink-100">
-              {groupedViolationsList.map(ev => {
-                const rs = reviewStates[ev.id] ?? {
-                  saving: false,
-                  showNote: false,
-                  noteText: ev.instructor_note ?? '',
-                };
-
-                const durationSec = Math.round(ev.durationMs / 1000);
-
-                return (
-                  <div
-                    key={ev.id}
-                    className={`px-6 py-4 transition-colors ${ev.is_reviewed ? 'bg-ink-50' : ''}`}
-                  >
-                    <div className="flex items-start justify-between gap-3">
-                      <div className="flex-1">
-                        <div className="flex items-center gap-2 mb-1 flex-wrap">
-                          <span
-                            className={`inline-block px-2 py-0.5 rounded text-xs font-medium border ${getSeverityColor(ev.severity)}`}
-                          >
-                            {formatViolationType(ev.type)}
-                          </span>
-                          <span className="text-xs text-ink-400">
-                            {new Date(ev.startTime).toLocaleTimeString()}
-                            {ev.durationMs > 0 && ` — ${new Date(ev.endTime).toLocaleTimeString()}`}
-                          </span>
-                          {ev.durationMs > 0 && (
-                            <span className="inline-flex items-center gap-1 px-2 py-0.5 rounded text-[10px] font-bold bg-ink-100 text-ink-700 uppercase tracking-tighter">
-                              <Clock className="w-2.5 h-2.5" />
-                              {durationSec} sec
-                            </span>
-                          )}
-                          {ev.is_reviewed && (
-                            <span className="flex items-center gap-1 text-xs text-success-600 font-medium">
-                              <CheckCircle className="w-3 h-3" /> Reviewed
-                            </span>
-                          )}
-                        </div>
-
-                        <p className="text-sm text-ink-600">
-                          {ev.description}
-                          {ev.eventIds.length > 1 && (
-                            <span className="text-xs text-ink-400 ml-2">
-                              ({ev.eventIds.length} consecutive events merged)
-                            </span>
-                          )}
-                        </p>
-
-                        {ev.instructor_note && (
-                          <p className="text-xs text-brand-700 mt-1 flex items-center gap-1">
-                            <MessageSquare className="w-3 h-3" /> {ev.instructor_note}
-                          </p>
-                        )}
-
-                        {/* Evidence preview */}
-                        {expandedEvidence === ev.id && (evidenceUrls[ev.id] || ev.evidence_image) && (
-                          <div className="mt-3 inline-block">
-                            <img
-                              src={evidenceUrls[ev.id] || ev.evidence_image!}
-                              alt="Violation evidence snapshot"
-                              className="max-w-xs rounded-lg border border-ink-200 shadow-sm"
-                            />
-                            <p className="text-xs text-ink-400 mt-1">
-                              Captured at {new Date(ev.startTime).toLocaleTimeString()}
-                              {evidenceUrls[ev.id] && " (Secure Storage)"}
-                            </p>
-                          </div>
-                        )}
-
-                        {/* Note input (shown when adding/editing note) */}
-                        {rs.showNote && (
-                          <div className="mt-2">
-                            <input
-                              type="text"
-                              value={rs.noteText}
-                              onChange={e =>
-                                setReviewStates(prev => ({
-                                  ...prev,
-                                  [ev.id]: { ...prev[ev.id], noteText: e.target.value },
-                                }))
-                              }
-                              placeholder="Add a note (optional)"
-                              className="w-full max-w-sm px-3 py-1.5 border border-ink-200 rounded-lg text-xs focus:ring-2 focus:ring-brand-700/30 focus:outline-none"
-                            />
-                          </div>
-                        )}
+        <div className="grid grid-cols-1 lg:grid-cols-3 gap-8">
+          {/* Sidebar: Risk Breakdown & Overrides */}
+          <div className="lg:col-span-1 space-y-6">
+            {/* Risk Explanation */}
+            {Object.keys(riskBreakdown).length > 0 && (
+              <div className="card p-6 bg-white shadow-xl shadow-ink-200/20">
+                <h3 className="text-xs font-black text-ink-900 uppercase tracking-widest mb-6 flex items-center gap-2">
+                  <Activity className="w-4 h-4 text-brand-700" />
+                  Signal breakdown
+                </h3>
+                <div className="space-y-4">
+                  {Object.entries(riskBreakdown).map(([type, totalSeverity]) => (
+                    <div key={type} className="group">
+                      <div className="flex items-center justify-between text-sm mb-1.5">
+                        <span className="text-ink-600 font-medium">{formatViolationType(type)}</span>
+                        <span className="font-bold text-ink-900 tabular-nums">+{totalSeverity}</span>
                       </div>
-
-                      <div className="flex items-center gap-2 flex-shrink-0">
-                        {/* Evidence snapshot */}
-                        {(evidenceUrls[ev.id] || ev.evidence_image) && (
-                          <button
-                            onClick={() =>
-                              setExpandedEvidence(prev => (prev === ev.id ? null : ev.id))
-                            }
-                            className="flex items-center gap-1 text-xs text-brand-700 hover:underline"
-                          >
-                            <Camera className="w-3.5 h-3.5" />
-                            {expandedEvidence === ev.id ? 'Hide' : 'Evidence'}
-                          </button>
-                        )}
-
-                        {/* Note toggle */}
-                        <button
-                          onClick={() =>
-                            setReviewStates(prev => ({
-                              ...prev,
-                              [ev.id]: { ...prev[ev.id], showNote: !prev[ev.id]?.showNote },
-                            }))
-                          }
-                          className="text-ink-400 hover:text-brand-700 p-1 rounded"
-                          title="Add/edit note"
-                        >
-                          <MessageSquare className="w-3.5 h-3.5" />
-                        </button>
-
-                        {/* Mark reviewed / unreviewed */}
-                        <button
-                          // Use the first event in the group for the toggle
-                          onClick={() => handleToggleReview(violations.find(v => v.id === ev.id)!)}
-                          disabled={rs.saving}
-                          className={`px-3 py-1 rounded-lg text-xs font-medium transition-colors disabled:opacity-50 ${
-                            ev.is_reviewed
-                              ? 'bg-ink-200 text-ink-600 hover:bg-ink-300'
-                              : 'bg-success-100 text-success-700 hover:bg-green-200 border border-success-200'
-                          }`}
-                        >
-                          {rs.saving
-                            ? '…'
-                            : ev.is_reviewed
-                            ? 'Mark unreviewed'
-                            : 'Mark reviewed'}
-                        </button>
+                      <div className="h-1.5 w-full bg-ink-50 rounded-full overflow-hidden">
+                        <div 
+                          className={`h-full rounded-full ${totalSeverity >= 20 ? 'bg-danger-500' : totalSeverity >= 10 ? 'bg-orange-500' : 'bg-brand-500'}`} 
+                          style={{ width: `${Math.min(100, (totalSeverity / (submission.final_cheating_score || 1)) * 100)}%` }} 
+                        />
                       </div>
                     </div>
+                  ))}
+                  <div className="pt-6 border-t border-ink-100 flex items-center justify-between mt-4">
+                    <span className="text-xs font-bold text-ink-900 uppercase tracking-widest">Accumulated Severity</span>
+                    <span className="text-lg font-black text-ink-900">{Math.round(submission.final_cheating_score)}</span>
                   </div>
-                );
-              })}
+                  <p className="text-[10px] text-ink-400 italic leading-relaxed mt-2">
+                    Note: Final score accounts for signal decay over the session duration.
+                  </p>
+                </div>
+              </div>
+            )}
+
+            {/* Override Controls */}
+            <div className="card p-6 bg-white shadow-xl shadow-ink-200/20">
+              <div className="flex items-center justify-between mb-6">
+                <h3 className="text-xs font-black text-ink-900 uppercase tracking-widest flex items-center gap-2">
+                  <Edit2 className="w-4 h-4 text-brand-700" />
+                  Index Override
+                </h3>
+                {isOverridden && !showOverrideForm && (
+                  <button
+                    onClick={handleRemoveOverride}
+                    disabled={overrideSaving}
+                    className="p-1.5 rounded-lg text-ink-400 hover:text-danger-600 hover:bg-danger-50 transition-all"
+                    title="Remove override"
+                  >
+                    <RotateCcw className="w-3.5 h-3.5" />
+                  </button>
+                )}
+              </div>
+
+              {!showOverrideForm ? (
+                <div>
+                  {isOverridden ? (
+                    <div className="p-4 rounded-xl bg-brand-50 border border-brand-100 mb-4">
+                      <p className="text-xs text-brand-800 font-bold mb-1">Current Override: {Math.round(submission.instructor_override_score!)}</p>
+                      {submission.instructor_note && (
+                        <p className="text-xs text-brand-600 leading-relaxed italic">"{submission.instructor_note}"</p>
+                      )}
+                    </div>
+                  ) : (
+                    <p className="text-xs text-ink-500 leading-relaxed mb-6">
+                      You can manually adjust the final risk index if forensic evidence suggests signal noise or false positives.
+                    </p>
+                  )}
+                  <button
+                    onClick={() => {
+                      setOverrideScore(submission.instructor_override_score != null ? String(Math.round(submission.instructor_override_score)) : '');
+                      setOverrideNote(submission.instructor_note ?? '');
+                      setShowOverrideForm(true);
+                    }}
+                    className="w-full btn btn-secondary btn-sm font-black uppercase text-[10px] tracking-widest py-3"
+                  >
+                    {isOverridden ? 'Modify Override' : 'Initialize Override'}
+                  </button>
+                </div>
+              ) : (
+                <div className="animate-fade-in space-y-4">
+                  <div>
+                    <label className="field-label !text-[10px] uppercase tracking-widest">Target Index (0-100)</label>
+                    <input
+                      type="number"
+                      min={0}
+                      max={100}
+                      value={overrideScore}
+                      onChange={e => setOverrideScore(e.target.value)}
+                      placeholder="e.g. 25"
+                      className="field-input"
+                    />
+                  </div>
+                  <div>
+                    <label className="field-label !text-[10px] uppercase tracking-widest">Forensic Justification</label>
+                    <textarea
+                      value={overrideNote}
+                      onChange={e => setOverrideNote(e.target.value)}
+                      placeholder="Reason for override..."
+                      className="field-input min-h-[80px] resize-none"
+                    />
+                  </div>
+                  {overrideError && (
+                    <div className="p-3 rounded-lg bg-danger-50 border border-danger-100 text-[10px] text-danger-700 font-bold flex items-center gap-2">
+                      <AlertTriangle className="w-3.5 h-3.5" />
+                      {overrideError}
+                    </div>
+                  )}
+                  <div className="flex gap-2">
+                    <button
+                      onClick={handleSaveOverride}
+                      disabled={overrideSaving}
+                      className="flex-1 btn btn-primary btn-sm font-black uppercase text-[10px] tracking-widest py-3"
+                    >
+                      {overrideSaving ? 'Saving...' : 'Apply'}
+                    </button>
+                    <button
+                      onClick={() => setShowOverrideForm(false)}
+                      className="px-4 py-3 rounded-xl bg-ink-100 text-ink-700 font-black uppercase text-[10px] tracking-widest hover:bg-ink-200 transition-all"
+                    >
+                      Cancel
+                    </button>
+                  </div>
+                </div>
+              )}
             </div>
-          )}
+
+            {/* Context/Calibration */}
+            <div className="card p-6 bg-white shadow-sm border-ink-100">
+              <h3 className="text-xs font-black text-ink-900 uppercase tracking-widest mb-4 flex items-center gap-2">
+                <ArrowLeftRight className="w-4 h-4 text-ink-400" />
+                Capture Context
+              </h3>
+              {submission.calibration_skipped ? (
+                <div className="flex items-start gap-3 p-3 rounded-xl bg-orange-50 border border-orange-100">
+                  <AlertTriangle className="w-4 h-4 text-orange-600 shrink-0 mt-0.5" />
+                  <p className="text-xs text-orange-800 leading-relaxed">
+                    <strong>Calibration Skipped</strong>. Measurements calculated against system defaults (50cm baseline).
+                  </p>
+                </div>
+              ) : (
+                <div className="space-y-3">
+                  <div className="flex items-center justify-between text-xs">
+                    <span className="text-ink-500">Baseline Distance</span>
+                    <span className="font-bold text-ink-900">{submission.optimal_distance_cm} cm</span>
+                  </div>
+                  <div className="flex items-center justify-between text-xs">
+                    <span className="text-ink-500">Tolerance Range</span>
+                    <span className="font-bold text-ink-900">± {submission.distance_tolerance_cm ?? '20'} cm</span>
+                  </div>
+                </div>
+              )}
+            </div>
+          </div>
+
+          {/* Main Area: Forensic Timeline */}
+          <div className="lg:col-span-2 space-y-6">
+            <div className="flex items-center justify-between">
+              <div className="flex items-center gap-3">
+                <div className="w-10 h-10 rounded-2xl bg-ink-900 flex items-center justify-center text-white shadow-lg">
+                  <History className="w-5 h-5" />
+                </div>
+                <div>
+                  <h2 className="text-xl font-bold text-ink-900 tracking-tight">Forensic Timeline</h2>
+                  <p className="text-xs text-ink-500 font-medium uppercase tracking-widest">{groupedViolationsList.length} Grouped Signals Detected</p>
+                </div>
+              </div>
+              {violations.length > 0 && (
+                <div className="px-3 py-1 rounded-full bg-ink-100 text-ink-500 text-[10px] font-black uppercase tracking-widest">
+                  {reviewedCount} / {violations.length} Artifacts Reviewed
+                </div>
+              )}
+            </div>
+
+            <div className="card bg-white shadow-2xl shadow-ink-900/5 overflow-hidden border-ink-100/60 animate-fade-in" style={{ animationDelay: '100ms' }}>
+              {groupedViolationsList.length === 0 ? (
+                <div className="p-20 text-center">
+                  <div className="w-16 h-16 bg-success-50 text-success-600 rounded-3xl flex items-center justify-center mx-auto mb-6">
+                    <CheckCircle className="w-8 h-8" />
+                  </div>
+                  <h3 className="text-lg font-bold text-ink-900">Clean Session</h3>
+                  <p className="text-ink-500 max-w-xs mx-auto mt-2">No suspicious activities or proctoring signals were recorded during this session.</p>
+                </div>
+              ) : (
+                <div className="divide-y divide-ink-100">
+                  {groupedViolationsList.map((ev) => {
+                    const rs = reviewStates[ev.id] ?? {
+                      saving: false,
+                      showNote: false,
+                      noteText: ev.instructor_note ?? '',
+                    };
+                    const durationSec = Math.round(ev.durationMs / 1000);
+                    const severityLabel = getSeverityLabel(ev.severity);
+                    const isEvidenceOpen = expandedEvidence === ev.id;
+
+                    return (
+                      <div
+                        key={ev.id}
+                        className={`group p-6 transition-all ${ev.is_reviewed ? 'bg-ink-50/40 opacity-80' : 'bg-white hover:bg-brand-50/10'}`}
+                      >
+                        <div className="flex items-start gap-5">
+                          <div className={`shrink-0 w-10 h-10 rounded-xl border flex items-center justify-center shadow-sm ${getSeverityColor(ev.severity)}`}>
+                            <ShieldAlert className="w-5 h-5" />
+                          </div>
+                          
+                          <div className="flex-1 min-w-0">
+                            <div className="flex flex-wrap items-center gap-3 mb-2">
+                              <h4 className="font-bold text-ink-900 text-sm tracking-tight">{formatViolationType(ev.type)}</h4>
+                              <span className={`px-2 py-0.5 rounded text-[9px] font-black uppercase tracking-widest border ${getSeverityColor(ev.severity)}`}>
+                                {severityLabel}
+                              </span>
+                              <div className="flex items-center gap-1.5 text-[10px] font-bold text-ink-400 uppercase tracking-tight">
+                                <Clock className="w-3 h-3" />
+                                {new Date(ev.startTime).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit', second: '2-digit' })}
+                                {ev.durationMs > 0 && (
+                                  <span className="flex items-center gap-1">
+                                    <ChevronRight className="w-2.5 h-2.5" />
+                                    {durationSec}s active
+                                  </span>
+                                )}
+                              </div>
+                              {ev.is_reviewed && (
+                                <span className="flex items-center gap-1 text-[9px] font-black uppercase tracking-widest text-success-600">
+                                  <CheckCircle className="w-3 h-3" /> Reviewed
+                                </span>
+                              )}
+                            </div>
+
+                            <p className="text-sm text-ink-600 leading-relaxed mb-4">
+                              {ev.description}
+                              {ev.eventIds.length > 1 && (
+                                <span className="inline-flex ml-2 text-[10px] font-bold text-ink-400 bg-ink-100 px-1.5 py-0.5 rounded">
+                                  {ev.eventIds.length} Merged Events
+                                </span>
+                              )}
+                            </p>
+
+                            {/* Instructor Note Display */}
+                            {ev.instructor_note && (
+                              <div className="mb-4 flex items-start gap-2 p-3 rounded-xl bg-white border border-brand-100 shadow-sm animate-scale-in">
+                                <MessageSquare className="w-3.5 h-3.5 text-brand-600 shrink-0 mt-0.5" />
+                                <p className="text-xs text-brand-950 font-medium">{ev.instructor_note}</p>
+                              </div>
+                            )}
+
+                            {/* Evidence Preview */}
+                            {isEvidenceOpen && (evidenceUrls[ev.id] || ev.evidence_image) && (
+                              <div className="mb-4 animate-fade-in origin-top">
+                                <div className="relative inline-block group">
+                                  <img
+                                    src={evidenceUrls[ev.id] || ev.evidence_image!}
+                                    alt="Forensic snapshot"
+                                    className="max-w-md rounded-2xl border-2 border-ink-100 shadow-2xl"
+                                  />
+                                  <div className="absolute inset-0 rounded-2xl bg-ink-900/10 opacity-0 group-hover:opacity-100 transition-opacity" />
+                                </div>
+                                <div className="flex items-center gap-2 mt-2">
+                                  <div className="w-1.5 h-1.5 rounded-full bg-brand-500 animate-pulse" />
+                                  <p className="text-[10px] text-ink-400 font-bold uppercase tracking-widest">
+                                    Artifact Hash: {ev.id.slice(0, 16).toUpperCase()}
+                                  </p>
+                                </div>
+                              </div>
+                            )}
+
+                            {/* Note Editor */}
+                            {rs.showNote && (
+                              <div className="mb-4 flex items-center gap-2 animate-scale-in">
+                                <div className="relative flex-1 max-w-sm">
+                                  <MessageSquare className="absolute left-3 top-1/2 -translate-y-1/2 w-3.5 h-3.5 text-ink-400" />
+                                  <input
+                                    type="text"
+                                    value={rs.noteText}
+                                    onChange={e => setReviewStates(prev => ({ ...prev, [ev.id]: { ...prev[ev.id], noteText: e.target.value } }))}
+                                    placeholder="Annotate signal..."
+                                    className="field-input !py-1.5 !pl-9 !text-xs"
+                                    autoFocus
+                                  />
+                                </div>
+                                <button 
+                                  onClick={() => setReviewStates(prev => ({ ...prev, [ev.id]: { ...prev[ev.id], showNote: false } }))}
+                                  className="p-1.5 rounded-lg hover:bg-ink-100 text-ink-400"
+                                >
+                                  <X className="w-4 h-4" />
+                                </button>
+                              </div>
+                            )}
+
+                            {/* Actions Row */}
+                            <div className="flex items-center gap-4">
+                              {(evidenceUrls[ev.id] || ev.evidence_image) && (
+                                <button
+                                  onClick={() => setExpandedEvidence(isEvidenceOpen ? null : ev.id)}
+                                  className={`flex items-center gap-1.5 text-[10px] font-black uppercase tracking-widest transition-all ${
+                                    isEvidenceOpen ? 'text-brand-700' : 'text-ink-400 hover:text-ink-900'
+                                  }`}
+                                >
+                                  <Camera className="w-3.5 h-3.5" />
+                                  {isEvidenceOpen ? 'Hide Artifact' : 'Review Snapshot'}
+                                </button>
+                              )}
+
+                              <button
+                                onClick={() => setReviewStates(prev => ({ ...prev, [ev.id]: { ...prev[ev.id], showNote: !prev[ev.id]?.showNote } }))}
+                                className={`flex items-center gap-1.5 text-[10px] font-black uppercase tracking-widest transition-all ${
+                                  rs.showNote ? 'text-brand-700' : 'text-ink-400 hover:text-ink-900'
+                                }`}
+                              >
+                                <Edit2 className="w-3.5 h-3.5" />
+                                {ev.instructor_note ? 'Edit Note' : 'Add Note'}
+                              </button>
+
+                              <button
+                                onClick={() => handleToggleReview(ev.id)}
+                                disabled={rs.saving}
+                                className={`ml-auto px-4 py-1.5 rounded-lg text-[10px] font-black uppercase tracking-widest transition-all shadow-sm ${
+                                  ev.is_reviewed
+                                    ? 'bg-ink-100 text-ink-500 hover:bg-ink-200'
+                                    : 'bg-success-600 text-white hover:bg-success-700 shadow-success-600/20'
+                                }`}
+                              >
+                                {rs.saving ? (
+                                  <div className="w-3 h-3 border-2 border-white/30 border-t-white rounded-full animate-spin mx-auto" />
+                                ) : ev.is_reviewed ? (
+                                  'Archived'
+                                ) : (
+                                  'Acknowledge'
+                                )}
+                              </button>
+                            </div>
+                          </div>
+                        </div>
+                      </div>
+                    );
+                  })}
+                </div>
+              )}
+            </div>
+          </div>
         </div>
       </div>
     </div>
