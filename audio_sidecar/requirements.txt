@@ -1,0 +1,8 @@
+fastapi
+uvicorn
+numpy
+assemblyai
+python-dotenv
+pydantic
+soundfile
+google-generativeai

@@ -8,9 +8,11 @@ import {
   Monitor,
   ScanFace,
   StretchHorizontal,
+  Volume2,
 } from 'lucide-react';
 import type { ReactNode } from 'react';
 import type { ProctoringStatus } from '../../hooks/useProctoring';
+import type { SidecarStatus } from '../../hooks/useAudioProctoring';
 
 interface StatusIndicatorsProps {
   status: ProctoringStatus;
@@ -21,6 +23,8 @@ interface StatusIndicatorsProps {
   poseLoadingProgress?: string;
   micActive?: boolean;
   micStreamHealthy?: boolean;
+  audioSidecarStatus?: SidecarStatus;
+  audioFlagCount?: number;
 }
 
 type SignalState = 'good' | 'warn' | 'bad' | 'idle' | 'loading';
@@ -81,6 +85,8 @@ export const StatusIndicators = ({
   poseLoadingProgress,
   micActive,
   micStreamHealthy,
+  audioSidecarStatus,
+  audioFlagCount,
 }: StatusIndicatorsProps) => (
   <div className="space-y-1.5">
     <SignalRow
@@ -138,6 +144,29 @@ export const StatusIndicators = ({
         label="Microphone"
         state={micActive && micStreamHealthy ? 'good' : 'bad'}
         detail={micActive && micStreamHealthy ? 'Recording' : 'Disconnected'}
+      />
+    )}
+
+    {audioSidecarStatus !== undefined && (
+      <SignalRow
+        icon={<Volume2 className="w-4 h-4" />}
+        label="Audio proctoring"
+        state={
+          audioSidecarStatus === 'active'
+            ? 'good'
+            : audioSidecarStatus === 'degraded'
+            ? 'warn'
+            : 'idle'
+        }
+        detail={
+          audioSidecarStatus === 'active'
+            ? audioFlagCount
+              ? `${audioFlagCount} flag${audioFlagCount === 1 ? '' : 's'}`
+              : 'Monitoring'
+            : audioSidecarStatus === 'degraded'
+            ? 'Connection lost'
+            : 'Waiting'
+        }
       />
     )}
   </div>

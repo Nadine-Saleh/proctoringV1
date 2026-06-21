@@ -1,6 +1,7 @@
 import { Activity, Radio } from 'lucide-react';
 import type { ReactNode, RefCallback } from 'react';
 import type { ProctoringStatus } from '../../hooks/useProctoring';
+import type { SidecarStatus } from '../../hooks/useAudioProctoring';
 import type { ExamQuestion, SessionCalibration } from '../../types/exam';
 import { CameraFeed } from './CameraFeed';
 import { StatusIndicators } from './StatusIndicators';
@@ -37,6 +38,8 @@ interface ProctoringSidebarProps {
   poseLoadingProgress?: string;
   micActive?: boolean;
   micStreamHealthy?: boolean;
+  audioSidecarStatus?: SidecarStatus;
+  audioFlagCount?: number;
 }
 
 export const ProctoringSidebar = ({
@@ -62,6 +65,8 @@ export const ProctoringSidebar = ({
   poseLoadingProgress,
   micActive,
   micStreamHealthy,
+  audioSidecarStatus,
+  audioFlagCount,
 }: ProctoringSidebarProps) => (
   <aside
     className="w-[400px] flex-shrink-0 flex flex-col bg-white border-l border-ink-100 shadow-[-1px_0_24px_-12px_rgba(17,12,14,0.08)]"
@@ -127,6 +132,8 @@ export const ProctoringSidebar = ({
           poseLoadingProgress={poseLoadingProgress}
           micActive={micActive}
           micStreamHealthy={micStreamHealthy}
+          audioSidecarStatus={audioSidecarStatus}
+          audioFlagCount={audioFlagCount}
         />
       </div>
 

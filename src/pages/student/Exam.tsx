@@ -1,4 +1,5 @@
 import { MicOff, AlertCircle } from 'lucide-react';
+import { useParams } from 'react-router-dom';
 import { LivenessCheckModal } from '../../components/LivenessCheckModal';
 import { DistanceSetupModal } from '../../components/DistanceSetupModal';
 import { ExamSubmissionModal } from '../../components/ExamSubmissionModal';
@@ -8,8 +9,11 @@ import { ExamHeader } from '../../components/layout/ExamHeader';
 import { WarningBanner } from '../../components/layout/WarningBanner';
 import { QuestionPanel } from '../../components/questions/QuestionPanel';
 import { ProctoringSidebar } from '../../components/proctoring/ProctoringSidebar';
+import { AudioWarningBanner } from '../../components/AudioWarningBanner';
 
 import { useExamFlow } from '../../hooks/useExamFlow';
+import { useAudioProctoring } from '../../hooks/useAudioProctoring';
+import { useMicrophoneContext } from '../../context/MicrophoneContext';
 
 const LoadingScreen = ({ message }: { message: string }) => (
   <div className="min-h-screen bg-ink-50 grid-spotlight flex items-center justify-center">
@@ -25,6 +29,14 @@ const LoadingScreen = ({ message }: { message: string }) => (
 
 export const Exam = () => {
   const flow = useExamFlow();
+  const { sessionId } = useParams<{ sessionId: string }>();
+  const { stream: micStream } = useMicrophoneContext();
+  const { softWarning, strongWarning, flagCount, sidecarStatus } = useAudioProctoring({
+    sessionId: sessionId ?? '',
+    examId: flow.currentExam?.id,
+    micStream,
+    isExamActive: flow.examStarted,
+  });
 
   if (flow.sessionLoading) return <LoadingScreen message="Loading exam session..." />;
 
@@ -137,6 +149,8 @@ export const Exam = () => {
             onSubmit={flow.handleSubmit}
           />
         )}
+
+        <AudioWarningBanner softWarning={softWarning} strongWarning={strongWarning} />
       </div>
 
       <ProctoringSidebar
@@ -170,6 +184,8 @@ export const Exam = () => {
         poseLoadingProgress={flow.poseLoadingProgress}
         micActive={flow.micActive}
         micStreamHealthy={flow.micStreamHealthy}
+        audioSidecarStatus={sidecarStatus}
+        audioFlagCount={flagCount}
       />
 
       {flow.sessionError && (
