@@ -10,7 +10,6 @@ import {
   Sparkles,
   CheckCircle2,
   ArrowRight,
-  Play,
   Star,
   Zap,
   ShieldCheck,
@@ -84,8 +83,8 @@ function BackToTop() {
       onClick={() => window.scrollTo({ top: 0, behavior: 'smooth' })}
       aria-label="Back to top"
       className={`fixed bottom-6 right-6 z-40 w-11 h-11 rounded-full bg-white text-ink-950 shadow-elevated flex items-center justify-center transition-all duration-300 hover:bg-brand-500 hover:text-white ${visible
-          ? 'opacity-100 translate-y-0 pointer-events-auto'
-          : 'opacity-0 translate-y-3 pointer-events-none'
+        ? 'opacity-100 translate-y-0 pointer-events-auto'
+        : 'opacity-0 translate-y-3 pointer-events-none'
         }`}
     >
       <ArrowUp className="w-4 h-4" />
@@ -139,8 +138,8 @@ function LandingNav() {
   return (
     <header
       className={`sticky top-0 z-40 transition-all duration-500 ${elevated
-          ? 'bg-ink-950/90 backdrop-blur-xl border-b border-white/5 shadow-modal'
-          : 'bg-transparent border-b border-transparent'
+        ? 'bg-ink-950/90 backdrop-blur-xl border-b border-white/5 shadow-modal'
+        : 'bg-transparent border-b border-transparent'
         }`}
     >
       <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8">
@@ -177,7 +176,7 @@ function LandingNav() {
               Log in
             </Link>
             <Link to="/signup" className="btn btn-md bg-brand-700 text-white hover:bg-brand-600 shadow-elevated group rounded-lg px-6">
-              <span className="text-xs font-bold uppercase tracking-widest">Deploy Now</span>
+              <span className="text-xs font-bold uppercase tracking-widest">Try now</span>
               <ArrowRight className="w-4 h-4 group-hover:translate-x-0.5 transition-transform" />
             </Link>
             <button
@@ -281,13 +280,10 @@ function Hero() {
             <Reveal delay={300}>
               <div className="mt-12 flex flex-col sm:flex-row gap-4">
                 <Link to="/signup" className="btn btn-xl bg-white text-ink-950 hover:bg-ink-100 shadow-[0_0_40px_rgba(255,255,255,0.15)] group rounded-xl">
-                  <span className="text-sm font-bold uppercase tracking-widest">Start Integration</span>
+                  <span className="text-sm font-bold uppercase tracking-widest">Start your Journey</span>
                   <ArrowRight className="w-5 h-5 group-hover:translate-x-1 transition-transform" />
                 </Link>
-                <a href="#showcase" className="btn btn-xl bg-white/5 text-white border border-white/10 hover:bg-white/10 backdrop-blur-sm group rounded-xl">
-                  <Play className="w-4 h-4 fill-white mr-1 group-hover:scale-110 transition-transform" />
-                  <span className="text-sm font-bold uppercase tracking-widest">Platform Demo</span>
-                </a>
+
               </div>
             </Reveal>
 
@@ -452,7 +448,7 @@ function HeroVisual() {
                 </div>
                 <div className="flex gap-3 items-center">
                   <div className="w-1.5 h-1.5 rounded-full bg-brand-500 animate-pulse" />
-                  <div className="text-[10px] font-medium text-white truncate font-bold">Monitoring live...</div>
+                  <div className="text-[10px] font-bold text-white truncate">Monitoring live...</div>
                 </div>
               </div>
             </div>
@@ -828,8 +824,8 @@ function DashboardMock() {
                 <li
                   key={n as string}
                   className={`flex items-center justify-between px-3 py-2.5 rounded-lg text-[10px] transition-all duration-300 ${active
-                      ? 'bg-white/5 border border-white/10 shadow-soft text-white font-bold'
-                      : 'text-ink-500 hover:text-ink-300 hover:bg-white/[0.02]'
+                    ? 'bg-white/5 border border-white/10 shadow-soft text-white font-bold'
+                    : 'text-ink-500 hover:text-ink-300 hover:bg-white/[0.02]'
                     }`}
                 >
                   <span className="truncate">{n as string}</span>
@@ -1340,8 +1336,8 @@ function Pricing() {
             <Reveal key={t.name} delay={i * 120} variant="scale">
               <div
                 className={`relative flex flex-col p-12 rounded-[2.5rem] border transition-all duration-700 h-full overflow-hidden ${t.highlight
-                    ? 'bg-ink-950 text-white border-brand-500 shadow-modal scale-105 z-10'
-                    : 'bg-white/[0.02] border-white/5 shadow-modal hover:border-brand-500/20'
+                  ? 'bg-ink-950 text-white border-brand-500 shadow-modal scale-105 z-10'
+                  : 'bg-white/[0.02] border-white/5 shadow-modal hover:border-brand-500/20'
                   }`}
               >
                 {t.highlight && (
@@ -1531,7 +1527,7 @@ function FinalCTA() {
               aria-hidden
               className="absolute inset-0 pointer-events-none"
               style={{
-                background:'radial-gradient(600px circle at var(--mx,50%) var(--my,50%),rgba(122,34,56,0.25),transparent 70%)',
+                background: 'radial-gradient(600px circle at var(--mx,50%) var(--my,50%),rgba(122,34,56,0.25),transparent 70%)',
               }}
             />
 
@@ -1563,20 +1559,20 @@ function FinalCTA() {
               </div>
 
               <div className="mt-16 flex items-center justify-center gap-12">
-                 <div className="flex flex-col items-center gap-2">
-                    <div className="text-3xl font-bold text-white tracking-tight">24h</div>
-                    <div className="text-[10px] font-bold text-ink-500 uppercase tracking-widest">Setup Time</div>
-                 </div>
-                 <div className="w-px h-12 bg-white/10" />
-                 <div className="flex flex-col items-center gap-2">
-                    <div className="text-3xl font-bold text-white tracking-tight">99.9%</div>
-                    <div className="text-[10px] font-bold text-ink-500 uppercase tracking-widest">SLA Uptime</div>
-                 </div>
-                 <div className="w-px h-12 bg-white/10" />
-                 <div className="flex flex-col items-center gap-2">
-                    <div className="text-3xl font-bold text-white tracking-tight">SOC 2</div>
-                    <div className="text-[10px] font-bold text-ink-500 uppercase tracking-widest">Compliance</div>
-                 </div>
+                <div className="flex flex-col items-center gap-2">
+                  <div className="text-3xl font-bold text-white tracking-tight">24h</div>
+                  <div className="text-[10px] font-bold text-ink-500 uppercase tracking-widest">Setup Time</div>
+                </div>
+                <div className="w-px h-12 bg-white/10" />
+                <div className="flex flex-col items-center gap-2">
+                  <div className="text-3xl font-bold text-white tracking-tight">99.9%</div>
+                  <div className="text-[10px] font-bold text-ink-500 uppercase tracking-widest">SLA Uptime</div>
+                </div>
+                <div className="w-px h-12 bg-white/10" />
+                <div className="flex flex-col items-center gap-2">
+                  <div className="text-3xl font-bold text-white tracking-tight">SOC 2</div>
+                  <div className="text-[10px] font-bold text-ink-500 uppercase tracking-widest">Compliance</div>
+                </div>
               </div>
             </div>
           </div>

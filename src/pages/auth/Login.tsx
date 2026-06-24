@@ -156,15 +156,7 @@ export function Login() {
             </Link>
           </div>
 
-          <div className="mt-6 pt-5 border-t border-ink-100">
-            <p className="text-2xs uppercase tracking-wider text-ink-500 text-center mb-2 font-semibold">
-              Demo credentials
-            </p>
-            <div className="text-2xs text-ink-500 space-y-1 font-mono text-center">
-              <p>student@test.com&nbsp;/&nbsp;password123</p>
-              <p>instructor@test.com&nbsp;/&nbsp;password123</p>
-            </div>
-          </div>
+
         </div>
       </div>
     </div>
