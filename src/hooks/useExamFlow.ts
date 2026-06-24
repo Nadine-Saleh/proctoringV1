@@ -9,7 +9,7 @@ import { useExamAnswers } from './useExamAnswers';
 import { useViolationTracker } from './useViolationTracker';
 import { useTabFocusTracker } from './useTabFocusTracker';
 import { usePoseDetection } from './usePoseDetection';
-import { useMicrophoneContext } from '../context/MicrophoneContext';
+import { EvidenceSnippetService } from '../services/EvidenceSnippetService';
 import {
   IdentityVerificationService,
   type StartSessionResponse,
@@ -37,7 +37,7 @@ const CLOSED_SESSION_STATUSES = new Set(['submitted', 'auto_submitted', 'termina
 
 const STEP_STORAGE_PREFIX = 'proctoring_steps_';
 const STEP_STORAGE_EXAM_KEY = 'current_exam_id';
-type StepName = 'distance' | 'liveness' | 'microphone';
+type StepName = 'distance' | 'liveness';
 type StepsRecord = Partial<Record<StepName, boolean>>;
 
 const readStoredSteps = (examId: string): StepsRecord => {
@@ -74,7 +74,7 @@ const clearStoredSteps = (examId: string) => {
 const PER_EVENT_BANNER_TTL_MS = 4000;
 const DISTANCE_RANGE_MIN_CM = 30;
 const DISTANCE_RANGE_SPAN_CM = 70;
-const SEVERITY_SNAPSHOT_THRESHOLD = 20;
+const SEVERITY_SNAPSHOT_THRESHOLD = 15;
 const SEVERITY_BANNER_THRESHOLD = 10;
 const SEVERITY_CRITICAL_THRESHOLD = 20;
 
@@ -147,7 +147,6 @@ export const useExamFlow = () => {
   const [timeRemaining, setTimeRemaining] = useState(currentExamDuration * 60);
   const [showLivenessCheck, setShowLivenessCheck] = useState(false);
   const [showDistanceSetup, setShowDistanceSetup] = useState(true);
-  const [showMicrophonePermission, setShowMicrophonePermission] = useState(false);
   const [examStarted, setExamStarted] = useState(false);
   const [gazeStatus, setGazeStatus] = useState<'center' | 'looking-away'>('center');
   const [warningBanner, setWarningBanner] = useState<WarningBannerState | null>(null);
@@ -208,15 +207,6 @@ export const useExamFlow = () => {
     loadingProgress: poseLoadingProgress,
   } = usePoseDetection();
 
-  const {
-    status: micStatus,
-    isRecording: micIsRecording,
-    isStreamReady: micIsStreamReady,
-    streamHealthy: micStreamHealthy,
-  } = useMicrophoneContext();
-
-  const micActive = micStatus.microphone && micIsRecording && micIsStreamReady && micStreamHealthy;
-
   const gazeDistanceCm = gazeSample
     ? Math.round(DISTANCE_RANGE_MIN_CM + (1 - gazeSample.faceDistance) * DISTANCE_RANGE_SPAN_CM)
     : null;
@@ -241,26 +231,49 @@ export const useExamFlow = () => {
   });
 
   useEffect(() => {
-    if (!examStarted || !(session?.id ?? sessionId)) return;
+    const sid = session?.id ?? sessionId;
+    if (!examStarted || !sid) return;
 
     setCanonicalViolationCallback(async (v) => {
       let evidenceImage: string | null = null;
+      let evidence: { captured: boolean; bucket_path: string; content_type: string; byte_length: number } | null = null;
+
       if (v.severity >= SEVERITY_SNAPSHOT_THRESHOLD) {
         evidenceImage = await captureViolationSnapshot();
+        
+        // If snapshot captured and policy allows, upload to storage
+        if (evidenceImage && currentPolicy.visual_evidence_allowed) {
+          try {
+            const uploaded = await EvidenceSnippetService.upload({
+              sessionId: sid,
+              data: evidenceImage,
+            });
+            evidence = {
+              captured: true,
+              bucket_path: uploaded.bucket_path,
+              content_type: uploaded.content_type,
+              byte_length: uploaded.byte_length,
+            };
+          } catch (err) {
+            console.error('[useExamFlow] Failed to upload evidence:', err);
+          }
+        }
       }
+
       recordViolation({
         violation_type: v.type,
         severity: v.severity,
         occurred_at: v.client_captured_at,
         description: v.description,
         evidence_image: evidenceImage,
+        evidence,
         metadata: v.metadata ?? {},
         client_event_id: '',
         type: v.type,
         client_captured_at: v.client_captured_at,
       });
     });
-  }, [examStarted, session?.id, sessionId, setCanonicalViolationCallback, captureViolationSnapshot, recordViolation]);
+  }, [examStarted, session?.id, sessionId, setCanonicalViolationCallback, captureViolationSnapshot, recordViolation, currentPolicy.visual_evidence_allowed]);
 
   useEffect(() => {
     if (examStarted && gazeModelsLoaded && status.camera && !gazeRunning) {
@@ -484,16 +497,10 @@ export const useExamFlow = () => {
     if (liveness.isPassed) {
       if (currentExamId) writeStoredStep(currentExamId, 'liveness');
       setShowLivenessCheck(false);
-      setShowMicrophonePermission(true);
+      setExamStarted(true);
+      startTimer();
     }
-  }, [liveness.isPassed, currentExamId]);
-
-  const handleMicrophoneComplete = useCallback(() => {
-    if (currentExamId) writeStoredStep(currentExamId, 'microphone');
-    setShowMicrophonePermission(false);
-    setExamStarted(true);
-    startTimer();
-  }, [currentExamId, startTimer]);
+  }, [liveness.isPassed, currentExamId, startTimer]);
 
   const stepsRestoredRef = useRef(false);
   useEffect(() => {
@@ -507,16 +514,11 @@ export const useExamFlow = () => {
     }
 
     const steps = readStoredSteps(currentExamId);
-    if (steps.microphone) {
+    if (steps.liveness) {
       setShowDistanceSetup(false);
       setShowLivenessCheck(false);
-      setShowMicrophonePermission(false);
       setExamStarted(true);
       startTimer();
-    } else if (steps.liveness) {
-      setShowDistanceSetup(false);
-      setShowLivenessCheck(false);
-      setShowMicrophonePermission(true);
     } else if (steps.distance) {
       setShowDistanceSetup(false);
       setShowLivenessCheck(true);
@@ -559,11 +561,9 @@ export const useExamFlow = () => {
     examStarted,
     showDistanceSetup,
     showLivenessCheck,
-    showMicrophonePermission,
     handleSetOptimalDistance,
     handleLivenessComplete,
     handleLivenessRetry,
-    handleMicrophoneComplete,
     liveness,
     setLivenessVideoRef: liveness.videoRef,
 
@@ -580,9 +580,6 @@ export const useExamFlow = () => {
     poseFrameStatus,
     poseStatusMessage,
     poseLoadingProgress,
-
-    micActive,
-    micStreamHealthy,
 
     faceDistanceCm,
     sessionCalibration,

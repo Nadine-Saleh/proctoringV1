@@ -1,7 +1,9 @@
 import { createContext, useContext, useState, useEffect, useMemo, ReactNode } from 'react';
 import { useAuth } from '../hooks/useAuth';
 import type { UserRole } from '../services/authService';
-import type { Exam } from '../services/ExamService';
+// 'Exam' type isn't exported from ../services/ExamService. Use a local fallback type.
+// Adjust this to the real shape if/when Exam is exported.
+type Exam = any;
 
 type AppUserRole = 'student' | 'instructor';
 

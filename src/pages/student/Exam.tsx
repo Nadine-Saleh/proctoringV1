@@ -1,19 +1,14 @@
-import { MicOff, AlertCircle } from 'lucide-react';
-import { useParams } from 'react-router-dom';
+import { AlertCircle } from 'lucide-react';
 import { LivenessCheckModal } from '../../components/LivenessCheckModal';
 import { DistanceSetupModal } from '../../components/DistanceSetupModal';
 import { ExamSubmissionModal } from '../../components/ExamSubmissionModal';
-import { MicrophonePermissionModal } from '../../components/MicrophonePermissionModal';
 import { PoseDetectionOverlay } from '../../components/PoseDetectionOverlay';
 import { ExamHeader } from '../../components/layout/ExamHeader';
 import { WarningBanner } from '../../components/layout/WarningBanner';
 import { QuestionPanel } from '../../components/questions/QuestionPanel';
 import { ProctoringSidebar } from '../../components/proctoring/ProctoringSidebar';
-import { AudioWarningBanner } from '../../components/AudioWarningBanner';
 
 import { useExamFlow } from '../../hooks/useExamFlow';
-import { useAudioProctoring } from '../../hooks/useAudioProctoring';
-import { useMicrophoneContext } from '../../context/MicrophoneContext';
 
 const LoadingScreen = ({ message }: { message: string }) => (
   <div className="min-h-screen bg-ink-50 grid-spotlight flex items-center justify-center">
@@ -29,14 +24,6 @@ const LoadingScreen = ({ message }: { message: string }) => (
 
 export const Exam = () => {
   const flow = useExamFlow();
-  const { sessionId } = useParams<{ sessionId: string }>();
-  const { stream: micStream } = useMicrophoneContext();
-  const { softWarning, strongWarning, flagCount, sidecarStatus } = useAudioProctoring({
-    sessionId: sessionId ?? '',
-    examId: flow.currentExam?.id,
-    micStream,
-    isExamActive: flow.examStarted,
-  });
 
   if (flow.sessionLoading) return <LoadingScreen message="Loading exam session..." />;
 
@@ -90,20 +77,9 @@ export const Exam = () => {
     );
   }
 
-  if (flow.showMicrophonePermission) {
-    return (
-      <MicrophonePermissionModal
-        isOpen={flow.showMicrophonePermission}
-        onComplete={flow.handleMicrophoneComplete}
-      />
-    );
-  }
-
   const question = flow.questions[flow.currentQuestion];
   const progress =
     flow.questions.length > 0 ? ((flow.currentQuestion + 1) / flow.questions.length) * 100 : 0;
-
-  const showMicWarning = flow.examStarted && !flow.micActive;
 
   return (
     <div className="min-h-screen bg-ink-50 flex">
@@ -120,22 +96,6 @@ export const Exam = () => {
           answeredCount={flow.answeredCount}
         />
 
-        {showMicWarning && (
-          <div className="mx-6 mt-4 animate-slide-down">
-            <div className="flex items-start gap-3 p-4 rounded-xl bg-danger-50 border border-danger-200">
-              <div className="w-8 h-8 rounded-lg bg-danger-100 flex items-center justify-center flex-shrink-0">
-                <MicOff className="w-4 h-4 text-danger-700" />
-              </div>
-              <div>
-                <p className="text-sm font-semibold text-danger-900">Microphone connection lost</p>
-                <p className="text-xs text-danger-700 mt-0.5">
-                  Please check your microphone and refresh the page to continue.
-                </p>
-              </div>
-            </div>
-          </div>
-        )}
-
         {question && (
           <QuestionPanel
             question={question}
@@ -149,8 +109,6 @@ export const Exam = () => {
             onSubmit={flow.handleSubmit}
           />
         )}
-
-        <AudioWarningBanner softWarning={softWarning} strongWarning={strongWarning} />
       </div>
 
       <ProctoringSidebar
@@ -182,10 +140,6 @@ export const Exam = () => {
         poseDetecting={flow.poseDetecting}
         poseFrameValid={flow.poseFrameStatus === 'valid'}
         poseLoadingProgress={flow.poseLoadingProgress}
-        micActive={flow.micActive}
-        micStreamHealthy={flow.micStreamHealthy}
-        audioSidecarStatus={sidecarStatus}
-        audioFlagCount={flagCount}
       />
 
       {flow.sessionError && (
