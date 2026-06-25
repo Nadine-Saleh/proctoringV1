@@ -8,6 +8,7 @@ import { ExamHeader } from '../../components/layout/ExamHeader';
 import { WarningBanner } from '../../components/layout/WarningBanner';
 import { QuestionPanel } from '../../components/questions/QuestionPanel';
 import { ProctoringSidebar } from '../../components/proctoring/ProctoringSidebar';
+import { DuringExamIdentityMonitor } from '../../components/proctoring/DuringExamIdentityMonitor';
 
 import { useExamFlow } from '../../hooks/useExamFlow';
 
@@ -95,6 +96,7 @@ export const Exam = () => {
 
   return (
     <div className="min-h-screen bg-ink-50 flex">
+      <DuringExamIdentityMonitor />
       <div className="flex-1 flex flex-col min-w-0">
         {flow.warningBanner && (
           <WarningBanner banner={flow.warningBanner} onDismiss={() => flow.setWarningBanner(null)} />

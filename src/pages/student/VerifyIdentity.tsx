@@ -126,6 +126,28 @@ export const VerifyIdentity = () => {
     setIsVerifying(true);
     setVerifyError(null);
     setInfoMessage(null);
+    const {
+  data: { user },
+  error: authError,
+} = await supabase.auth.getUser();
+
+if (authError || !user) {
+  setIsVerifying(false);
+  setVerifyError('Session expired. Please log in again.');
+  return;
+}
+
+const { error: sessionFixError } = await supabase
+  .from('exam_sessions')
+  .update({ student_id: user.id })
+  .eq('id', sessionId);
+
+if (sessionFixError) {
+  console.error('Session fix error:', sessionFixError);
+  setIsVerifying(false);
+  setVerifyError(sessionFixError.message);
+  return;
+}
 
     const embedding = await IdentityVerificationService.extractEmbedding(
       videoRef.current
