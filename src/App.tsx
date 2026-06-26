@@ -9,7 +9,6 @@ import {
 import { LogOut } from 'lucide-react';
 
 import { AppProvider, useApp } from './context/AppContext';
-import { MicrophoneProvider } from './context/MicrophoneContext';
 import { Navigation } from './components/Navigation';
 import { ProtectedRoute } from './components/ProtectedRoute';
 import { supabase } from './lib/supabase/client';
@@ -480,9 +479,7 @@ export default function App() {
   return (
     <BrowserRouter>
       <AppProvider>
-        <MicrophoneProvider>
-          <AppContent />
-        </MicrophoneProvider>
+        <AppContent />
       </AppProvider>
     </BrowserRouter>
   );

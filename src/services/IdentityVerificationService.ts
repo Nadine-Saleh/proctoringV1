@@ -147,7 +147,7 @@ export class IdentityVerificationService {
       if (!user) return false;
 
       const { data, error } = await supabase
-        .from('student_faces')
+        .from('student_face_references')
         .select('student_id')
         .eq('student_id', user.id)
         .maybeSingle();
@@ -169,8 +169,6 @@ export class IdentityVerificationService {
     qualityScore: number
   ): Promise<{ success: boolean; error?: string }> {
     try {
-      void qualityScore;
-
       const {
         data: { user },
       } = await supabase.auth.getUser();
@@ -188,10 +186,10 @@ export class IdentityVerificationService {
         };
       }
 
-      const { error } = await supabase.from('student_faces').insert({
+      const { error } = await supabase.from('student_face_references').insert({
         student_id: user.id,
-        face_image: '',
-        face_descriptor: Array.from(embedding),
+        embedding: Array.from(embedding),
+        quality_score: qualityScore,
       });
 
       if (error) {

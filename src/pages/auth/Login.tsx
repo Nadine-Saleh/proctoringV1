@@ -214,16 +214,7 @@ export function Login() {
             </Link>
           </div>
 
-          <div className="mt-7 pt-6 border-t border-ink-100 text-center">
-            <p className="text-xs font-semibold uppercase tracking-wider text-ink-500 mb-3">
-              Demo Credentials
-            </p>
 
-            <div className="text-xs text-ink-500 font-mono space-y-1">
-              <p>student@test.com / password123</p>
-              <p>instructor@test.com / password123</p>
-            </div>
-          </div>
         </div>
       </div>
     </div>

@@ -1,7 +1,15 @@
-import { useState, FormEvent } from 'react';
+import { useState, FormEvent, useMemo } from 'react';
 import { Link, useNavigate } from 'react-router-dom';
 import { signup, getUserProfile } from '../../services/authService';
-import { Eye, EyeOff, UserPlus, Loader2 } from 'lucide-react';
+import { CustomDropdown, DropdownOption } from '../../components/ui/CustomDropdown';
+import { 
+  Eye, 
+  EyeOff, 
+  UserPlus, 
+  Loader2, 
+  Users, 
+  GraduationCap 
+} from 'lucide-react';
 
 export function Signup() {
   const navigate = useNavigate();
@@ -19,9 +27,7 @@ export function Signup() {
   const [error, setError] = useState('');
   const [isLoading, setIsLoading] = useState(false);
 
-  const handleChange = (
-    e: React.ChangeEvent<HTMLInputElement | HTMLSelectElement>
-  ) => {
+  const handleChange = (e: React.ChangeEvent<HTMLInputElement>) => {
     const { name, value } = e.target;
 
     setFormData((prev) => ({
@@ -29,6 +35,25 @@ export function Signup() {
       [name]: value,
     }));
   };
+
+  const handleRoleChange = (role: string) => {
+    setFormData(prev => ({ ...prev, role: role as 'student' | 'instructor' }));
+  };
+
+  const roleOptions: DropdownOption[] = useMemo(() => [
+    { 
+      id: 'student', 
+      label: 'Student', 
+      description: 'Taking exams and viewing results',
+      icon: <Users className="w-4 h-4" />
+    },
+    { 
+      id: 'instructor', 
+      label: 'Instructor', 
+      description: 'Creating exams and proctoring',
+      icon: <GraduationCap className="w-4 h-4" />
+    }
+  ], []);
 
   const validateForm = (): string | null => {
     if (!formData.fullName.trim()) {
@@ -186,20 +211,12 @@ export function Signup() {
             </div>
 
             <div>
-              <label htmlFor="role" className="field-label">
-                I am a…
-              </label>
-
-              <select
-                id="role"
-                name="role"
+              <CustomDropdown
+                label="I am a..."
+                options={roleOptions}
                 value={formData.role}
-                onChange={handleChange}
-                className="field-input"
-              >
-                <option value="student">Student</option>
-                <option value="instructor">Instructor</option>
-              </select>
+                onChange={handleRoleChange}
+              />
             </div>
 
             <div>
@@ -303,3 +320,4 @@ export function Signup() {
     </div>
   );
 }
+
