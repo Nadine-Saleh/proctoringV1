@@ -23,6 +23,14 @@ export interface VerificationResponse {
   session_status: 'verified' | 'awaiting_verification' | 'verification_blocked';
 }
 
+export interface DuringExamVerificationResponse {
+  outcome: 'pass' | 'fail';
+  confidence: number;
+  distance: number;
+  threshold: number;
+  reason?: string;
+}
+
 export interface StartSessionCalibration {
   calibration_skipped: boolean;
   optimal_distance_cm?: number;
@@ -100,10 +108,7 @@ export class IdentityVerificationService {
     const videoWidth = videoEl.videoWidth;
     const videoHeight = videoEl.videoHeight;
 
-    if (
-      box.width < videoWidth * 0.2 ||
-      box.height < videoHeight * 0.2
-    ) {
+    if (box.width < videoWidth * 0.2 || box.height < videoHeight * 0.2) {
       console.warn('Face verification failed: face too small');
       return null;
     }
@@ -111,11 +116,6 @@ export class IdentityVerificationService {
     return detection.descriptor;
   }
 
-  /**
-   * دي بتتستخدم عند دخول الامتحان بالكود.
-   * مهم جدًا: p_fresh_capture لازم يفضل false
-   * عشان ما يطلبش reference capture جديدة قبل الامتحان.
-   */
   static async joinExam(
     accessCode: string
   ): Promise<{ success: boolean; data?: JoinExamResponse; error?: string }> {
@@ -138,10 +138,6 @@ export class IdentityVerificationService {
     }
   }
 
-  /**
-   * بتشيك هل الطالب عنده face reference محفوظة قبل كده ولا لأ.
-   * دي تتستخدم بعد اللوجن.
-   */
   static async hasReference(): Promise<boolean> {
     try {
       const {
@@ -168,11 +164,6 @@ export class IdentityVerificationService {
     }
   }
 
-  /**
-   * دي تتحط بعد اللوجن فقط.
-   * وظيفتها تحفظ face embedding مرة واحدة فقط.
-   * ممنوع استخدامها قبل الامتحان.
-   */
   static async saveReferenceEmbedding(
     embedding: Float32Array,
     qualityScore: number
@@ -214,26 +205,244 @@ export class IdentityVerificationService {
     }
   }
 
-  /**
-   * دي تستخدم قبل الامتحان فقط.
-   * بتبعت صورة/embedding جديد للمقارنة مع القديم.
-   * لا تحفظ reference جديدة.
-   */
   static async verifyIdentity(
     sessionId: string,
     embedding: Float32Array
   ): Promise<{ success: boolean; data?: VerificationResponse; error?: string }> {
     try {
-      const { data, error } = await supabase.rpc('verify_student_identity', {
-        p_session_id: sessionId,
-        p_embedding: Array.from(embedding),
-      });
+      const threshold = 0.6;
+
+      const {
+        data: { user },
+        error: userError,
+      } = await supabase.auth.getUser();
+
+      if (userError || !user) {
+        return { success: false, error: 'Not authenticated' };
+      }
+
+      const { data: sessionData, error: sessionError } = await supabase
+        .from('exam_sessions')
+        .select('status, verification_attempts_remaining')
+        .eq('id', sessionId)
+        .maybeSingle();
+
+      if (sessionError) {
+        return { success: false, error: sessionError.message };
+      }
+
+      if (!sessionData) {
+        return { success: false, error: 'Session not found' };
+      }
+
+      const currentAttempts =
+        typeof sessionData.verification_attempts_remaining === 'number'
+          ? sessionData.verification_attempts_remaining
+          : 3;
+
+      if (
+        sessionData.status === 'verification_blocked' ||
+        currentAttempts <= 0
+      ) {
+        return {
+          success: true,
+          data: {
+            outcome: 'fail',
+            confidence: 0,
+            attempts_remaining: 0,
+            blocked: true,
+            session_status: 'verification_blocked',
+          },
+        };
+      }
+
+      const { data: faceData, error: faceError } = await supabase
+        .from('student_faces')
+        .select('face_descriptor')
+        .eq('student_id', user.id)
+        .maybeSingle();
+
+      if (faceError) {
+        return { success: false, error: faceError.message };
+      }
+
+      if (!faceData?.face_descriptor) {
+        return {
+          success: false,
+          error: 'reference_missing',
+        };
+      }
+
+      let referenceDescriptor: number[];
+
+      if (Array.isArray(faceData.face_descriptor)) {
+        referenceDescriptor = faceData.face_descriptor.map(Number);
+      } else if (typeof faceData.face_descriptor === 'string') {
+        referenceDescriptor = JSON.parse(faceData.face_descriptor).map(Number);
+      } else {
+        return {
+          success: false,
+          error: 'Invalid face reference format',
+        };
+      }
+
+      const currentDescriptor = Array.from(embedding);
+
+      if (referenceDescriptor.length !== currentDescriptor.length) {
+        return {
+          success: false,
+          error: 'Face descriptor size mismatch',
+        };
+      }
+
+      let sum = 0;
+
+      for (let i = 0; i < referenceDescriptor.length; i++) {
+        const diff = referenceDescriptor[i] - currentDescriptor[i];
+        sum += diff * diff;
+      }
+
+      const distance = Math.sqrt(sum);
+      const confidence = Math.max(0, Math.min(1, 1 - distance / 2));
+      const outcome: 'pass' | 'fail' = distance < threshold ? 'pass' : 'fail';
+
+      if (outcome === 'pass') {
+        const { error: updateError } = await supabase
+          .from('exam_sessions')
+          .update({
+            student_id: user.id,
+            status: 'verified',
+            verification_attempts_remaining: 3,
+          })
+          .eq('id', sessionId);
+
+        if (updateError) {
+          return { success: false, error: updateError.message };
+        }
+
+        return {
+          success: true,
+          data: {
+            outcome: 'pass',
+            confidence,
+            attempts_remaining: 3,
+            blocked: false,
+            session_status: 'verified',
+          },
+        };
+      }
+
+      const nextAttempts = Math.max(0, currentAttempts - 1);
+      const isBlocked = nextAttempts <= 0;
+
+      const { error: updateFailError } = await supabase
+        .from('exam_sessions')
+        .update({
+          student_id: user.id,
+          status: isBlocked
+            ? 'verification_blocked'
+            : 'awaiting_verification',
+          verification_attempts_remaining: nextAttempts,
+        })
+        .eq('id', sessionId);
+
+      if (updateFailError) {
+        return { success: false, error: updateFailError.message };
+      }
+
+      return {
+        success: true,
+        data: {
+          outcome: 'fail',
+          confidence,
+          attempts_remaining: nextAttempts,
+          blocked: isBlocked,
+          session_status: isBlocked
+            ? 'verification_blocked'
+            : 'awaiting_verification',
+        },
+      };
+    } catch (err) {
+      return {
+        success: false,
+        error: err instanceof Error ? err.message : 'Unknown error',
+      };
+    }
+  }
+
+  static async verifyDuringExam(
+    embedding: Float32Array
+  ): Promise<{
+    success: boolean;
+    data?: DuringExamVerificationResponse;
+    error?: string;
+  }> {
+    try {
+      const threshold = 0.6;
+
+      const {
+        data: { user },
+      } = await supabase.auth.getUser();
+
+      if (!user) {
+        return { success: false, error: 'Not authenticated' };
+      }
+
+      const { data: faceData, error } = await supabase
+        .from('student_faces')
+        .select('face_descriptor')
+        .eq('student_id', user.id)
+        .maybeSingle();
 
       if (error) {
         return { success: false, error: error.message };
       }
 
-      return { success: true, data: data as VerificationResponse };
+      if (!faceData?.face_descriptor) {
+        return { success: false, error: 'No reference face found' };
+      }
+
+      let referenceDescriptor: number[];
+
+      if (Array.isArray(faceData.face_descriptor)) {
+        referenceDescriptor = faceData.face_descriptor.map(Number);
+      } else if (typeof faceData.face_descriptor === 'string') {
+        referenceDescriptor = JSON.parse(faceData.face_descriptor).map(Number);
+      } else {
+        return {
+          success: false,
+          error: 'Invalid face reference format',
+        };
+      }
+
+      const currentDescriptor = Array.from(embedding);
+
+      if (referenceDescriptor.length !== currentDescriptor.length) {
+        return { success: false, error: 'Face descriptor size mismatch' };
+      }
+
+      let sum = 0;
+
+      for (let i = 0; i < referenceDescriptor.length; i++) {
+        const diff = referenceDescriptor[i] - currentDescriptor[i];
+        sum += diff * diff;
+      }
+
+      const distance = Math.sqrt(sum);
+      const confidence = Math.max(0, Math.min(1, 1 - distance / 2));
+      const outcome = distance < threshold ? 'pass' : 'fail';
+
+      return {
+        success: true,
+        data: {
+          outcome,
+          confidence,
+          distance,
+          threshold,
+          reason:
+            outcome === 'pass' ? 'Same person' : 'Different person suspected',
+        },
+      };
     } catch (err) {
       return {
         success: false,
