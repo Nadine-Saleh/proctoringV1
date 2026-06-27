@@ -77,6 +77,3 @@ Thumbs.db:encryptable
 *.tar.xz
 *.tar.zst
 ```
-#sessions
-.claude/
-audio_sidecar/data/sessions/

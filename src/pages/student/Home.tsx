@@ -120,7 +120,7 @@ export const StudentHome = () => {
             </h1>
             <p className="text-ink-600 mt-1">Manage and join your scheduled exam sessions.</p>
           </div>
-          <Link to="/exam/join" className="btn btn-lg btn-primary">
+          <Link to="/student/join" className="btn btn-lg btn-primary">
             <KeyRound className="w-4 h-4" />
             Join exam
           </Link>
@@ -291,7 +291,7 @@ export const StudentHome = () => {
             <p className="text-sm text-ink-600 mb-6 max-w-sm mx-auto">
               Join an exam using the access code provided by your instructor to begin.
             </p>
-            <Link to="/exam/join" className="btn btn-md btn-primary">
+            <Link to="/student/join" className="btn btn-md btn-primary">
               <KeyRound className="w-4 h-4" />
               Join an exam
             </Link>

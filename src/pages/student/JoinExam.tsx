@@ -47,7 +47,7 @@ export const JoinExam = () => {
   };
 
   const handleCodeChange = (value: string) => {
-    setCode(value.toUpperCase().replace(/[^0-9A-HJ-NPR-Z]/g, ''));
+    setCode(value.toUpperCase().replace(/[^0-9A-HJKMNP-TV-Z]/g, ''));
     setError(null);
   };
 

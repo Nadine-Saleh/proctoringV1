@@ -84,15 +84,6 @@ export const usePoseDetection = (): UsePoseDetectionResult => {
       rightElbow: landmarks[14]?.visibility ?? 0
     };
 
-    // Debug logging
-    console.log('[Pose] Visibility values:', {
-      leftShoulder: visibility.leftShoulder.toFixed(3),
-      rightShoulder: visibility.rightShoulder.toFixed(3),
-      leftElbow: visibility.leftElbow.toFixed(3),
-      rightElbow: visibility.rightElbow.toFixed(3),
-      threshold: VISIBILITY_THRESHOLD
-    });
-
     const poseResult: PoseDetectionResult = {
       landmarks,
       visibility
@@ -101,7 +92,6 @@ export const usePoseDetection = (): UsePoseDetectionResult => {
     setPoseData(poseResult);
 
     const hasCompleteUpperBody = checkUpperBodyPose(landmarks);
-    console.log('[Pose] Upper body complete:', hasCompleteUpperBody);
 
     if (hasCompleteUpperBody) {
       setFrameStatus('valid');
@@ -116,18 +106,15 @@ export const usePoseDetection = (): UsePoseDetectionResult => {
   const loadModel = useCallback(async () => {
     try {
       if (detectorRef.current) {
-        console.log('[Pose] Model already loaded');
         return;
       }
 
       setLoadingProgress('جاري تحميل نموذج MediaPipe Pose...');
-      console.log('[Pose] Starting Pose model loading...');
 
       if (loadingTimeoutRef.current) {
         clearTimeout(loadingTimeoutRef.current);
       }
       loadingTimeoutRef.current = setTimeout(() => {
-        console.warn('[Pose] Model loading timeout');
         setLoadingProgress('التحميل يستغرق وقتاً أطول من المتوقع... حاول إعادة تحميل الصفحة');
       }, 30000);
 
@@ -135,7 +122,6 @@ export const usePoseDetection = (): UsePoseDetectionResult => {
       const { Pose } = poseModule as any;
 
       setLoadingProgress('تهيئة نموذج الكشف...');
-      console.log('[Pose] Initializing detector');
 
       detectorRef.current = new Pose({
         locateFile: (file: string) => `https://cdn.jsdelivr.net/npm/@mediapipe/pose@0.5/${file}`
@@ -154,7 +140,6 @@ export const usePoseDetection = (): UsePoseDetectionResult => {
         clearTimeout(loadingTimeoutRef.current);
       }
 
-      console.log('[Pose] Model loaded successfully!');
       setIsModelLoaded(true);
       setError(null);
       setLoadingProgress('');
@@ -174,8 +159,8 @@ export const usePoseDetection = (): UsePoseDetectionResult => {
 
     try {
       await detectorRef.current.send({ image: videoRef.current });
-    } catch (err) {
-      console.error('[Pose] Detection error:', err);
+    } catch {
+      // Silently ignore frame-level detection errors
     }
 
     animationFrameRef.current = requestAnimationFrame(detectPose);
@@ -186,7 +171,6 @@ export const usePoseDetection = (): UsePoseDetectionResult => {
     if (!isModelLoaded || isDetectingRef.current) return;
 
     try {
-      console.log('[Pose] Starting detection');
       videoRef.current = videoElement;
       isDetectingRef.current = true;
       setIsDetecting(true);
@@ -204,7 +188,6 @@ export const usePoseDetection = (): UsePoseDetectionResult => {
 
   // Stop detection
   const stopDetection = useCallback(() => {
-    console.log('[Pose] Stopping detection');
     isDetectingRef.current = false;
     setIsDetecting(false);
     if (animationFrameRef.current) {
